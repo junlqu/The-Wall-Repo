@@ -6,7 +6,7 @@
     "FUNCTIONS_WORKER_RUNTIME_VERSION": "~22",
     "COSMOS_DB_ENDPOINT": "https://<your-cosmos-account>.documents.azure.com:443/",
     "COSMOS_DB_KEY": "<your-cosmos-primary-key>",
-    "COSMOS_DB_DATABASE_NAME": "the-wall"
+    "COSMOS_DB_DATABASE_NAME": "the-wall-db"
   },
   "Host": {
     "CORS": "*"
