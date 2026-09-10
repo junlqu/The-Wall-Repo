@@ -1,0 +1,9 @@
+*.ts
+!dist/**/*.ts.map
+.vscode/
+.git*
+.github/
+local.settings.json
+test/
+src/
+tsconfig.json
