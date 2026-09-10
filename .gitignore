@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+
+# Next.js
+website/.next/
+website/out/
+
+# Azure Functions
+api/dist/
+api/local.settings.json
+api/bin/
+api/obj/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Editor / OS
+.vscode/*
+!.vscode/extensions.json
+.DS_Store
+Thumbs.db
+
+# Logs
+npm-debug.log*
+*.log
