@@ -3,13 +3,20 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  --color-primary: #00205b;
+  --color-secondary: #4ec3e0;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-primary: var(--color-primary);
+  --color-secondary: var(--color-secondary);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --animate-fall: fall linear infinite;
+  --animate-rope-scroll: rope-scroll linear infinite;
+  --animate-wall-scroll: wall-scroll linear infinite;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -23,4 +30,54 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+/* Each hold falls for the first 15% of the animation (this is the part that
+   sets the actual fall speed), then sits hidden off-screen for the rest of
+   the cycle. Spreading many holds' delays across the full (long) duration
+   keeps only a fraction visible at once, giving real space between them,
+   while every hold still falls at the identical speed during its active
+   15%. This percentage must match FALL_DURATION_S / OUTER_CYCLE_S in
+   FallingRocks.tsx. */
+@keyframes fall {
+  0% {
+    transform: translateY(-10vh);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(100vh);
+    opacity: 0;
+  }
+}
+
+/* Scrolls the rope's diagonal stitch pattern downward continuously (no
+   hide/reset, unlike holds) so it reads as one continuous moving rope.
+   Increasing background-position-y moves the pattern down, matching the
+   rocks' fall direction; the 120vh distance and its paired duration
+   (ROPE_SCROLL_DURATION_S in FallingRocks.tsx) match the rocks' exact
+   vh/second pace. The 8px stitch repeat is tiny next to 120vh, so the loop
+   seam is imperceptible. */
+@keyframes rope-scroll {
+  from {
+    background-position-y: 0;
+  }
+  to {
+    background-position-y: 100vh;
+  }
+}
+
+/* The wall mosaic is rendered as two stacked identical copies (200% total
+   height, second one directly below the first). Animating from -50% (which
+   shows the second/lower copy, with the first sitting just above the
+   viewport) to 0% (which shows the first copy) moves the visible content
+   DOWN over time - the first copy descends into view from above while the
+   second descends out of view below - matching the rocks' fall direction,
+   and loops seamlessly since both copies are identical. */
+@keyframes wall-scroll {
+  from {
+    transform: translateY(-50%);
+  }
+  to {
+    transform: translateY(0);
+  }
 }
