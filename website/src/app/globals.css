@@ -44,8 +44,16 @@ body {
     transform: translateY(-10vh);
     opacity: 1;
   }
+  15% {
+    transform: translateY(110vh);
+    opacity: 1;
+  }
+  15.01% {
+    transform: translateY(110vh);
+    opacity: 0;
+  }
   100% {
-    transform: translateY(100vh);
+    transform: translateY(110vh);
     opacity: 0;
   }
 }
@@ -62,7 +70,7 @@ body {
     background-position-y: 0;
   }
   to {
-    background-position-y: 100vh;
+    background-position-y: 120vh;
   }
 }
 

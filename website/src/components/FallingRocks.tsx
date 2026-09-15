@@ -80,8 +80,6 @@ const ROPE_RED = "#E63946";
 // wall are continuous (never hidden), so instead they're each given their
 // own duration matching this exact same vh/second pace (see below).
 const FALL_DURATION_S = 9;
-const ROCK_FALL_DISTANCE_VH = 120;
-const ROCK_SPEED_VH_PER_S = ROCK_FALL_DISTANCE_VH / FALL_DURATION_S;
 const FALL_FRACTION = 0.15; // must match the 15% keyframe stop in globals.css
 const OUTER_CYCLE_S = FALL_DURATION_S / FALL_FRACTION;
 const ROW_INTERVAL_S = OUTER_CYCLE_S / HOLDS_PER_ROUTE;
@@ -91,11 +89,11 @@ const TEXTURE_INTERVAL_S = OUTER_CYCLE_S / TEXTURE_SLOT_COUNT;
 const ROPE_SCROLL_DURATION_S = FALL_DURATION_S;
 // The wall scrolls exactly one tile (100% of its own height) at that same
 // vh/second pace.
-const WALL_SCROLL_DURATION_S = 100 / ROCK_SPEED_VH_PER_S;
-// Wider than the lane itself, so neighboring lanes' holds visually overlap
+const WALL_SCROLL_DURATION_S = FALL_DURATION_S;
+// Wider than the lane itself, so neighboring lanes' holds slightly overlap
 // and read as one connected wall rather than isolated columns.
-const LATERAL_OFFSET_PX = 64;
-const JITTER_RANGE_PX = 22;
+const LATERAL_OFFSET_PX = 100;
+const JITTER_RANGE_PX = 38;
 
 // Routes reveal outward from the center as the viewport widens, so exactly
 // one route is visible on mobile; the visible set always spans the full width.
@@ -460,6 +458,10 @@ function FallingRocksCanvas() {
         {holdNodes}
         {ropeNodes}
       </div>
+
+      {/* Darkens the whole composited background (wall, rope, and holds
+          alike) with a translucent gray veil. */}
+      <div aria-hidden="true" className="absolute inset-0" style={{ backgroundColor: "rgba(20,20,20,0.35)" }} />
 
       <button
         type="button"

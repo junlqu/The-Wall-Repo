@@ -35,7 +35,7 @@ export default function Home() {
             className="pointer-events-none absolute -inset-x-12 -inset-y-10 -z-10 sm:-inset-x-20 sm:-inset-y-14 md:-inset-x-28 md:-inset-y-16"
             style={{
               background:
-                "radial-gradient(ellipse closest-side, rgba(0,0,0,0.78) 0%, rgba(0,0,0,0.78) 55%, rgba(0,0,0,0) 90%)",
+                "radial-gradient(ellipse closest-side, rgba(50,50,52,0.78) 0%, rgba(50,50,52,0.78) 55%, rgba(50,50,52,0) 90%)",
             }}
           />
           <p className="text-base font-semibold uppercase tracking-[0.3em] text-white/90 sm:text-lg md:text-xl">
