@@ -1,5 +1,18 @@
+import { cache } from "react";
 import Link from "next/link";
 import FallingRocks from "@/components/FallingRocks";
+
+// The falling-rocks background is randomized per page load via a seed
+// generated fresh on every request - force this route to render per-request
+// instead of being cached as static HTML at build time.
+export const dynamic = "force-dynamic";
+
+// Next.js/React can invoke a Server Component's render function more than
+// once per request (e.g. dev mode double-renders to help surface impure
+// code) - wrapping the random seed in React's request-scoped cache() means
+// every call within the same request returns the same memoized value, so
+// the HTML and the RSC payload used to hydrate always agree.
+const getFallingRocksSeed = cache(() => Math.floor(Math.random() * 2 ** 31));
 
 const DATA_BLOCKS = [
   {
@@ -25,10 +38,12 @@ const DATA_BLOCKS = [
 ];
 
 export default function Home() {
+  const fallingRocksSeed = getFallingRocksSeed();
+
   return (
     <>
       <section className="relative flex min-h-[calc(100vh-4rem)] flex-1 items-center justify-center overflow-hidden bg-neutral-500">
-        <FallingRocks />
+        <FallingRocks seed={fallingRocksSeed} />
 
         <div className="relative z-10 w-fit px-4 text-center">
           <div
