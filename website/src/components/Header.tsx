@@ -4,10 +4,17 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 
 const CLIMBS_LINKS = [
+  { label: "All Climbs", href: "/climbs" },
   { label: "Routes", href: "/climbs/routes" },
   { label: "Boulders", href: "/climbs/boulders" },
   { label: "Combos", href: "/climbs/combos" },
   { label: "Archives", href: "/climbs/archives" },
+];
+
+const EXTRAS_LINKS = [
+  { label: "Combo Roulette", href: "/extras/comboroulette" },
+  { label: "Twister", href: "/extras/twister" },
+  { label: "Speed Climbing", href: "/extras/speedclimbing" },
 ];
 
 function ChevronIcon({ className = "" }: { className?: string }) {
@@ -41,10 +48,12 @@ function CloseIcon() {
 export default function Header() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [climbsOpen, setClimbsOpen] = useState(false);
+  const [extrasOpen, setExtrasOpen] = useState(false);
 
   const closeMenu = () => {
     setMenuOpen(false);
     setClimbsOpen(false);
+    setExtrasOpen(false);
   };
 
   // Full-screen overlay is open - stop the page behind it from scrolling.
@@ -83,6 +92,27 @@ export default function Header() {
             <div className="invisible absolute left-1/2 top-full -translate-x-1/2 pt-3 opacity-0 transition-all duration-150 group-hover:visible group-hover:opacity-100">
               <div className="flex min-w-[160px] flex-col rounded-lg border border-secondary/20 bg-primary py-2 shadow-lg">
                 {CLIMBS_LINKS.map((link) => (
+                  <Link
+                    key={link.href}
+                    href={link.href}
+                    className="px-4 py-2 transition-colors hover:bg-secondary/10 hover:text-secondary"
+                  >
+                    {link.label}
+                  </Link>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="group relative">
+            <button type="button" className="flex items-center gap-1 transition-colors hover:text-secondary">
+              Extras
+              <ChevronIcon className="group-hover:rotate-180" />
+            </button>
+
+            <div className="invisible absolute left-1/2 top-full -translate-x-1/2 pt-3 opacity-0 transition-all duration-150 group-hover:visible group-hover:opacity-100">
+              <div className="flex min-w-[160px] flex-col rounded-lg border border-secondary/20 bg-primary py-2 shadow-lg">
+                {EXTRAS_LINKS.map((link) => (
                   <Link
                     key={link.href}
                     href={link.href}
@@ -138,6 +168,30 @@ export default function Header() {
             {climbsOpen && (
               <div className="flex flex-col pl-4">
                 {CLIMBS_LINKS.map((link) => (
+                  <Link
+                    key={link.href}
+                    href={link.href}
+                    onClick={closeMenu}
+                    className="rounded px-2 py-3 text-base text-white/85 hover:bg-secondary/10 hover:text-secondary"
+                  >
+                    {link.label}
+                  </Link>
+                ))}
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={() => setExtrasOpen((open) => !open)}
+              aria-expanded={extrasOpen}
+              className="flex items-center justify-between rounded px-2 py-4 text-left hover:bg-secondary/10 hover:text-secondary"
+            >
+              Extras
+              <ChevronIcon className={extrasOpen ? "rotate-180" : ""} />
+            </button>
+            {extrasOpen && (
+              <div className="flex flex-col pl-4">
+                {EXTRAS_LINKS.map((link) => (
                   <Link
                     key={link.href}
                     href={link.href}
