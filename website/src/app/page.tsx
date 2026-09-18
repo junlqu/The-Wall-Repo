@@ -2,11 +2,6 @@ import { cache } from "react";
 import Link from "next/link";
 import FallingRocks from "@/components/FallingRocks";
 
-// The falling-rocks background is randomized per page load via a seed
-// generated fresh on every request - force this route to render per-request
-// instead of being cached as static HTML at build time.
-export const dynamic = "force-dynamic";
-
 // Next.js/React can invoke a Server Component's render function more than
 // once per request (e.g. dev mode double-renders to help surface impure
 // code) - wrapping the random seed in React's request-scoped cache() means
