@@ -89,37 +89,49 @@ type LineHistory = {
 
 const EMPTY_HISTORY: LineHistory = { lastLimb: null, lastColourByLimb: {} };
 
-function makeSlices(
-  limbs: readonly LimbKey[],
-  colours: { name: string; hex: string }[],
-  rerollMode: RerollMode,
-  history: LineHistory,
-  applyLimbExclusion: boolean,
-): Slice[] {
+function buildSlices(limbs: readonly LimbKey[], colours: { name: string; hex: string }[]): Slice[] {
   const slices: Slice[] = [];
   for (const limb of limbs) {
-    // "no reroll plus" forbids picking the same limb twice in a row, so it
-    // drops the limb entirely rather than filtering its colours.
-    if (applyLimbExclusion && rerollMode === "noRerollPlus" && limb === history.lastLimb) {
-      continue;
-    }
     for (const colour of colours) {
-      if (rerollMode !== "none" && limb === history.lastLimb && colour.name === history.lastColourByLimb[limb]) {
-        continue;
-      }
       slices.push({ limb, colourName: colour.name, colourHex: colour.hex });
     }
   }
-  // If every option got filtered out (e.g. only one colour and one limb left),
-  // fall back to the unfiltered set so a spin always has something to land on.
-  if (slices.length === 0) {
-    for (const limb of limbs) {
-      for (const colour of colours) {
-        slices.push({ limb, colourName: colour.name, colourHex: colour.hex });
-      }
+  return slices;
+}
+
+function isPickValid(picked: Slice, rerollMode: RerollMode, history: LineHistory, applyLimbExclusion: boolean): boolean {
+  // "no reroll plus" forbids landing on the same limb twice in a row.
+  if (applyLimbExclusion && rerollMode === "noRerollPlus" && picked.limb === history.lastLimb) {
+    return false;
+  }
+  // "no reroll" forbids landing on the same limb+colour combo twice in a row.
+  if (rerollMode !== "none" && picked.limb === history.lastLimb && picked.colourName === history.lastColourByLimb[picked.limb]) {
+    return false;
+  }
+  return true;
+}
+
+const MAX_REROLL_ATTEMPTS = 200;
+
+// The wheel's slices never change based on reroll mode - only the pick does.
+// An invalid pick (per the active reroll rule) is silently re-randomized
+// against the same full slice set, rather than removing options from the
+// wheel itself.
+function pickValidSlice(
+  slices: Slice[],
+  rerollMode: RerollMode,
+  history: LineHistory,
+  applyLimbExclusion: boolean,
+): Slice {
+  for (let attempt = 0; attempt < MAX_REROLL_ATTEMPTS; attempt++) {
+    const candidate = slices[Math.floor(Math.random() * slices.length)];
+    if (isPickValid(candidate, rerollMode, history, applyLimbExclusion)) {
+      return candidate;
     }
   }
-  return slices;
+  // Every slice violates the rule (e.g. a single limb/colour left) - give up
+  // rerolling and just land on something so a spin always finishes.
+  return slices[Math.floor(Math.random() * slices.length)];
 }
 
 const SPIN_DURATION_MS = 2200;
@@ -164,10 +176,10 @@ export default function TwisterPage() {
   const colours = LINE_COLOURS[selectedLine];
   const currentHistory = history[selectedLine];
 
-  const wheelSlices = useMemo(
-    () => makeSlices(LIMBS.map((l) => l.key), colours, rerollMode, currentHistory, true),
-    [colours, rerollMode, currentHistory],
-  );
+  // The wheel always shows the full, unfiltered slice set - reroll rules
+  // only affect which slice gets picked (see pickValidSlice), not what's
+  // visible on the wheel.
+  const wheelSlices = useMemo(() => buildSlices(LIMBS.map((l) => l.key), colours), [colours]);
 
   const wheelBackground = useMemo(() => {
     const step = 360 / wheelSlices.length;
@@ -186,7 +198,7 @@ export default function TwisterPage() {
   }
 
   function rollSingleAnimated() {
-    const picked = wheelSlices[Math.floor(Math.random() * wheelSlices.length)];
+    const picked = pickValidSlice(wheelSlices, rerollMode, currentHistory, true);
     const index = wheelSlices.indexOf(picked);
     const step = 360 / wheelSlices.length;
     const targetAngle = index * step + step / 2;
@@ -208,8 +220,8 @@ export default function TwisterPage() {
     let runningHistory = currentHistory;
 
     while (remaining.length > 0) {
-      const candidates = makeSlices(remaining, colours, rerollMode, runningHistory, false);
-      const picked = candidates[Math.floor(Math.random() * candidates.length)];
+      const candidates = buildSlices(remaining, colours);
+      const picked = pickValidSlice(candidates, rerollMode, runningHistory, false);
       runningHistory = {
         lastLimb: picked.limb,
         lastColourByLimb: { ...runningHistory.lastColourByLimb, [picked.limb]: picked.colourName },
