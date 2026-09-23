@@ -172,6 +172,7 @@ export default function TwisterPage() {
   const [spinning, setSpinning] = useState(false);
   const [rotation, setRotation] = useState(0);
   const [showLockedPopup, setShowLockedPopup] = useState(false);
+  const [skipAnimation, setSkipAnimation] = useState(false);
 
   const colours = LINE_COLOURS[selectedLine];
   const currentHistory = history[selectedLine];
@@ -199,6 +200,12 @@ export default function TwisterPage() {
 
   function rollSingleAnimated() {
     const picked = pickValidSlice(wheelSlices, rerollMode, currentHistory, true);
+
+    if (skipAnimation) {
+      applyPick(picked);
+      return;
+    }
+
     const index = wheelSlices.indexOf(picked);
     const step = 360 / wheelSlices.length;
     const targetAngle = index * step + step / 2;
@@ -365,6 +372,19 @@ export default function TwisterPage() {
               End
             </button>
           )}
+
+          <button
+            type="button"
+            onClick={() => setSkipAnimation((v) => !v)}
+            aria-pressed={skipAnimation}
+            className={`absolute -bottom-3 -left-3 z-30 rounded-full border px-4 py-1.5 text-sm font-semibold shadow-sm transition-colors ${
+              skipAnimation
+                ? "border-primary bg-primary text-white"
+                : "border-primary bg-white text-primary hover:bg-primary hover:text-white"
+            }`}
+          >
+            Skip
+          </button>
         </div>
 
         <div className="flex w-full flex-col gap-8 rounded-lg border border-neutral-200 bg-white p-6 shadow-sm sm:flex-row sm:items-start sm:justify-center">
