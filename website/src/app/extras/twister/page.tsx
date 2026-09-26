@@ -7,8 +7,8 @@ type Line = (typeof LINES)[number];
 
 const LIMBS = [
   { key: "leftHand", label: "Left Hand" },
-  { key: "leftLeg", label: "Left Leg" },
   { key: "rightHand", label: "Right Hand" },
+  { key: "leftLeg", label: "Left Leg" },
   { key: "rightLeg", label: "Right Leg" },
 ] as const;
 type LimbKey = (typeof LIMBS)[number]["key"];
@@ -23,38 +23,38 @@ const LIMB_SHORT_LABEL: Record<LimbKey, string> = {
 // Placeholder colours - the user will swap these per line once real database
 // has been setup and completed
 const _COLOURS = {
-  red: "#E63946", // red
-  orange: "#F4A300", // orange
-  yellow: "#F1C40F", // yellow
-  green: "#2ECC71", // green
-  blue: "#2D6CDF", // blue
-  seafoam: "#14B8A6", // teal
-  pink: "#EC4899", // pink
-  purple: "#9B59B6", // purple
-  black: "#1C1C1C", // black
-  white: "#F5F5F5", // white
-  gray: "#C7C7C7", // gray
-  brown: "#8B5E3C", // brown
+  red: ["#E63946", "#E63946"], // red
+  orange: ["#F4A300", "#F4A300"], // orange
+  yellow: ["#F1C40F", "#F1C40F"], // yellow
+  green: ["#2ECC71", "#2ECC71"], // green
+  blue: ["#2D6CDF", "#2D6CDF"], // blue
+  seafoam: ["#14B8A6", "#14B8A6"], // teal
+  pink: ["#EC4899", "#EC4899"], // pink
+  purple: ["#9B59B6", "#9B59B6"], // purple
+  black: ["#1C1C1C", "#1C1C1C"], // black
+  white: ["#E7E7E7", "#AFAFAF"], // white
+  gray: ["#666666", "#666666"], // gray
+  brown: ["#8B5E3C", "#8B5E3C"], // brown
 };
-const LINE_COLOURS: Record<Line, { name: string; hex: string }[]> = {
+const LINE_COLOURS: Record<Line, { name: string; hex: string[] }[]> = {
   1: [
     { name: "Red", hex: _COLOURS["red"] },
     { name: "Pink", hex: _COLOURS["pink"] },
-    { name: "Purple", hex: _COLOURS["purple"] },
     { name: "Blue", hex: _COLOURS["blue"] },
     { name: "Orange", hex: _COLOURS["orange"] },
   ],
   2: [
     { name: "Green", hex: _COLOURS["green"] },
+    { name: "Gray", hex: _COLOURS["gray"] },
     { name: "Orange", hex: _COLOURS["orange"] },
     { name: "White", hex: _COLOURS["white"] },
-    { name: "Gray", hex: _COLOURS["gray"] },
   ],
   3: [
     { name: "Yellow", hex: _COLOURS["yellow"] },
     { name: "Pink", hex: _COLOURS["pink"] },
     { name: "Blue", hex: _COLOURS["blue"] },
     { name: "Red", hex: _COLOURS["red"] },
+    { name: "Purple", hex: _COLOURS["purple"] },
   ],
   4: [
     { name: "Purple", hex: _COLOURS["purple"] },
@@ -89,11 +89,11 @@ type LineHistory = {
 
 const EMPTY_HISTORY: LineHistory = { lastLimb: null, lastColourByLimb: {} };
 
-function buildSlices(limbs: readonly LimbKey[], colours: { name: string; hex: string }[]): Slice[] {
+function buildSlices(limbs: readonly LimbKey[], colours: { name: string; hex: string[] }[]): Slice[] {
   const slices: Slice[] = [];
   for (const limb of limbs) {
     for (const colour of colours) {
-      slices.push({ limb, colourName: colour.name, colourHex: colour.hex });
+      slices.push({ limb, colourName: colour.name, colourHex: colour.hex[0] });
     }
   }
   return slices;
@@ -201,14 +201,15 @@ export default function TwisterPage() {
   function rollSingleAnimated() {
     const picked = pickValidSlice(wheelSlices, rerollMode, currentHistory, true);
 
-    if (skipAnimation) {
-      applyPick(picked);
-      return;
-    }
-
     const index = wheelSlices.indexOf(picked);
     const step = 360 / wheelSlices.length;
     const targetAngle = index * step + step / 2;
+
+    if (skipAnimation) {
+      setRotation((prev) => prev - (prev % 360) + (360 - targetAngle));
+      applyPick(picked);
+      return;
+    }
 
     setSpinning(true);
     setRotation((prev) => {
@@ -282,9 +283,9 @@ export default function TwisterPage() {
               return (
                 <div key={limb.key} className="flex items-center gap-2">
                   <span className="font-medium text-neutral-500">{limb.label}:</span>
-                  <span className="flex items-center gap-1.5 font-semibold" style={{ color: colourHex }}>
+                  <span className="flex items-center gap-1.5 font-semibold" style={{ color: colourHex?.[1] }}>
                     {colourHex && (
-                      <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: colourHex }} />
+                      <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: colourHex?.[0] }} />
                     )}
                     {colourName ?? "—"}
                   </span>
@@ -298,7 +299,7 @@ export default function TwisterPage() {
                 className="font-semibold"
                 style={{
                   color: colours.find((c) => c.name === currentHistory.lastColourByLimb[currentHistory.lastLimb!])
-                    ?.hex,
+                    ?.hex?.[1],
                 }}
               >
                 {LIMBS.find((l) => l.key === currentHistory.lastLimb)!.label} —{" "}
