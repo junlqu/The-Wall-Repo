@@ -5,6 +5,8 @@ import jwt from "jsonwebtoken";
 
 export type UserRecord = {
   id: string;
+  // Partition key of the Cosmos "User" container - always equal to id.
+  userID: string;
   username: string;
   email?: string;
   phone?: string;

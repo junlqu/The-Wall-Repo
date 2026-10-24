@@ -10,7 +10,7 @@ import {
   UserRecord,
 } from "../authUtils";
 
-const CONTAINER_ID = "users";
+const CONTAINER_ID = "User";
 
 type RegisterBody = {
   name?: string;
@@ -62,8 +62,10 @@ export async function authRegister(request: HttpRequest, context: InvocationCont
       };
     }
 
+    const id = newUserId();
     const user: UserRecord = {
-      id: newUserId(),
+      id,
+      userID: id,
       username,
       name,
       email,

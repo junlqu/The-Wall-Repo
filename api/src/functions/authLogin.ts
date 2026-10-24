@@ -2,7 +2,7 @@ import { app, HttpRequest, HttpResponseInit, InvocationContext } from "@azure/fu
 import { getContainer } from "../cosmosClient";
 import { buildSessionCookie, corsHeaders, signSessionToken, toSessionUser, UserRecord, verifyPassword } from "../authUtils";
 
-const CONTAINER_ID = "users";
+const CONTAINER_ID = "User";
 
 type LoginBody = {
   identifier?: string; // email, username, or phone
