@@ -5,6 +5,15 @@ import { getStarterAvatar } from "../avatarUtils";
 import { Avatar, AVATAR_CONTAINER } from "../models/Avatar";
 import { User, USER_CONTAINER, USER_LEVEL } from "../models/User";
 
+// Keep in sync with website/src/app/signup/page.tsx.
+const MAX_NAME_LENGTH = 128;
+const MAX_EMAIL_LENGTH = 512;
+// Digits only, up to 15 - the longest number E.164 allows.
+const PHONE_PATTERN = /^\d{1,15}$/;
+// Something before the @, and a "." with text either side somewhere after it.
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const PASSWORD_RULES = [/.{8,}/, /[A-Z]/, /[a-z]/, /[0-9]/];
+
 type RegisterBody = {
   fname?: string;
   lname?: string;
@@ -28,8 +37,23 @@ export async function authRegister(request: HttpRequest, context: InvocationCont
     if (!fname || !lname || !username) {
       return { status: 400, headers, jsonBody: { error: "First name, last name, and username are required." } };
     }
-    if (!body.password) {
-      return { status: 400, headers, jsonBody: { error: "Password is required." } };
+    if (fname.length > MAX_NAME_LENGTH || lname.length > MAX_NAME_LENGTH) {
+      return { status: 400, headers, jsonBody: { error: `Names must be ${MAX_NAME_LENGTH} characters or fewer.` } };
+    }
+    if (email && (email.length > MAX_EMAIL_LENGTH || !EMAIL_PATTERN.test(email))) {
+      return { status: 400, headers, jsonBody: { error: "Enter a valid email address." } };
+    }
+    if (phone && !PHONE_PATTERN.test(phone)) {
+      return { status: 400, headers, jsonBody: { error: "Phone number can only contain digits." } };
+    }
+    if (!body.password || !PASSWORD_RULES.every((rule) => rule.test(body.password!))) {
+      return {
+        status: 400,
+        headers,
+        jsonBody: {
+          error: "Password must be at least 8 characters with an uppercase letter, a lowercase letter, and a number.",
+        },
+      };
     }
 
     // Email and phone are optional, but must still be unique when provided.

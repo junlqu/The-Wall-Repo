@@ -11,6 +11,19 @@ const INPUT_CLASS =
   "w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 focus:border-secondary focus:outline-none focus:ring-1 focus:ring-secondary";
 const LABEL_CLASS = "text-sm font-medium text-neutral-700";
 
+// Keep in sync with api/src/functions/authRegister.ts.
+const MAX_NAME_LENGTH = 128;
+const MAX_EMAIL_LENGTH = 512;
+const MAX_PHONE_DIGITS = 15;
+// Something before the @, and a "." with text either side somewhere after it.
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const PASSWORD_RULES = [
+  { label: "At least 8 characters", test: (p: string) => p.length >= 8 },
+  { label: "An uppercase letter", test: (p: string) => /[A-Z]/.test(p) },
+  { label: "A lowercase letter", test: (p: string) => /[a-z]/.test(p) },
+  { label: "A number", test: (p: string) => /[0-9]/.test(p) },
+];
+
 // The input's `required` attribute is what tells assistive tech the field is
 // mandatory, so the asterisk itself is purely visual.
 function RequiredMark() {
@@ -32,13 +45,26 @@ export default function SignupPage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [emailTouched, setEmailTouched] = useState(false);
+  const [submitAttempted, setSubmitAttempted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  const emailInvalid = email !== "" && !EMAIL_PATTERN.test(email.trim());
+  const showEmailError = emailInvalid && (emailTouched || submitAttempted);
+  const passwordValid = PASSWORD_RULES.every((rule) => rule.test(password));
+  const showPasswordRules = password !== "" || submitAttempted;
 
   async function handleSubmit(e: SubmitEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
+    setSubmitAttempted(true);
 
+    if (emailInvalid) return;
+    if (!passwordValid) {
+      setError("Your password doesn't meet all the requirements yet.");
+      return;
+    }
     if (password !== confirmPassword) {
       setError("Passwords don't match.");
       return;
@@ -103,6 +129,7 @@ export default function SignupPage() {
                 type="text"
                 autoComplete="given-name"
                 required
+                maxLength={MAX_NAME_LENGTH}
                 value={fname}
                 onChange={(e) => setFname(e.target.value)}
                 className={INPUT_CLASS}
@@ -119,6 +146,7 @@ export default function SignupPage() {
                 type="text"
                 autoComplete="family-name"
                 required
+                maxLength={MAX_NAME_LENGTH}
                 value={lname}
                 onChange={(e) => setLname(e.target.value)}
                 className={INPUT_CLASS}
@@ -146,14 +174,26 @@ export default function SignupPage() {
             <label htmlFor="email" className={LABEL_CLASS}>
               Email
             </label>
+            {/* type="text" rather than "email" so our message below is the only
+                one shown, instead of competing with the browser's own popup. */}
             <input
               id="email"
-              type="email"
+              type="text"
+              inputMode="email"
               autoComplete="email"
+              maxLength={MAX_EMAIL_LENGTH}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+              onBlur={() => setEmailTouched(true)}
+              aria-invalid={showEmailError}
+              aria-describedby={showEmailError ? "email-error" : undefined}
               className={INPUT_CLASS}
             />
+            {showEmailError && (
+              <p id="email-error" className="text-xs text-red-600">
+                Enter a full email address, like name@example.com.
+              </p>
+            )}
           </div>
 
           <div className="flex flex-col gap-1">
@@ -163,9 +203,12 @@ export default function SignupPage() {
             <input
               id="phone"
               type="tel"
+              inputMode="numeric"
               autoComplete="tel"
+              maxLength={MAX_PHONE_DIGITS}
               value={phone}
-              onChange={(e) => setPhone(e.target.value)}
+              // Drop anything that isn't a digit, typed or pasted.
+              onChange={(e) => setPhone(e.target.value.replace(/\D/g, ""))}
               className={INPUT_CLASS}
             />
           </div>
@@ -182,8 +225,22 @@ export default function SignupPage() {
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              aria-describedby="password-rules"
               className={INPUT_CLASS}
             />
+            {showPasswordRules && (
+              <ul id="password-rules" className="mt-1 grid grid-cols-2 gap-x-3 gap-y-0.5 text-xs">
+                {PASSWORD_RULES.map((rule) => {
+                  const met = rule.test(password);
+                  return (
+                    <li key={rule.label} className={met ? "text-green-700" : "text-red-600"}>
+                      <span aria-hidden="true">{met ? "✓" : "✗"}</span> {rule.label}
+                      <span className="sr-only">{met ? " (done)" : " (missing)"}</span>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
           </div>
 
           <div className="flex flex-col gap-1">
