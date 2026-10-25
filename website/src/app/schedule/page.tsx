@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import InfoTip from "@/components/InfoTip";
 
 type DayHours = { open: string; close: string } | null;
 
@@ -59,8 +60,59 @@ function getActiveUpdates(updates: ScheduleUpdate[], now: Date): ScheduleUpdate[
     .sort((a, b) => b.priority - a.priority);
 }
 
+const BELAY_TEST_NOTE = "The climber must pass or have passed a belay test at TPASC.";
+
 // Placeholder - replace with the real external booking system URL.
 const BOOKING_URL = "https://tpasc.ezfacility.com/";
+
+type PriceItem = {
+  label: string;
+  price?: string;
+  note?: string;
+  // Shows an info icon explaining the belay test requirement.
+  needsBelayTest?: boolean;
+  tiers?: { label: string; price: string }[];
+};
+
+const PRICE_GROUPS: { audience: string; items: PriceItem[] }[] = [
+  {
+    audience: "UTSC Students",
+    items: [
+      { label: "Drop-in", price: "$0", note: "You have your own gear (shoes + harness)", needsBelayTest: true },
+      { label: "Drop-in + Gear", price: "$5", needsBelayTest: true },
+      { label: "Learn-to-Climb", price: "$5" },
+    ],
+  },
+  {
+    audience: "TPASC Members",
+    items: [
+      { label: "Drop-in", price: "$0", note: "You have your own gear (shoes + harness)", needsBelayTest: true },
+      { label: "Drop-in + Gear", price: "$6", needsBelayTest: true },
+      { label: "Belay service (1 hour)", price: "$12" },
+      { label: "Learn-to-Climb", price: "$30" },
+    ],
+  },
+  {
+    audience: "Non-TPASC Members",
+    items: [
+      { label: "Drop-in + Gear", price: "$12", needsBelayTest: true },
+      {
+        label: "Belay service + Gear (1 hour)",
+        tiers: [
+          { label: "Age 5–12", price: "$18" },
+          { label: "Age 13–21", price: "$20.40" },
+          { label: "Age 22+", price: "$24" },
+        ],
+      },
+      { label: "Learn-to-Climb", price: "$30" },
+    ],
+  },
+];
+
+const CONTAINER_TABS = [
+  { id: "hours", label: "Our Hours" },
+  { id: "prices", label: "Prices" },
+] as const;
 
 function formatHours(hours: DayHours): string {
   return hours ? `${hours.open} – ${hours.close}` : "Closed";
@@ -110,6 +162,7 @@ function getClosingSoon(date: Date, hours: DayHours, now: Date): Date | null {
 }
 
 export default function SchedulePage() {
+  const [tab, setTab] = useState<(typeof CONTAINER_TABS)[number]["id"]>("hours");
   const [view, setView] = useState<"weekly" | "calendar">("weekly");
 
   const today = useMemo(() => new Date(), []);
@@ -225,117 +278,173 @@ export default function SchedulePage() {
         </div>
 
         <div className="rounded-lg border border-neutral-200 bg-white p-6 shadow-sm">
-          <div className="mb-4 flex items-center justify-between">
-            <span className="text-sm font-semibold uppercase tracking-wide text-neutral-500">Drop-in hours</span>
-            <div className="flex gap-1">
+          <div role="tablist" className="-mx-6 -mt-6 mb-5 flex border-b border-neutral-200">
+            {CONTAINER_TABS.map(({ id, label }) => (
               <button
+                key={id}
                 type="button"
-                onClick={() => setView("weekly")}
-                className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-                  view === "weekly" ? "bg-primary text-white" : "bg-neutral-100 text-neutral-700 hover:bg-neutral-200"
+                role="tab"
+                id={`tab-${id}`}
+                aria-selected={tab === id}
+                aria-controls={`panel-${id}`}
+                onClick={() => setTab(id)}
+                className={`-mb-px flex-1 border-b-2 py-3 text-sm font-semibold transition-colors ${
+                  tab === id
+                    ? "border-primary text-primary"
+                    : "border-transparent text-neutral-500 hover:border-neutral-300 hover:text-neutral-700"
                 }`}
               >
-                Weekly
+                {label}
               </button>
-              <button
-                type="button"
-                onClick={() => setView("calendar")}
-                className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-                  view === "calendar" ? "bg-primary text-white" : "bg-neutral-100 text-neutral-700 hover:bg-neutral-200"
-                }`}
-              >
-                Calendar
-              </button>
-            </div>
+            ))}
           </div>
 
-          {view === "weekly" ? (
-            <div className="flex flex-col divide-y divide-neutral-100">
-              {DAY_NAMES.map((name, i) => {
-                const isToday = i === todayIndex;
-                const lessonSlots = getLessonSlots(i);
-                return (
-                  <div
-                    key={name}
-                    className={`flex flex-col gap-1 px-2 py-3 text-sm ${
-                      isToday ? "text-primary" : "text-neutral-700"
-                    }`}
-                  >
-                    <div className={`flex items-center justify-between ${isToday ? "font-semibold" : ""}`}>
-                      <span>{name}</span>
-                      <span>{formatHours(WEEKLY_HOURS[i])}</span>
-                    </div>
-                    {lessonSlots && (
-                      <div className="flex items-center justify-between text-xs text-neutral-500">
-                        <span>Learn-to-Climb</span>
-                        <span>
-                          {lessonSlots.map((slot) => `${slot.open} – ${slot.close}`).join(", ")}
-                        </span>
+          {tab === "prices" ? (
+            <div role="tabpanel" id="panel-prices" aria-labelledby="tab-prices" className="flex flex-col gap-6">
+              {PRICE_GROUPS.map((group) => (
+                <section key={group.audience}>
+                  <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-neutral-500">
+                    {group.audience}
+                  </h2>
+                  <div className="flex flex-col divide-y divide-neutral-100">
+                    {group.items.map((item) => (
+                      <div key={item.label} className="flex flex-col gap-1 px-2 py-3 text-sm text-neutral-700">
+                        <div className="flex items-start justify-between gap-4">
+                          <span className="flex items-center gap-1.5">
+                            {item.label}
+                            {item.needsBelayTest && <InfoTip text={BELAY_TEST_NOTE} size={14} />}
+                          </span>
+                          {item.price && <span className="font-semibold text-primary">{item.price}</span>}
+                        </div>
+                        {item.note && <span className="text-xs text-neutral-500">{item.note}</span>}
+                        {item.tiers?.map((tier) => (
+                          <div key={tier.label} className="flex items-center justify-between pl-4 text-neutral-600">
+                            <span>{tier.label}</span>
+                            <span className="font-semibold text-primary">{tier.price}</span>
+                          </div>
+                        ))}
                       </div>
-                    )}
+                    ))}
                   </div>
-                );
-              })}
+                </section>
+              ))}
+
             </div>
           ) : (
-            <div>
-              <div className="mb-3 flex items-center justify-between">
-                <button
-                  type="button"
-                  onClick={() => changeMonth(-1)}
-                  aria-label="Previous month"
-                  className="rounded-md px-2 py-1 text-sm text-neutral-600 hover:bg-neutral-100"
-                >
-                  ←
-                </button>
-                <span className="text-sm font-semibold text-neutral-800">
-                  {calendarCursor.toLocaleDateString(undefined, { month: "long", year: "numeric" })}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => changeMonth(1)}
-                  aria-label="Next month"
-                  className="rounded-md px-2 py-1 text-sm text-neutral-600 hover:bg-neutral-100"
-                >
-                  →
-                </button>
+            <div role="tabpanel" id="panel-hours" aria-labelledby="tab-hours">
+              <div className="mb-4 flex items-center justify-between">
+                <span className="text-sm font-semibold uppercase tracking-wide text-neutral-500">Drop-in hours</span>
+                <div className="flex gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setView("weekly")}
+                    className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                      view === "weekly" ? "bg-primary text-white" : "bg-neutral-100 text-neutral-700 hover:bg-neutral-200"
+                    }`}
+                  >
+                    Weekly
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setView("calendar")}
+                    className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                      view === "calendar" ? "bg-primary text-white" : "bg-neutral-100 text-neutral-700 hover:bg-neutral-200"
+                    }`}
+                  >
+                    Calendar
+                  </button>
+                </div>
               </div>
 
-              <div className="grid grid-cols-7 gap-1 text-center text-xs font-medium text-neutral-500">
-                {DAY_SHORT.map((d) => (
-                  <div key={d} className="py-1">
-                    {d}
-                  </div>
-                ))}
-              </div>
-
-              <div className="grid grid-cols-7 gap-1">
-                {monthGrid.map((day, i) => {
-                  if (day === null) return <div key={i} />;
-                  const weekday = (i % 7) as number;
-                  const isToday = isCurrentMonth && day === today.getDate();
-                  const hours = WEEKLY_HOURS[weekday];
-                  return (
+              {view === "weekly" ? (
+                <div className="flex flex-col divide-y divide-neutral-100">
+                  {DAY_NAMES.map((name, i) => {
+                    const isToday = i === todayIndex;
+                    const lessonSlots = getLessonSlots(i);
+                    return (
+                      <div
+                        key={name}
+                        className={`flex flex-col gap-1 px-2 py-3 text-sm ${
+                          isToday ? "text-primary" : "text-neutral-700"
+                        }`}
+                      >
+                        <div className={`flex items-center justify-between ${isToday ? "font-semibold" : ""}`}>
+                          <span>{name}</span>
+                          <span>{formatHours(WEEKLY_HOURS[i])}</span>
+                        </div>
+                        {lessonSlots && (
+                          <div className="flex items-center justify-between text-xs text-neutral-500">
+                            <span>Learn-to-Climb</span>
+                            <span>
+                              {lessonSlots.map((slot) => `${slot.open} – ${slot.close}`).join(", ")}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div>
+                  <div className="mb-3 flex items-center justify-between">
                     <button
-                      key={i}
                       type="button"
-                      onClick={() =>
-                        setSelectedDate(new Date(calendarCursor.getFullYear(), calendarCursor.getMonth(), day))
-                      }
-                      className={`flex cursor-pointer flex-col items-center gap-0.5 rounded-md border px-1 py-2 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-secondary ${
-                        isToday
-                          ? "border-transparent bg-primary text-white hover:bg-primary/90"
-                          : "border-transparent text-neutral-700 hover:border-secondary hover:bg-secondary/10"
-                      }`}
+                      onClick={() => changeMonth(-1)}
+                      aria-label="Previous month"
+                      className="rounded-md px-2 py-1 text-sm text-neutral-600 hover:bg-neutral-100"
                     >
-                      <span className="text-sm font-semibold">{day}</span>
-                      <span className={`text-[10px] leading-tight ${isToday ? "text-white/80" : "text-neutral-500"}`}>
-                        {hours ? hours.open.replace(" AM", "a").replace(" PM", "p") : "Closed"}
-                      </span>
+                      ←
                     </button>
-                  );
-                })}
-              </div>
+                    <span className="text-sm font-semibold text-neutral-800">
+                      {calendarCursor.toLocaleDateString(undefined, { month: "long", year: "numeric" })}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => changeMonth(1)}
+                      aria-label="Next month"
+                      className="rounded-md px-2 py-1 text-sm text-neutral-600 hover:bg-neutral-100"
+                    >
+                      →
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-7 gap-1 text-center text-xs font-medium text-neutral-500">
+                    {DAY_SHORT.map((d) => (
+                      <div key={d} className="py-1">
+                        {d}
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="grid grid-cols-7 gap-1">
+                    {monthGrid.map((day, i) => {
+                      if (day === null) return <div key={i} />;
+                      const weekday = (i % 7) as number;
+                      const isToday = isCurrentMonth && day === today.getDate();
+                      const hours = WEEKLY_HOURS[weekday];
+                      return (
+                        <button
+                          key={i}
+                          type="button"
+                          onClick={() =>
+                            setSelectedDate(new Date(calendarCursor.getFullYear(), calendarCursor.getMonth(), day))
+                          }
+                          className={`flex cursor-pointer flex-col items-center gap-0.5 rounded-md border px-1 py-2 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-secondary ${
+                            isToday
+                              ? "border-transparent bg-primary text-white hover:bg-primary/90"
+                              : "border-transparent text-neutral-700 hover:border-secondary hover:bg-secondary/10"
+                          }`}
+                        >
+                          <span className="text-sm font-semibold">{day}</span>
+                          <span className={`text-[10px] leading-tight ${isToday ? "text-white/80" : "text-neutral-500"}`}>
+                            {hours ? hours.open.replace(" AM", "a").replace(" PM", "p") : "Closed"}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

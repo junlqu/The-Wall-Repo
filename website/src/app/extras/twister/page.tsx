@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import InfoTip from "@/components/InfoTip";
 
 const LINES = [1, 2, 3, 4, 5, 6] as const;
 type Line = (typeof LINES)[number];
@@ -136,28 +137,6 @@ function pickValidSlice(
 
 const SPIN_DURATION_MS = 2200;
 const EXTRA_SPINS = 5;
-
-function InfoTip({ text }: { text: string }) {
-  // Pure CSS hover/focus (no click-toggle state) - a JS click handler here
-  // would double-fire on touch devices, since a tap synthesizes both a
-  // hover-like event and a click in quick succession, toggling it straight
-  // back off. Focus-within covers tapping on mobile (tapping the button
-  // focuses it), while group-hover covers desktop mouse hover.
-  return (
-    <span className="group/tip relative inline-flex">
-      <button
-        type="button"
-        aria-label={text}
-        className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-neutral-400 text-[10px] font-bold text-neutral-500"
-      >
-        i
-      </button>
-      <span className="pointer-events-none absolute left-1/2 top-full z-40 mt-1 w-44 -translate-x-1/2 rounded-md bg-neutral-800 px-2 py-1 text-xs font-normal text-white opacity-0 shadow-lg transition-opacity group-hover/tip:opacity-100 group-focus-within/tip:opacity-100">
-        {text}
-      </span>
-    </span>
-  );
-}
 
 export default function TwisterPage() {
   const [selectedLine, setSelectedLine] = useState<Line>(1);
