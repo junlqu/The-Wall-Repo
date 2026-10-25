@@ -494,8 +494,10 @@ export default function SchedulePage() {
 
               {lessonSlots && (
                 <div className="mt-2 text-sm text-neutral-600">
-                  <span className="font-medium text-neutral-700">Lessons: </span>
-                  {lessonSlots.map((slot) => `${slot.open} – ${slot.close}`).join(", ")}
+                  <span className="font-medium text-neutral-700">Lessons:</span>
+                  {lessonSlots.map((slot) => (
+                    <p key={slot.open}>{`${slot.open} – ${slot.close}`}</p>
+                  ))}
                 </div>
               )}
 
