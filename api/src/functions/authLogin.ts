@@ -1,8 +1,7 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from "@azure/functions";
 import { getContainer } from "../cosmosClient";
-import { buildSessionCookie, corsHeaders, signSessionToken, toSessionUser, UserRecord, verifyPassword } from "../authUtils";
-
-const CONTAINER_ID = "User";
+import { buildSessionCookie, corsHeaders, signSessionToken, toSessionUser, verifyPassword } from "../authUtils";
+import { User, USER_CONTAINER } from "../models/User";
 
 type LoginBody = {
   identifier?: string; // email, username, or phone
@@ -21,7 +20,7 @@ export async function authLogin(request: HttpRequest, context: InvocationContext
       return { status: 400, headers, jsonBody: { error: "Identifier and password are required." } };
     }
 
-    const container = getContainer(CONTAINER_ID);
+    const container = getContainer(USER_CONTAINER);
     const { resources } = await container.items
       .query({
         query:
@@ -30,7 +29,7 @@ export async function authLogin(request: HttpRequest, context: InvocationContext
       })
       .fetchAll();
 
-    const user = resources[0] as UserRecord | undefined;
+    const user = resources[0] as User | undefined;
     if (!user || !user.passwordHash || !(await verifyPassword(password, user.passwordHash))) {
       return { status: 401, headers, jsonBody: { error: "Incorrect login or password." } };
     }

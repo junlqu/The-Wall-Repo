@@ -2,23 +2,13 @@ import { randomUUID } from "node:crypto";
 import { Cookie, HttpRequest } from "@azure/functions";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
-
-export type UserRecord = {
-  id: string;
-  // Partition key of the Cosmos "User" container - always equal to id.
-  userID: string;
-  username: string;
-  email?: string;
-  phone?: string;
-  name: string;
-  passwordHash: string;
-  createdAt: string;
-};
+import { User, UserLevel } from "./models/User";
 
 export type SessionUser = {
-  id: string;
+  userID: string;
   username: string;
-  name: string;
+  fname: string;
+  level: UserLevel;
 };
 
 const SESSION_COOKIE_NAME = "wall_session";
@@ -59,8 +49,8 @@ export function buildSessionCookie(token: string): Cookie {
   };
 }
 
-export function toSessionUser(user: UserRecord): SessionUser {
-  return { id: user.id, username: user.username, name: user.name };
+export function toSessionUser(user: User): SessionUser {
+  return { userID: user.userID, username: user.username, fname: user.fname, level: user.level };
 }
 
 // Local dev runs the website and the Functions API on different ports, so

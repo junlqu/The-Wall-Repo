@@ -5,9 +5,25 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/api";
 
+const INPUT_CLASS =
+  "w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 focus:border-secondary focus:outline-none focus:ring-1 focus:ring-secondary";
+const LABEL_CLASS = "text-sm font-medium text-neutral-700";
+
+// The input's `required` attribute is what tells assistive tech the field is
+// mandatory, so the asterisk itself is purely visual.
+function RequiredMark() {
+  return (
+    <span className="text-red-600" aria-hidden="true">
+      {" "}
+      *
+    </span>
+  );
+}
+
 export default function SignupPage() {
   const router = useRouter();
-  const [name, setName] = useState("");
+  const [fname, setFname] = useState("");
+  const [lname, setLname] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [username, setUsername] = useState("");
@@ -32,7 +48,8 @@ export default function SignupPage() {
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name,
+          fname,
+          lname,
           username,
           email: email || undefined,
           phone: phone || undefined,
@@ -57,67 +74,92 @@ export default function SignupPage() {
 
   return (
     <div className="flex min-h-[calc(100vh-4rem)] items-center justify-center bg-neutral-50 px-4 py-12">
-      <div className="w-full max-w-sm rounded-lg border border-neutral-200 bg-white p-8 shadow-sm">
+      <div className="w-full max-w-lg rounded-lg border border-neutral-200 bg-white p-8 shadow-sm">
         <h1 className="text-center text-2xl font-bold text-primary">Sign up</h1>
 
         <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-4">
-          <div className="flex flex-col gap-1">
-            <label htmlFor="name" className="text-sm font-medium text-neutral-700">
-              Name
-            </label>
-            <input
-              id="name"
-              type="text"
-              required
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 focus:border-secondary focus:outline-none focus:ring-1 focus:ring-secondary"
-            />
+          <div className="grid grid-cols-2 gap-3 sm:gap-4">
+            <div className="flex min-w-0 flex-col gap-1">
+              <label htmlFor="fname" className={LABEL_CLASS}>
+                First name
+                <RequiredMark />
+              </label>
+              <input
+                id="fname"
+                type="text"
+                autoComplete="given-name"
+                required
+                value={fname}
+                onChange={(e) => setFname(e.target.value)}
+                className={INPUT_CLASS}
+              />
+            </div>
+
+            <div className="flex min-w-0 flex-col gap-1">
+              <label htmlFor="lname" className={LABEL_CLASS}>
+                Last name
+                <RequiredMark />
+              </label>
+              <input
+                id="lname"
+                type="text"
+                autoComplete="family-name"
+                required
+                value={lname}
+                onChange={(e) => setLname(e.target.value)}
+                className={INPUT_CLASS}
+              />
+            </div>
           </div>
 
           <div className="flex flex-col gap-1">
-            <label htmlFor="username" className="text-sm font-medium text-neutral-700">
+            <label htmlFor="username" className={LABEL_CLASS}>
               Username
+              <RequiredMark />
             </label>
             <input
               id="username"
               type="text"
+              autoComplete="username"
               required
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              className="rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 focus:border-secondary focus:outline-none focus:ring-1 focus:ring-secondary"
+              className={INPUT_CLASS}
             />
           </div>
 
           <div className="flex flex-col gap-1">
-            <label htmlFor="email" className="text-sm font-medium text-neutral-700">
-              Email <span className="text-neutral-400">(optional)</span>
+            <label htmlFor="email" className={LABEL_CLASS}>
+              Email
             </label>
             <input
               id="email"
               type="email"
+              autoComplete="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 focus:border-secondary focus:outline-none focus:ring-1 focus:ring-secondary"
+              className={INPUT_CLASS}
             />
           </div>
 
           <div className="flex flex-col gap-1">
-            <label htmlFor="phone" className="text-sm font-medium text-neutral-700">
-              Phone <span className="text-neutral-400">(optional)</span>
+            <label htmlFor="phone" className={LABEL_CLASS}>
+              Phone
             </label>
             <input
               id="phone"
               type="tel"
+              autoComplete="tel"
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
-              className="rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 focus:border-secondary focus:outline-none focus:ring-1 focus:ring-secondary"
+              className={INPUT_CLASS}
             />
           </div>
 
           <div className="flex flex-col gap-1">
-            <label htmlFor="password" className="text-sm font-medium text-neutral-700">
+            <label htmlFor="password" className={LABEL_CLASS}>
               Password
+              <RequiredMark />
             </label>
             <input
               id="password"
@@ -126,13 +168,14 @@ export default function SignupPage() {
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 focus:border-secondary focus:outline-none focus:ring-1 focus:ring-secondary"
+              className={INPUT_CLASS}
             />
           </div>
 
           <div className="flex flex-col gap-1">
-            <label htmlFor="confirmPassword" className="text-sm font-medium text-neutral-700">
+            <label htmlFor="confirmPassword" className={LABEL_CLASS}>
               Confirm password
+              <RequiredMark />
             </label>
             <input
               id="confirmPassword"
@@ -141,7 +184,7 @@ export default function SignupPage() {
               required
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
-              className="rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 focus:border-secondary focus:outline-none focus:ring-1 focus:ring-secondary"
+              className={INPUT_CLASS}
             />
           </div>
 

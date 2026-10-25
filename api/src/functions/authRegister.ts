@@ -1,19 +1,11 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from "@azure/functions";
 import { getContainer } from "../cosmosClient";
-import {
-  buildSessionCookie,
-  corsHeaders,
-  hashPassword,
-  newUserId,
-  signSessionToken,
-  toSessionUser,
-  UserRecord,
-} from "../authUtils";
-
-const CONTAINER_ID = "User";
+import { buildSessionCookie, corsHeaders, hashPassword, newUserId, signSessionToken, toSessionUser } from "../authUtils";
+import { User, USER_CONTAINER, USER_LEVEL } from "../models/User";
 
 type RegisterBody = {
-  name?: string;
+  fname?: string;
+  lname?: string;
   email?: string;
   phone?: string;
   username?: string;
@@ -25,13 +17,14 @@ export async function authRegister(request: HttpRequest, context: InvocationCont
 
   try {
     const body = (await request.json()) as RegisterBody;
-    const name = body.name?.trim();
+    const fname = body.fname?.trim();
+    const lname = body.lname?.trim();
     const username = body.username?.trim().toLowerCase();
     const email = body.email?.trim().toLowerCase() || undefined;
     const phone = body.phone?.trim() || undefined;
 
-    if (!name || !username) {
-      return { status: 400, headers, jsonBody: { error: "Name and username are required." } };
+    if (!fname || !lname || !username) {
+      return { status: 400, headers, jsonBody: { error: "First name, last name, and username are required." } };
     }
     if (!body.password) {
       return { status: 400, headers, jsonBody: { error: "Password is required." } };
@@ -49,7 +42,7 @@ export async function authRegister(request: HttpRequest, context: InvocationCont
       parameters.push({ name: "@phone", value: phone });
     }
 
-    const container = getContainer(CONTAINER_ID);
+    const container = getContainer(USER_CONTAINER);
     const { resources: existing } = await container.items
       .query({ query: `SELECT * FROM c WHERE ${conditions.join(" OR ")}`, parameters })
       .fetchAll();
@@ -62,16 +55,18 @@ export async function authRegister(request: HttpRequest, context: InvocationCont
       };
     }
 
-    const id = newUserId();
-    const user: UserRecord = {
-      id,
-      userID: id,
+    const userID = newUserId();
+    const user: User = {
+      id: userID,
+      userID,
       username,
-      name,
       email,
       phone,
+      fname,
+      lname,
       passwordHash: await hashPassword(body.password),
       createdAt: new Date().toISOString(),
+      level: USER_LEVEL.default,
     };
 
     await container.items.create(user);

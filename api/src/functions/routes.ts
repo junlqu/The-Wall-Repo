@@ -1,14 +1,13 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from "@azure/functions";
 import { getContainer } from "../cosmosClient";
-
-const CONTAINER_ID = "routes";
+import { ROUTE_CONTAINER } from "../models/Route";
 
 export async function getRoutes(
   request: HttpRequest,
   context: InvocationContext
 ): Promise<HttpResponseInit> {
   try {
-    const container = getContainer(CONTAINER_ID);
+    const container = getContainer(ROUTE_CONTAINER);
     const { resources } = await container.items
       .query("SELECT * FROM c")
       .fetchAll();
