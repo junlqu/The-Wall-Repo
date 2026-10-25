@@ -88,7 +88,7 @@ export default function Header() {
       <div className="flex h-16 w-full items-center justify-between px-4 sm:px-6 lg:px-8">
         <Link href="/" onClick={closeMenu} className="flex items-center">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={logo.src} alt="The Wall Archives" width={logo.width} height={logo.height} className="h-10 w-auto" />
+          <img src={logo.src} alt="The Wall Archives" width={logo.width} height={logo.height} className="h-14 w-auto" />
         </Link>
 
         <nav className="hidden items-center gap-8 text-sm font-medium md:flex">
