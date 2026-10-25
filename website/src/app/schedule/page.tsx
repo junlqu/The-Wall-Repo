@@ -394,10 +394,12 @@ export default function SchedulePage() {
                           <span>{formatHours(WEEKLY_HOURS[i])}</span>
                         </div>
                         {lessonSlots && (
-                          <div className="flex items-center justify-between text-xs text-neutral-500">
+                          <div className="flex items-start justify-between text-xs text-neutral-500">
                             <span>Learn-to-Climb</span>
-                            <span>
-                              {lessonSlots.map((slot) => `${slot.open} – ${slot.close}`).join(", ")}
+                            <span className="flex flex-col items-end">
+                              {lessonSlots.map((slot) => (
+                                <span key={slot.open}>{`${slot.open} – ${slot.close}`}</span>
+                              ))}
                             </span>
                           </div>
                         )}
