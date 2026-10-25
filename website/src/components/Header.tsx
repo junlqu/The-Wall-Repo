@@ -3,8 +3,9 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { ADMIN_SECTIONS, adminSectionHref } from "@/lib/adminSections";
 import { avatarUrl } from "@/lib/avatar";
-import { logout, useSessionUser } from "@/lib/session";
+import { USER_LEVEL, logout, useSessionUser } from "@/lib/session";
 import logo from "@/static/logo.svg";
 
 const CLIMBS_LINKS = [
@@ -19,6 +20,11 @@ const EXTRAS_LINKS = [
   { label: "Combo Roulette", href: "/extras/comboroulette" },
   { label: "Twister", href: "/extras/twister" },
   { label: "Speed Climbing", href: "/extras/speedclimbing" },
+];
+
+const ADMIN_LINKS = [
+  { label: "Admin Dashboard", href: "/admin" },
+  ...ADMIN_SECTIONS.map((section) => ({ label: section.title, href: adminSectionHref(section) })),
 ];
 
 const ACCOUNT_LINKS = [
@@ -60,11 +66,14 @@ export default function Header() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [climbsOpen, setClimbsOpen] = useState(false);
   const [extrasOpen, setExtrasOpen] = useState(false);
+  const [adminOpen, setAdminOpen] = useState(false);
+  const isAdmin = user?.level === USER_LEVEL.admin;
 
   const closeMenu = () => {
     setMenuOpen(false);
     setClimbsOpen(false);
     setExtrasOpen(false);
+    setAdminOpen(false);
   };
 
   const handleLogout = async () => {
@@ -92,6 +101,11 @@ export default function Header() {
         </Link>
 
         <nav className="hidden items-center gap-8 text-sm font-medium md:flex">
+          {user && (
+            <Link href="/dashboard" className="transition-colors hover:text-secondary">
+              Dashboard
+            </Link>
+          )}
           <Link href="/schedule" className="transition-colors hover:text-secondary">
             Schedule
           </Link>
@@ -140,6 +154,29 @@ export default function Header() {
               </div>
             </div>
           </div>
+
+          {isAdmin && (
+            <div className="group relative">
+              <button type="button" className="flex items-center gap-1 transition-colors hover:text-secondary">
+                Admin
+                <ChevronIcon className="group-hover:rotate-180" />
+              </button>
+
+              <div className="invisible absolute left-1/2 top-full -translate-x-1/2 pt-3 opacity-0 transition-all duration-150 group-hover:visible group-hover:opacity-100">
+                <div className="flex min-w-[160px] flex-col rounded-lg border border-secondary/20 bg-primary py-2 shadow-lg">
+                  {ADMIN_LINKS.map((link) => (
+                    <Link
+                      key={link.href}
+                      href={link.href}
+                      className="px-4 py-2 transition-colors hover:bg-secondary/10 hover:text-secondary"
+                    >
+                      {link.label}
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
         </nav>
 
         <div className="flex items-center gap-4">
@@ -209,6 +246,11 @@ export default function Header() {
       {menuOpen && (
         <div className="fixed inset-x-0 top-16 bottom-0 z-40 flex flex-col overflow-y-auto bg-primary px-6 pb-10 pt-6 md:hidden">
           <nav className="flex flex-1 flex-col gap-1 text-lg font-medium">
+            {user && (
+              <Link href="/dashboard" onClick={closeMenu} className="rounded px-2 py-4 hover:bg-secondary/10 hover:text-secondary">
+                Dashboard
+              </Link>
+            )}
             <Link href="/schedule" onClick={closeMenu} className="rounded px-2 py-4 hover:bg-secondary/10 hover:text-secondary">
               Schedule
             </Link>
@@ -262,6 +304,34 @@ export default function Header() {
                   </Link>
                 ))}
               </div>
+            )}
+
+            {isAdmin && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setAdminOpen((open) => !open)}
+                  aria-expanded={adminOpen}
+                  className="flex items-center justify-between rounded px-2 py-4 text-left hover:bg-secondary/10 hover:text-secondary"
+                >
+                  Admin
+                  <ChevronIcon className={adminOpen ? "rotate-180" : ""} />
+                </button>
+                {adminOpen && (
+                  <div className="flex flex-col pl-4">
+                    {ADMIN_LINKS.map((link) => (
+                      <Link
+                        key={link.href}
+                        href={link.href}
+                        onClick={closeMenu}
+                        className="rounded px-2 py-3 text-base text-white/85 hover:bg-secondary/10 hover:text-secondary"
+                      >
+                        {link.label}
+                      </Link>
+                    ))}
+                  </div>
+                )}
+              </>
             )}
 
             {user ? (

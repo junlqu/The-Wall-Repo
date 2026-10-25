@@ -3,6 +3,12 @@
 import { useEffect, useSyncExternalStore } from "react";
 import { apiUrl } from "@/lib/api";
 
+// Mirrors USER_LEVEL in api/src/models/User.ts.
+export const USER_LEVEL = {
+  default: 0,
+  admin: 1,
+} as const;
+
 // Mirrors SessionUser in api/src/authUtils.ts.
 export type SessionUser = {
   userID: string;
