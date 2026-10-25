@@ -64,6 +64,7 @@ const BELAY_TEST_NOTE = "The climber must pass or have passed a belay test at TP
 
 // Placeholder - replace with the real external booking system URL.
 const BOOKING_URL = "https://tpasc.ezfacility.com/";
+const WAIVER_URL = "https://waiver.smartwaiver.com/w/5b6064099948a/kiosk/";
 
 type PriceItem = {
   label: string;
@@ -259,22 +260,42 @@ export default function SchedulePage() {
           </div>
         )}
 
-        <div className="flex flex-col items-center gap-3 text-center">
-          <p className="text-sm text-neutral-600">Reserve your spot through our online booking system.</p>
-          <a
-            href={BOOKING_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="group inline-flex items-center gap-2 rounded-full bg-secondary px-6 py-2.5 text-sm font-semibold text-primary shadow-sm transition-colors hover:bg-secondary/80"
-          >
-            Book online
-            <span aria-hidden="true" className="transition-transform group-hover:translate-x-1">
-              →
-            </span>
-          </a>
-          <p className="max-w-md text-xs text-neutral-500">
-            UTSC students must book a Learn-to-Climb lesson before becoming eligible for regular drop-ins.
-          </p>
+        <div className="flex flex-col gap-6">
+          <div className="flex flex-col items-center gap-3 text-center">
+            <p className="text-sm text-neutral-600">Reserve your spot through our online booking system.</p>
+            <a
+              href={BOOKING_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="group inline-flex items-center gap-2 rounded-full bg-secondary px-6 py-2.5 text-sm font-semibold text-primary shadow-sm transition-colors hover:bg-secondary/80"
+            >
+              Book online
+              <span aria-hidden="true" className="transition-transform group-hover:translate-x-1">
+                →
+              </span>
+            </a>
+            <p className="text-xs text-neutral-500">
+              UTSC students must book a Learn-to-Climb lesson before becoming eligible for regular drop-ins.
+            </p>
+          </div>
+
+          <div className="flex flex-col items-center gap-3 text-center">
+            <p className="text-sm text-neutral-600">Every climber must also sign our waiver before climbing.</p>
+            <a
+              href={WAIVER_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="group inline-flex items-center gap-2 rounded-full border border-primary px-6 py-2.5 text-sm font-semibold text-primary shadow-sm transition-colors hover:bg-primary hover:text-white"
+            >
+              Sign waiver
+              <span aria-hidden="true" className="transition-transform group-hover:translate-x-1">
+                →
+              </span>
+            </a>
+            <p className="text-xs text-neutral-500">
+              Climbers under the age of 18 must have a parent or guardian sign the waiver for them.
+            </p>
+          </div>
         </div>
 
         <div className="rounded-lg border border-neutral-200 bg-white p-6 shadow-sm">
