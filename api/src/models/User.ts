@@ -19,6 +19,9 @@ export type User = {
   lname: string;
   passwordHash: string;
   createdAt: string;
+  // Mirrors the user's Avatar document's updatedAt, so pages can cache-bust the
+  // avatar URL without reading the Avatars container.
+  avatarUpdatedAt?: string;
   // Never accepted from a request body: new accounts get USER_LEVEL.default,
   // and only an existing admin can promote another user to USER_LEVEL.admin.
   level: UserLevel;

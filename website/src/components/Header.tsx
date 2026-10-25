@@ -2,6 +2,9 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { avatarUrl } from "@/lib/avatar";
+import { logout, useSessionUser } from "@/lib/session";
 
 const CLIMBS_LINKS = [
   { label: "All Climbs", href: "/climbs" },
@@ -15,6 +18,11 @@ const EXTRAS_LINKS = [
   { label: "Combo Roulette", href: "/extras/comboroulette" },
   { label: "Twister", href: "/extras/twister" },
   { label: "Speed Climbing", href: "/extras/speedclimbing" },
+];
+
+const ACCOUNT_LINKS = [
+  { label: "Profile", href: "/profile" },
+  { label: "Settings", href: "/settings" },
 ];
 
 function ChevronIcon({ className = "" }: { className?: string }) {
@@ -46,6 +54,8 @@ function CloseIcon() {
 }
 
 export default function Header() {
+  const router = useRouter();
+  const user = useSessionUser();
   const [menuOpen, setMenuOpen] = useState(false);
   const [climbsOpen, setClimbsOpen] = useState(false);
   const [extrasOpen, setExtrasOpen] = useState(false);
@@ -54,6 +64,12 @@ export default function Header() {
     setMenuOpen(false);
     setClimbsOpen(false);
     setExtrasOpen(false);
+  };
+
+  const handleLogout = async () => {
+    closeMenu();
+    await logout();
+    router.push("/");
   };
 
   // Full-screen overlay is open - stop the page behind it from scrolling.
@@ -127,12 +143,56 @@ export default function Header() {
         </nav>
 
         <div className="flex items-center gap-4">
-          <Link
-            href="/login"
-            className="hidden rounded-full border border-secondary px-4 py-1.5 text-sm font-semibold text-secondary transition-colors hover:bg-secondary hover:text-primary md:inline-block"
-          >
-            Login
-          </Link>
+          {user ? (
+            <div className="group relative hidden md:block">
+              <button type="button" className="flex items-center gap-2 text-left transition-colors hover:text-secondary">
+                <span className="flex flex-col leading-tight">
+                  <span className="text-sm font-semibold">{user.fname}</span>
+                  <span className="text-xs text-white/70">@{user.username}</span>
+                </span>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={avatarUrl(user)}
+                  alt=""
+                  width={36}
+                  height={36}
+                  className="h-9 w-9 rounded-full border-2 border-black object-cover"
+                />
+              </button>
+
+              <div className="invisible absolute right-0 top-full pt-3 opacity-0 transition-all duration-150 group-hover:visible group-hover:opacity-100">
+                <div className="flex min-w-[160px] flex-col rounded-lg border border-secondary/20 bg-primary py-2 text-sm font-medium shadow-lg">
+                  {ACCOUNT_LINKS.map((link) => (
+                    <Link
+                      key={link.href}
+                      href={link.href}
+                      className="px-4 py-2 transition-colors hover:bg-secondary/10 hover:text-secondary"
+                    >
+                      {link.label}
+                    </Link>
+                  ))}
+                  <div className="my-2 border-t border-secondary/20" />
+                  <button
+                    type="button"
+                    onClick={handleLogout}
+                    className="px-4 py-2 text-left transition-colors hover:bg-secondary/10 hover:text-secondary"
+                  >
+                    Log out
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : user === null ? (
+            <Link
+              href="/login"
+              className="hidden rounded-full border border-secondary px-4 py-1.5 text-sm font-semibold text-secondary transition-colors hover:bg-secondary hover:text-primary md:inline-block"
+            >
+              Login
+            </Link>
+          ) : (
+            // Session still loading - hold the space so the nav doesn't jump.
+            <span aria-hidden="true" className="hidden h-9 w-28 md:block" />
+          )}
 
           <button
             type="button"
@@ -147,8 +207,8 @@ export default function Header() {
       </div>
 
       {menuOpen && (
-        <div className="fixed inset-x-0 top-16 bottom-0 z-40 overflow-y-auto bg-primary px-6 pb-10 pt-6 md:hidden">
-          <nav className="flex flex-col gap-1 text-lg font-medium">
+        <div className="fixed inset-x-0 top-16 bottom-0 z-40 flex flex-col overflow-y-auto bg-primary px-6 pb-10 pt-6 md:hidden">
+          <nav className="flex flex-1 flex-col gap-1 text-lg font-medium">
             <Link href="/schedule" onClick={closeMenu} className="rounded px-2 py-4 hover:bg-secondary/10 hover:text-secondary">
               Schedule
             </Link>
@@ -204,13 +264,57 @@ export default function Header() {
               </div>
             )}
 
-            <Link
-              href="/login"
-              onClick={closeMenu}
-              className="mt-4 rounded-full border border-secondary px-4 py-3 text-center font-semibold text-secondary hover:bg-secondary hover:text-primary"
-            >
-              Login
-            </Link>
+            {user ? (
+              // Pinned to the bottom of the menu: account links on the right above
+              // the user, with Log out on the left of the user's row.
+              <div className="mt-auto flex flex-col border-t border-secondary/20 pt-4 text-sm">
+                <div className="flex flex-col items-end">
+                  {ACCOUNT_LINKS.map((link) => (
+                    <Link
+                      key={link.href}
+                      href={link.href}
+                      onClick={closeMenu}
+                      className="rounded px-2 py-2 text-right text-white/85 hover:bg-secondary/10 hover:text-secondary"
+                    >
+                      {link.label}
+                    </Link>
+                  ))}
+                </div>
+                <div className="mt-3 flex items-center justify-between gap-3">
+                  <button
+                    type="button"
+                    onClick={handleLogout}
+                    className="shrink-0 rounded-full border border-secondary px-4 py-1.5 font-semibold text-secondary hover:bg-secondary hover:text-primary"
+                  >
+                    Log out
+                  </button>
+                  <div className="flex min-w-0 items-center gap-3 px-2">
+                    <div className="flex min-w-0 flex-col text-right leading-tight">
+                      <span className="truncate text-base font-semibold">{user.fname}</span>
+                      <span className="truncate text-white/70">@{user.username}</span>
+                    </div>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={avatarUrl(user)}
+                      alt=""
+                      width={44}
+                      height={44}
+                      className="h-11 w-11 shrink-0 rounded-full border-2 border-black object-cover"
+                    />
+                  </div>
+                </div>
+              </div>
+            ) : (
+              user === null && (
+                <Link
+                  href="/login"
+                  onClick={closeMenu}
+                  className="mt-4 rounded-full border border-secondary px-4 py-3 text-center font-semibold text-secondary hover:bg-secondary hover:text-primary"
+                >
+                  Login
+                </Link>
+              )
+            )}
           </nav>
         </div>
       )}

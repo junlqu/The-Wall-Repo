@@ -9,6 +9,7 @@ export type SessionUser = {
   username: string;
   fname: string;
   level: UserLevel;
+  avatarUpdatedAt?: string;
 };
 
 const SESSION_COOKIE_NAME = "wall_session";
@@ -49,8 +50,38 @@ export function buildSessionCookie(token: string): Cookie {
   };
 }
 
+export function buildClearedSessionCookie(): Cookie {
+  return { ...buildSessionCookie(""), maxAge: 0 };
+}
+
+// The signed-in user from the request's session cookie, or null when there is
+// no valid session (missing, expired, or tampered with).
+export function readSessionUser(request: HttpRequest): SessionUser | null {
+  const token = request.headers
+    .get("cookie")
+    ?.split(";")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith(`${SESSION_COOKIE_NAME}=`))
+    ?.slice(SESSION_COOKIE_NAME.length + 1);
+  if (!token) return null;
+
+  const secret = getJwtSecret();
+  try {
+    const { userID, username, fname, level, avatarUpdatedAt } = jwt.verify(token, secret) as SessionUser;
+    return { userID, username, fname, level, avatarUpdatedAt };
+  } catch {
+    return null;
+  }
+}
+
 export function toSessionUser(user: User): SessionUser {
-  return { userID: user.userID, username: user.username, fname: user.fname, level: user.level };
+  return {
+    userID: user.userID,
+    username: user.username,
+    fname: user.fname,
+    level: user.level,
+    avatarUpdatedAt: user.avatarUpdatedAt,
+  };
 }
 
 // Local dev runs the website and the Functions API on different ports, so
@@ -62,7 +93,7 @@ export function corsHeaders(request: HttpRequest): Record<string, string> {
   return {
     "Access-Control-Allow-Origin": origin,
     "Access-Control-Allow-Credentials": "true",
-    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Methods": "GET, POST, PUT, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type",
   };
 }

@@ -1,6 +1,8 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from "@azure/functions";
 import { getContainer } from "../cosmosClient";
 import { buildSessionCookie, corsHeaders, hashPassword, newUserId, signSessionToken, toSessionUser } from "../authUtils";
+import { getStarterAvatar } from "../avatarUtils";
+import { Avatar, AVATAR_CONTAINER } from "../models/Avatar";
 import { User, USER_CONTAINER, USER_LEVEL } from "../models/User";
 
 type RegisterBody = {
@@ -56,6 +58,7 @@ export async function authRegister(request: HttpRequest, context: InvocationCont
     }
 
     const userID = newUserId();
+    const createdAt = new Date().toISOString();
     const user: User = {
       id: userID,
       userID,
@@ -65,11 +68,21 @@ export async function authRegister(request: HttpRequest, context: InvocationCont
       fname,
       lname,
       passwordHash: await hashPassword(body.password),
-      createdAt: new Date().toISOString(),
+      createdAt,
+      avatarUpdatedAt: createdAt,
       level: USER_LEVEL.default,
     };
 
     await container.items.create(user);
+
+    // Not fatal: GET /avatars/{userID} serves the same starter image when the
+    // document is missing.
+    try {
+      const avatar: Avatar = { id: userID, userID, avatar: getStarterAvatar(userID), updatedAt: createdAt };
+      await getContainer(AVATAR_CONTAINER).items.create(avatar);
+    } catch (error) {
+      context.warn("Failed to create starter avatar", error);
+    }
 
     const token = signSessionToken(toSessionUser(user));
     return {

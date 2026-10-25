@@ -1,12 +1,15 @@
 "use client";
 
-import { type SubmitEvent, useState } from "react";
+import { type SubmitEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/api";
+import { preloadAvatar } from "@/lib/avatar";
+import { setSessionUser, useSessionUser } from "@/lib/session";
 
 export default function LoginPage() {
   const router = useRouter();
+  const user = useSessionUser();
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -25,19 +28,30 @@ export default function LoginPage() {
         body: JSON.stringify({ identifier, password }),
       });
 
+      const body = await res.json().catch(() => null);
       if (!res.ok) {
-        const body = await res.json().catch(() => null);
         setError(body?.error ?? "Something went wrong. Please try again.");
         return;
       }
 
-      router.push("/");
-      router.refresh();
+      // Logging in sets the user, which triggers the redirect below.
+      await preloadAvatar(body.user);
+      setSessionUser(body.user);
     } catch {
       setError("Couldn't reach the server. Please try again.");
     } finally {
       setSubmitting(false);
     }
+  }
+
+  // Already logged in - nothing to do here.
+  useEffect(() => {
+    if (user) router.replace("/");
+  }, [user, router]);
+
+  // Hold off on the form until we know the visitor isn't logged in.
+  if (user !== null) {
+    return <div className="min-h-[calc(100vh-4rem)] bg-neutral-50" />;
   }
 
   return (
