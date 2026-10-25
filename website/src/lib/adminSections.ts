@@ -38,6 +38,34 @@ export const ADMIN_SECTIONS: AdminSection[] = [
     ],
   },
   {
+    slug: "equipment",
+    title: "Equipment",
+    description: "Track the gear on hand and retire what's worn out.",
+    subpages: [
+      { slug: "all", label: "See all equipment" },
+      { slug: "new", label: "Add equipment" },
+      { slug: "retire", label: "Retire equipment" },
+    ],
+  },
+  {
+    slug: "maintenance",
+    title: "Maintenance",
+    description: "Log wall and gear issues and follow them to a fix.",
+    subpages: [
+      { slug: "new", label: "Start new maintenance report" },
+      { slug: "all", label: "See all reports" },
+    ],
+  },
+  {
+    slug: "attendance",
+    title: "Attendance",
+    description: "Record who came in and look back at past sessions.",
+    subpages: [
+      { slug: "all", label: "See all attendance" },
+      { slug: "new", label: "Fill in attendance" },
+    ],
+  },
+  {
     slug: "moderation",
     title: "Moderation",
     description: "Review grade disputes and keep the comments civil.",

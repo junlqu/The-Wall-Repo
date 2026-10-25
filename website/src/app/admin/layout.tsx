@@ -5,7 +5,7 @@ import AdminGuard from "@/components/AdminGuard";
 // reaching the section/subpage pages below, so it's repeated.
 export const metadata: Metadata = {
   title: {
-    default: "Admin",
+    default: "Admin Dashboard",
     template: "%s | The Wall Archives",
   },
 };
