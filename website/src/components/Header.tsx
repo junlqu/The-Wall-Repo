@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { avatarUrl } from "@/lib/avatar";
 import { logout, useSessionUser } from "@/lib/session";
+import logo from "@/static/logo.svg";
 
 const CLIMBS_LINKS = [
   { label: "All Climbs", href: "/climbs" },
@@ -86,9 +87,8 @@ export default function Header() {
     <header className="sticky top-0 z-50 w-full bg-primary text-white shadow-md">
       <div className="flex h-16 w-full items-center justify-between px-4 sm:px-6 lg:px-8">
         <Link href="/" onClick={closeMenu} className="flex items-center">
-          <span className="flex h-10 aspect-[3/2] items-center justify-center rounded-md border border-secondary/40 bg-secondary/20 text-[10px] font-semibold text-secondary">
-            LOGO
-          </span>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={logo.src} alt="The Wall Archives" width={logo.width} height={logo.height} className="h-10 w-auto" />
         </Link>
 
         <nav className="hidden items-center gap-8 text-sm font-medium md:flex">

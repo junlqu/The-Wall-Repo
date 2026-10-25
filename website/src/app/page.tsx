@@ -1,6 +1,7 @@
 import { cache } from "react";
 import Link from "next/link";
 import FallingRocks from "@/components/FallingRocks";
+import wordmark from "@/static/wordmark.svg";
 
 // Next.js/React can invoke a Server Component's render function more than
 // once per request (e.g. dev mode double-renders to help surface impure
@@ -51,8 +52,16 @@ export default function Home() {
           <p className="text-base font-semibold uppercase tracking-[0.3em] text-white/90 sm:text-lg md:text-xl">
             Welcome to
           </p>
-          <h1 className="text-5xl font-black uppercase tracking-wide text-white drop-shadow-[0_4px_12px_rgba(0,0,0,0.45)] sm:text-7xl md:text-8xl lg:text-9xl">
-            The Wall
+          <h1 className="mt-3 drop-shadow-[0_4px_12px_rgba(0,0,0,0.45)]">
+            {/* SVGs aren't resized by next/image anyway, so a plain img is enough. */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={wordmark.src}
+              alt="The Wall Archives"
+              width={wordmark.width}
+              height={wordmark.height}
+              className="mx-auto h-auto w-72 sm:w-[28rem] md:w-[36rem] lg:w-[44rem]"
+            />
           </h1>
         </div>
       </section>
