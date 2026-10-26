@@ -12,7 +12,7 @@ export const ROUTE_GRADES = [
 
 // Boulders are graded in bands rather than single grades. Dyno isn't a
 // difficulty, so it sits after the hardest band.
-export const BOULDER_GRADES = ["VB", "V0-V1", "V2-V3", "V4-V5", "V6-V7", "V8-V9", "V10+", "Dyno"];
+export const BOULDER_GRADES = ["VB", "V0-1", "V2-3", "V4-5", "V6-7", "V8-9", "V10+", "Dyno"];
 
 export const GRADE_SCALES: Record<ClimbKind, string[]> = {
   route: ROUTE_GRADES,

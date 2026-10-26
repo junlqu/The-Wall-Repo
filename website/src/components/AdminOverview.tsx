@@ -40,14 +40,14 @@ const ACTIVE_ROUTES: OverviewRoute[] = [
 
 // Placeholder - replace with active boulders from the API.
 const ACTIVE_BOULDERS: OverviewClimb[] = [
-  { id: "b1", colour: "Red", swatch: "#ef4444", grade: "V2-V3", setAt: "2026-06-05" },
-  { id: "b2", colour: "Blue", swatch: "#3b82f6", grade: "V4-V5", setAt: "2026-07-22" },
+  { id: "b1", colour: "Red", swatch: "#ef4444", grade: "V2-3", setAt: "2026-06-05" },
+  { id: "b2", colour: "Blue", swatch: "#3b82f6", grade: "V4-5", setAt: "2026-07-22" },
   { id: "b3", colour: "Yellow", swatch: "#eab308", grade: "VB", setAt: "2026-08-08" },
-  { id: "b4", colour: "Orange", swatch: "#f97316", grade: "V0-V1", setAt: "2026-08-21" },
-  { id: "b5", colour: "Pink", swatch: "#ec4899", grade: "V2-V3", setAt: "2026-09-03" },
-  { id: "b6", colour: "Purple", swatch: "#a855f7", grade: "V4-V5", setAt: "2026-09-27" },
-  { id: "b7", colour: "Teal", swatch: "#14b8a6", grade: "V2-V3", setAt: "2026-10-02" },
-  { id: "b8", colour: "Green", swatch: "#22c55e", grade: "V0-V1", setAt: "2026-10-10" },
+  { id: "b4", colour: "Orange", swatch: "#f97316", grade: "V0-1", setAt: "2026-08-21" },
+  { id: "b5", colour: "Pink", swatch: "#ec4899", grade: "V2-3", setAt: "2026-09-03" },
+  { id: "b6", colour: "Purple", swatch: "#a855f7", grade: "V4-5", setAt: "2026-09-27" },
+  { id: "b7", colour: "Teal", swatch: "#14b8a6", grade: "V2-3", setAt: "2026-10-02" },
+  { id: "b8", colour: "Green", swatch: "#22c55e", grade: "V0-1", setAt: "2026-10-10" },
   { id: "b9", colour: "White", swatch: "#e5e5e5", grade: "Dyno", setAt: "2026-10-16" },
 ];
 

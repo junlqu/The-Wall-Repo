@@ -18,7 +18,7 @@ export const ADMIN_SECTIONS: AdminSection[] = [
   {
     slug: "announcements",
     title: "Announcements",
-    description: "Post news to the wall and manage what's live.",
+    description: "Update the community on features, new sets, events, CotW, closures, and more.",
     subpages: [
       { slug: "new", label: "Make new announcement" },
       { slug: "active", label: "See active announcements" },
@@ -28,7 +28,7 @@ export const ADMIN_SECTIONS: AdminSection[] = [
   {
     slug: "climbs",
     title: "Climbs",
-    description: "Set, retire, and move climbs in and out of the archives.",
+    description: "Setting, update and retire climbs, with import/export to excel.",
     subpages: [
       { slug: "new", label: "Add new climb" },
       { slug: "archive", label: "Archive climb" },
@@ -50,7 +50,7 @@ export const ADMIN_SECTIONS: AdminSection[] = [
   {
     slug: "maintenance",
     title: "Maintenance",
-    description: "Log wall and gear issues and follow them to a fix.",
+    description: "Maintenance reports and logs database, with equipment tracking and scheduling.",
     subpages: [
       { slug: "new", label: "Start new maintenance report" },
       { slug: "all", label: "See all reports" },
@@ -59,7 +59,7 @@ export const ADMIN_SECTIONS: AdminSection[] = [
   {
     slug: "attendance",
     title: "Attendance",
-    description: "Record who came in and look back at past sessions.",
+    description: "Daily attendance, with weekly and monthly metrics.",
     subpages: [
       { slug: "all", label: "See all attendance" },
       { slug: "new", label: "Fill in attendance" },
@@ -68,7 +68,7 @@ export const ADMIN_SECTIONS: AdminSection[] = [
   {
     slug: "moderation",
     title: "Moderation",
-    description: "Review grade disputes and keep the comments civil.",
+    description: "Review online disputes and keep the comments civil.",
     subpages: [
       { slug: "grading-reports", label: "See grading reports" },
       { slug: "comments", label: "See all comments" },
