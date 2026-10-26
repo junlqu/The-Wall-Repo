@@ -10,8 +10,8 @@ import {
 
 // Shared frame for an admin section page and its subpages. The section page
 // lists its subpages as rows unless it passes its own children; a subpage
-// gets a tab strip to hop between its siblings and (for now) an empty panel
-// where the tool will go.
+// gets a tab strip to hop between its siblings, then its tool as children or
+// an empty panel until that tool is built.
 export default function AdminSectionView({
   section,
   subpage,
@@ -71,10 +71,12 @@ export default function AdminSectionView({
               </div>
             </div>
 
-            <div className="flex min-h-64 flex-col items-center justify-center rounded-lg border border-dashed border-neutral-300 bg-white p-10 text-center">
-              <p className="text-sm font-semibold text-neutral-700">Nothing here yet</p>
-              <p className="mt-1 text-sm text-neutral-500">This tool is still being built.</p>
-            </div>
+            {children ?? (
+              <div className="flex min-h-64 flex-col items-center justify-center rounded-lg border border-dashed border-neutral-300 bg-white p-10 text-center">
+                <p className="text-sm font-semibold text-neutral-700">Nothing here yet</p>
+                <p className="mt-1 text-sm text-neutral-500">This tool is still being built.</p>
+              </div>
+            )}
           </>
         ) : (
           (children ?? (

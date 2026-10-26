@@ -31,7 +31,6 @@ export const ADMIN_SECTIONS: AdminSection[] = [
     description: "Setting, update and retire climbs, with import/export to excel.",
     subpages: [
       { slug: "new", label: "Add new climb" },
-      { slug: "archive", label: "Archive climb" },
       { slug: "active", label: "See active climbs" },
       { slug: "archived", label: "See archived climbs" },
       { slug: "import", label: "Import climbs" },

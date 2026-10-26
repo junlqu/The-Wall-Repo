@@ -4,4 +4,6 @@ import "./functions/authMe";
 import "./functions/authRegister";
 import "./functions/avatars";
 import "./functions/health";
+import "./functions/routeItem";
 import "./functions/routes";
+import "./functions/routesImport";
