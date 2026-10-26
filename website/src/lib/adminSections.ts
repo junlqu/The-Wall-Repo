@@ -34,7 +34,8 @@ export const ADMIN_SECTIONS: AdminSection[] = [
       { slug: "archive", label: "Archive climb" },
       { slug: "active", label: "See active climbs" },
       { slug: "archived", label: "See archived climbs" },
-      { slug: "import-export", label: "Import/Export climbs" },
+      { slug: "import", label: "Import climbs" },
+      { slug: "export", label: "Export climbs" },
     ],
   },
   {

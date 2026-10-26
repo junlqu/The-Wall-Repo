@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import AdminClimbs from "@/components/AdminClimbs";
 import AdminSectionView from "@/components/AdminSectionView";
 import { ADMIN_SECTIONS, getAdminSection } from "@/lib/adminSections";
 
@@ -19,5 +20,9 @@ export default async function AdminSectionPage({ params }: PageProps<"/admin/[se
   const section = getAdminSection((await params).section);
   if (!section) notFound();
 
-  return <AdminSectionView section={section} />;
+  return (
+    <AdminSectionView section={section}>
+      {section.slug === "climbs" ? <AdminClimbs section={section} /> : undefined}
+    </AdminSectionView>
+  );
 }

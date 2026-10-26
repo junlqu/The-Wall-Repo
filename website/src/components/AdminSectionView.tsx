@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import AdminSubpageRows from "@/components/AdminSubpageRows";
 import {
   type AdminSection,
@@ -8,14 +9,17 @@ import {
 } from "@/lib/adminSections";
 
 // Shared frame for an admin section page and its subpages. The section page
-// lists its subpages as rows; a subpage gets a tab strip to hop between its
-// siblings and (for now) an empty panel where the tool will go.
+// lists its subpages as rows unless it passes its own children; a subpage
+// gets a tab strip to hop between its siblings and (for now) an empty panel
+// where the tool will go.
 export default function AdminSectionView({
   section,
   subpage,
+  children,
 }: {
   section: AdminSection;
   subpage?: AdminSubpage;
+  children?: ReactNode;
 }) {
   return (
     <div className="min-h-[calc(100vh-4rem)] bg-neutral-50">
@@ -73,9 +77,11 @@ export default function AdminSectionView({
             </div>
           </>
         ) : (
-          <div className="overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-sm">
-            <AdminSubpageRows section={section} />
-          </div>
+          (children ?? (
+            <div className="overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-sm">
+              <AdminSubpageRows section={section} />
+            </div>
+          ))
         )}
       </div>
     </div>
