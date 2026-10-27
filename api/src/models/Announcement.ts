@@ -85,6 +85,10 @@ export type Announcement = {
   relevantUntil: string;
   // userIDs of everyone who liked it.
   likes: string[];
-  // userIDs of everyone who has opened it.
+  // userIDs of every member who has seen it.
   views: string[];
+  // How many times visitors who weren't logged in have seen it - a running
+  // count, so one visitor can add to it more than once. Older announcements
+  // don't have it.
+  guestViews?: number;
 };

@@ -19,12 +19,12 @@ These are going to be in the beta design. Once implemented to production, versio
 
 #### Wall announcements and schedule
 
-- [ ] Allows for announcements and the schedule of the rock climbing wall
+- [X] Allows for announcements and the schedule of the rock climbing wall
 - [ ] Shows data for upcoming changes, holidays or hours
 
 #### All active routes
 
-- [ ] Implement a list of all active lines and their routes, so we can see what we are dealing with
+- [X] Implement a list of all active lines and their routes, so we can see what we are dealing with
 - [ ] Allows users to see the grade, style, setter, colour, as well as senders and their comments
 - [ ] Markers to routes that will be coming down soon, as well as routes that were recently put up
 

@@ -149,17 +149,18 @@ export function readAnnouncementFields(value: unknown): AnnouncementFields | nul
   };
 }
 
-// What the website gets: who liked or opened it is reduced to counts, plus
-// whether the logged-in visitor is one of them. `active` is worked out here so
-// it goes by the same clock that archiving does.
+// What the website gets: who liked or saw it is reduced to counts, plus
+// whether the logged-in visitor is one of them. Views add up members and
+// guests. `active` is worked out here so it goes by the same clock that
+// archiving does.
 export function toPublicAnnouncement(announcement: Announcement, request: HttpRequest) {
-  const { likes, views, ...rest } = announcement;
+  const { likes, views, guestViews = 0, ...rest } = announcement;
   const userID = readSessionUser(request)?.userID;
   return {
     ...rest,
     active: Date.parse(announcement.relevantUntil) > Date.now(),
     likes: new Set(likes).size,
-    views: new Set(views).size,
+    views: new Set(views).size + guestViews,
     liked: userID !== undefined && likes.includes(userID),
     viewed: userID !== undefined && views.includes(userID),
   };

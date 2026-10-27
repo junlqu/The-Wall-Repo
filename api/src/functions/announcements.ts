@@ -6,7 +6,8 @@ import { getContainer } from "../cosmosClient";
 import { Announcement, ANNOUNCEMENT_CONTAINER } from "../models/Announcement";
 
 // GET /announcements - every announcement, active and archived. Listing them
-// doesn't count as viewing them; opening one does (see announcementItem.ts).
+// doesn't count as viewing them; the updates page says when one is seen (see
+// announcementItem.ts).
 export async function getAnnouncements(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
   const headers = corsHeaders(request);
 
@@ -46,6 +47,7 @@ export async function createAnnouncement(request: HttpRequest, context: Invocati
       ...fields,
       likes: [],
       views: [],
+      guestViews: 0,
     };
     const { resource } = await getContainer(ANNOUNCEMENT_CONTAINER).items.create(announcement);
     return { status: 201, headers, jsonBody: toPublicAnnouncement(resource!, request) };

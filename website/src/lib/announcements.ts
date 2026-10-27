@@ -67,13 +67,12 @@ export const ANNOUNCEMENT_TYPES = {
 } as const;
 export type AnnouncementType = keyof typeof ANNOUNCEMENT_TYPES;
 
-// Lowest to highest. How each one shows on the public updates page, once
-// that's built.
+// Lowest to highest. How each one shows on the public updates page.
 export const ANNOUNCEMENT_PRIORITIES = {
-  low: { label: "Low", description: "Added to the catalogue only." },
-  medium: { label: "Medium", description: "Listed, and members like it to show they've seen it." },
-  high: { label: "High", description: "At the top of the updates page, then a headline once viewed." },
-  urgent: { label: "Urgent", description: "Stays at the top of the updates page, viewed or not." },
+  low: { label: "Low", description: "In the news feed while it's one of the 10 newest." },
+  medium: { label: "Medium", description: "In the news feed, and members like it to show they've seen it." },
+  high: { label: "High", description: "In the high priority carousel, beside the CotW." },
+  urgent: { label: "Urgent", description: "In the carousel at the very top of the updates page." },
 } as const;
 export type AnnouncementPriority = keyof typeof ANNOUNCEMENT_PRIORITIES;
 
@@ -144,8 +143,9 @@ export type Announcement = {
   title: string;
   // Saved as `announcement`.
   content: AnnouncementContent;
-  // Username of whoever posted it.
+  // Username of whoever posted it, and their userID for their picture.
   author: string;
+  userID: string;
   // ISO date and time.
   announcedAt: string;
   // YYYY-MM-DD. With an end date it's a range. Some types can leave it out.
@@ -155,8 +155,11 @@ export type Announcement = {
   relevantUntil: string;
   // Still relevant, as of when the API sent it.
   active: boolean;
+  // Views count members once each and guests every time.
   likes: number;
   views: number;
+  // Whether the logged-in visitor has liked it.
+  liked: boolean;
 };
 
 // Mirrors toPublicAnnouncement in api/src/announcementFields.ts.
@@ -173,6 +176,7 @@ function toAnnouncement({ announcementID, announcement, ...rest }: ApiAnnounceme
     title: rest.title,
     content: announcement,
     author: rest.author,
+    userID: rest.userID,
     announcedAt: rest.announcedAt,
     targetDate: rest.targetDate,
     targetEndDate: rest.targetEndDate,
@@ -180,6 +184,7 @@ function toAnnouncement({ announcementID, announcement, ...rest }: ApiAnnounceme
     active: rest.active,
     likes: rest.likes,
     views: rest.views,
+    liked: rest.liked,
   };
 }
 
@@ -187,6 +192,27 @@ export async function fetchAnnouncements(): Promise<Announcement[]> {
   const res = await fetch(apiUrl("/announcements"), { credentials: "include" });
   if (!res.ok) throw new Error(`Failed to load announcements (${res.status})`);
   return ((await res.json()) as ApiAnnouncement[]).map(toAnnouncement);
+}
+
+// Likes and views, which anyone can send - liking needs a login, so the
+// request fails with the API's message for a guest.
+async function reactionRequest(id: string, path: string, method: "POST" | "DELETE"): Promise<Announcement> {
+  const res = await fetch(apiUrl(`/announcements/${encodeURIComponent(id)}${path}`), {
+    method,
+    credentials: "include",
+  });
+  const body = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(body?.error ?? `Request failed (${res.status})`);
+  return toAnnouncement(body);
+}
+
+// Says the updates page showed it - members count once, guests every time.
+export function viewAnnouncement(id: string) {
+  return reactionRequest(id, "/view", "POST");
+}
+
+export function setAnnouncementLiked(id: string, liked: boolean) {
+  return reactionRequest(id, "/like", liked ? "POST" : "DELETE");
 }
 
 // What an admin writes in the new and edit forms.
