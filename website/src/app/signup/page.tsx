@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { apiUrl } from "@/lib/api";
 import { preloadAvatar } from "@/lib/avatar";
+import { useReturnTo, withReturnTo } from "@/lib/returnTo";
 import { setSessionUser, useSessionUser } from "@/lib/session";
 
 const INPUT_CLASS =
@@ -38,6 +39,7 @@ function RequiredMark() {
 export default function SignupPage() {
   const router = useRouter();
   const user = useSessionUser();
+  const returnTo = useReturnTo();
   const [fname, setFname] = useState("");
   const [lname, setLname] = useState("");
   const [email, setEmail] = useState("");
@@ -102,10 +104,10 @@ export default function SignupPage() {
     }
   }
 
-  // Already logged in - nothing to do here.
+  // Already logged in - head back to the page that sent them here, if any.
   useEffect(() => {
-    if (user) router.replace("/");
-  }, [user, router]);
+    if (user) router.replace(returnTo ?? "/");
+  }, [user, returnTo, router]);
 
   // Hold off on the form until we know the visitor isn't logged in.
   if (user !== null) {
@@ -272,7 +274,7 @@ export default function SignupPage() {
 
         <p className="mt-6 text-center text-sm text-neutral-600">
           Already have an account?{" "}
-          <Link href="/login" className="font-semibold text-primary hover:underline">
+          <Link href={withReturnTo("/login", returnTo)} className="font-semibold text-primary hover:underline">
             Log in
           </Link>
         </p>

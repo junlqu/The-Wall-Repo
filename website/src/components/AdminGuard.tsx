@@ -1,7 +1,9 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { usePathname } from "next/navigation";
 import AccessNotice from "@/components/AccessNotice";
+import { withReturnTo } from "@/lib/returnTo";
 import { USER_LEVEL, useSessionUser } from "@/lib/session";
 
 // Hides admin pages from everyone but admins. This only keeps the UI tidy -
@@ -9,6 +11,7 @@ import { USER_LEVEL, useSessionUser } from "@/lib/session";
 // level on every admin request.
 export default function AdminGuard({ children }: { children: ReactNode }) {
   const user = useSessionUser();
+  const pathname = usePathname();
 
   // Session still loading - hold the space so the page doesn't flash.
   if (user === undefined) {
@@ -21,7 +24,7 @@ export default function AdminGuard({ children }: { children: ReactNode }) {
         title="Admins only"
         message="Log in with an admin account to manage the wall."
         actionLabel="Log in"
-        actionHref="/login"
+        actionHref={withReturnTo("/login", pathname)}
       />
     );
   }

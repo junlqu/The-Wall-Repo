@@ -193,8 +193,9 @@ export function DailyAttendanceChart({
   );
 }
 
-// One bar per hour slot, adding up every weekend day or every weekday in the
-// period. Weekends and weekdays keep different hours, so they're shown apart.
+// One bar per hour slot: the average number of climbers (or earnings) in that
+// hour across the weekend days or weekdays in the period that had it open.
+// Weekends and weekdays keep different hours, so they're shown apart.
 export function HourlyAttendanceChart({
   weeks,
   anchor,
@@ -216,7 +217,7 @@ export function HourlyAttendanceChart({
   const period = periodOf(scale, anchor);
   const [weekdays, setWeekdays] = useState(false);
   const days = daysInPeriod(weeks, period).filter((day) => openDayOf(day.date)?.weekend === !weekdays);
-  const format = formatter(metric, false);
+  const format = formatter(metric, true);
 
   // The schedule's hours, plus any others a day was recorded with.
   const hours = [
@@ -225,20 +226,19 @@ export function HourlyAttendanceChart({
       ...days.flatMap(hoursOf),
     ]),
   ].sort((a, b) => a - b);
-  const counts = hours.map((hour) => ({
-    label: formatHourRange(hour),
-    count: days.reduce((sum, day) => {
-      const counts = day.hours[String(hour)];
-      return sum + (counts ? measure(counts, metric) : 0);
-    }, 0),
-  }));
+  const counts = hours.map((hour) => {
+    // Only days that were open that hour count towards its average.
+    const open = days.flatMap((day) => day.hours[String(hour)] ?? []);
+    const total = open.reduce((sum, counts) => sum + measure(counts, metric), 0);
+    return { label: formatHourRange(hour), count: open.length === 0 ? 0 : total / open.length };
+  });
 
   const what = metric === "numbers" ? "Climbers" : "Earnings";
   const group = weekdays ? "Weekdays" : "Weekends";
   return (
     <ChartCard
-      title={`${what} per hour`}
-      subtitle={`${group} · ${describePeriod(period)} · ${plural(days.length, "day")} recorded`}
+      title={`Average ${what.toLowerCase()} per hour`}
+      subtitle={`${group} · ${describePeriod(period)} · averaged over ${plural(days.length, "day")}`}
       loadingText={loadingText}
       className={className}
       controls={
@@ -252,7 +252,7 @@ export function HourlyAttendanceChart({
         counts={counts}
         noun={(count) => (metric === "numbers" ? `${format(count)} climbers` : format(count))}
         formatCount={format}
-        caption={`${what} per hour on ${group.toLowerCase()}, ${describePeriod(period)}`}
+        caption={`Average ${what.toLowerCase()} per hour on ${group.toLowerCase()}, ${describePeriod(period)}`}
         categoryHeader="Hour"
         countHeader={what}
         emptyText={`No ${group.toLowerCase()} recorded for this period`}

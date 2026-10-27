@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import AdminAnnouncements from "@/components/AdminAnnouncements";
 import AdminAttendance from "@/components/AdminAttendance";
 import AdminClimbs from "@/components/AdminClimbs";
 import AdminSectionView from "@/components/AdminSectionView";
@@ -23,7 +24,9 @@ export default async function AdminSectionPage({ params }: PageProps<"/admin/[se
 
   // Sections with a page of their own; the rest list their subpages.
   const body =
-    section.slug === "climbs" ? (
+    section.slug === "announcements" ? (
+      <AdminAnnouncements section={section} />
+    ) : section.slug === "climbs" ? (
       <AdminClimbs section={section} />
     ) : section.slug === "attendance" ? (
       <AdminAttendance section={section} />

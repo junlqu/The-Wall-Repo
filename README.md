@@ -19,23 +19,23 @@ These are going to be in the beta design. Once implemented to production, versio
 
 #### Wall announcements and schedule
 
-- [ ] Allows for announcements and the schedule of the rock climbing wall
+- [X] Allows for announcements and the schedule of the rock climbing wall
 - [ ] Shows data for upcoming changes, holidays or hours
 
 #### All active routes
 
-- [ ] Implement a list of all active lines and their routes, so we can see what we are dealing with
+- [X] Implement a list of all active lines and their routes, so we can see what we are dealing with
 - [ ] Allows users to see the grade, style, setter, colour, as well as senders and their comments
 - [ ] Markers to routes that will be coming down soon, as well as routes that were recently put up
 
 #### All past routes
 
-- [ ] Has a database of all routes, past and present (colour, line and grade)
-- [ ] Allows to import and export of past routes within given data
-- [ ] Sorting and finding of route data from any point in time
-- [ ] Still keep info on route setting/removal, and the setter
+- [X] Has a database of all routes, past and present (colour, line and grade)
+- [X] Allows to import and export of past routes within given data
+- [X] Sorting and finding of route data from any point in time
+- [X] Still keep info on route setting/removal, and the setter
 
-#### Creation of OAuth accounts
+#### Creation of public user accounts
 
 - [ ] Allows the users to update and make suggestions to the wall
 - [ ] Allows users to mark routes that they have completed
@@ -43,8 +43,8 @@ These are going to be in the beta design. Once implemented to production, versio
 
 #### Creation of Admin accounts
 
-- [ ] Allows admins to update the database of old and new routes
-- [ ] Allows admins to make announcements for route data
+- [X] Allows admins to update the database of old and new routes
+- [X] Allows admins to make announcements for route data
 - [ ] Can remove accounts that are disruptive or bots
 
 ### Trickle down additives

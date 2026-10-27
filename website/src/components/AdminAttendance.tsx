@@ -318,13 +318,15 @@ export function AdminAttendanceWeeks() {
   const [open, setOpen] = useState<string | null>(null);
 
   return (
-    <div className="overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-sm">
+    // Grows to fit the table rather than scrolling inside itself - the page
+    // scrolls instead.
+    <div className="min-w-fit overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-sm">
       {loadingText || weeks.length === 0 ? (
         <p className="p-6 text-center text-sm text-neutral-500">{loadingText ?? "No attendance has been recorded yet."}</p>
       ) : (
-        // `relative` so the screen-reader "Actions" label scrolls with the
-        // table instead of widening the page.
-        <div className="relative overflow-x-auto">
+        // `relative` so the screen-reader "Actions" label is positioned
+        // within the table.
+        <div className="relative">
           <table className="w-full min-w-[48rem] text-left text-sm">
             <thead className="bg-neutral-50 text-xs font-semibold uppercase tracking-wide text-neutral-500">
               <tr>
@@ -378,7 +380,11 @@ export function AdminAttendanceWeeks() {
                     {isOpen && (
                       <tr id={panelId}>
                         <td colSpan={8} className="border-l-4 border-secondary bg-white p-0">
-                          <WeekPanel weeks={weeks} week={week} />
+                          {/* Zero width, stretched to the cell's, so the charts
+                              fit the table instead of widening it. */}
+                          <div className="w-0 min-w-full">
+                            <WeekPanel weeks={weeks} week={week} />
+                          </div>
                         </td>
                       </tr>
                     )}

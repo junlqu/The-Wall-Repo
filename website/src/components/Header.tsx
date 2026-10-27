@@ -4,27 +4,9 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { avatarUrl } from "@/lib/avatar";
+import { ACCOUNT_LINKS, CLIMBS_LINKS, EXTRAS_LINKS } from "@/lib/navLinks";
 import { USER_LEVEL, logout, useSessionUser } from "@/lib/session";
 import logo from "@/static/logo.svg";
-
-const CLIMBS_LINKS = [
-  { label: "All Climbs", href: "/climbs" },
-  { label: "Routes", href: "/climbs/routes" },
-  { label: "Boulders", href: "/climbs/boulders" },
-  { label: "Combos", href: "/climbs/combos" },
-  { label: "Archives", href: "/climbs/archives" },
-];
-
-const EXTRAS_LINKS = [
-  { label: "Combo Roulette", href: "/extras/comboroulette" },
-  { label: "Twister", href: "/extras/twister" },
-  { label: "Speed Climbing", href: "/extras/speedclimbing" },
-];
-
-const ACCOUNT_LINKS = [
-  { label: "Profile", href: "/profile" },
-  { label: "Settings", href: "/settings" },
-];
 
 function ChevronIcon({ className = "" }: { className?: string }) {
   return (

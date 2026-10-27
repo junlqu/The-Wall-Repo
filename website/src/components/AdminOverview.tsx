@@ -1,8 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import ClimbCharts from "@/components/ClimbCharts";
 import TabBar from "@/components/TabBar";
+import { type Announcement, fetchAnnouncements, formatShortDate, localDate, upcomingFriday } from "@/lib/announcements";
 import { type Climb, fetchClimbs, LINES, parseDate, swatchFor } from "@/lib/climbs";
 
 type Line = (typeof LINES)[number];
@@ -11,13 +13,31 @@ type DashboardMessage = {
   id: string;
   message: string;
   severity: "high" | "medium";
+  // Where to go to sort it out.
+  action?: { label: string; href: string };
 };
 
-// Placeholder - replace with generated alerts once announcements are in the
-// API (missing announcements, open maintenance reports, etc.).
-const ANNOUNCEMENT_MESSAGES: DashboardMessage[] = [
-  { id: "cotw", message: "CotW announcement not made yet for upcoming Friday.", severity: "medium" },
-];
+const TUESDAY = 2;
+const THURSDAY = 4;
+const FRIDAY = 5;
+
+// A reminder when this week's Friday has no CotW yet: a heads up from
+// Tuesday, urgent from Thursday. Nothing from Saturday to Monday, or while
+// announcements haven't loaded.
+function cotwMessages(announcements: Announcement[] | null | undefined, now: Date): DashboardMessage[] {
+  const day = now.getDay();
+  if (!announcements || day < TUESDAY || day > FRIDAY) return [];
+  const friday = upcomingFriday(localDate(now));
+  if (announcements.some((item) => item.type === "cotw" && item.targetDate === friday)) return [];
+  return [
+    {
+      id: "cotw",
+      message: `CotW for Friday, ${formatShortDate(parseDate(friday))} hasn't been announced yet.`,
+      severity: day >= THURSDAY ? "high" : "medium",
+      action: { label: "Post it", href: "/admin/announcements/new" },
+    },
+  ];
+}
 
 // How long a climb can stay up before the dashboard reminds admins to reset it.
 const STALE_AFTER_DAYS: Partial<Record<Climb["type"], number>> = { route: 180, boulder: 120 };
@@ -124,11 +144,15 @@ export default function AdminOverview() {
   const [suggestedTab, setSuggestedTab] = useState<ClimbTypeTab>("routes");
   // undefined while loading, null if the API couldn't be reached.
   const [climbs, setClimbs] = useState<Climb[] | null>();
+  const [announcements, setAnnouncements] = useState<Announcement[] | null>();
 
   useEffect(() => {
     fetchClimbs()
       .then(setClimbs)
       .catch(() => setClimbs(null));
+    fetchAnnouncements()
+      .then(setAnnouncements)
+      .catch(() => setAnnouncements(null));
   }, []);
 
   // Combos aren't counted here - the dashboard covers routes and boulders.
@@ -136,7 +160,10 @@ export default function AdminOverview() {
   const activeRoutes = active.filter((climb) => climb.type === "route");
   const activeBoulders = active.filter((climb) => climb.type === "boulder");
   const lineRoutes = activeRoutes.filter((route) => route.line === line);
-  const messages = [...staleMessages([...activeRoutes, ...activeBoulders], now), ...ANNOUNCEMENT_MESSAGES];
+  // Urgent ones first.
+  const messages = [...cotwMessages(announcements, now), ...staleMessages([...activeRoutes, ...activeBoulders], now)].sort(
+    (a, b) => Number(b.severity === "high") - Number(a.severity === "high"),
+  );
   const loadingText =
     climbs === undefined ? "Loading climbs…" : climbs === null ? "Couldn't load climbs" : null;
 
@@ -169,6 +196,11 @@ export default function AdminOverview() {
                   {item.severity === "high" ? "Urgent" : "Heads up"}
                 </span>
                 {item.message}
+                {item.action && (
+                  <Link href={item.action.href} className="font-semibold underline hover:no-underline">
+                    {item.action.label}
+                  </Link>
+                )}
               </li>
             ))}
           </ul>

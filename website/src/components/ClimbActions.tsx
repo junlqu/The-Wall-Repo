@@ -201,8 +201,9 @@ export function Dialog({ title, children, ...props }: ModalProps) {
 
 // A full-height panel on the right, or the whole screen below `md` - the same
 // point the header switches to its hamburger menu. Children fill the space
-// under the title bar, so they manage their own scrolling.
-function SidePanel({ title, busy = false, onClose, children }: ModalProps) {
+// under the title bar, so they manage their own scrolling. Shared with the
+// announcement actions.
+export function SidePanel({ title, busy = false, onClose, children }: ModalProps) {
   const titleId = useId();
   return (
     <Modal
