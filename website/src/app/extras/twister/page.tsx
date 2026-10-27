@@ -1,9 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import InfoTip from "@/components/InfoTip";
+import { type Climb, fetchClimbs, LINES, swatchFor } from "@/lib/climbs";
+import { NEW_GRADE, ROUTE_GRADES } from "@/lib/grades";
 
-const LINES = [1, 2, 3, 4, 5, 6] as const;
 type Line = (typeof LINES)[number];
 
 const LIMBS = [
@@ -21,63 +22,39 @@ const LIMB_SHORT_LABEL: Record<LimbKey, string> = {
   rightLeg: "R Leg",
 };
 
-// Placeholder colours - the user will swap these per line once real database
-// has been setup and completed
-const _COLOURS = {
-  red: ["#E63946", "#E63946"], // red
-  orange: ["#F4A300", "#F4A300"], // orange
-  yellow: ["#F1C40F", "#F1C40F"], // yellow
-  green: ["#2ECC71", "#2ECC71"], // green
-  blue: ["#2D6CDF", "#2D6CDF"], // blue
-  seafoam: ["#14B8A6", "#14B8A6"], // teal
-  pink: ["#EC4899", "#EC4899"], // pink
-  purple: ["#9B59B6", "#9B59B6"], // purple
-  black: ["#1C1C1C", "#1C1C1C"], // black
-  white: ["#E7E7E7", "#AFAFAF"], // white
-  gray: ["#666666", "#666666"], // gray
-  brown: ["#8B5E3C", "#8B5E3C"], // brown
-};
-const LINE_COLOURS: Record<Line, { name: string; hex: string[] }[]> = {
-  1: [
-    { name: "Red", hex: _COLOURS["red"] },
-    { name: "Pink", hex: _COLOURS["pink"] },
-    { name: "Blue", hex: _COLOURS["blue"] },
-    { name: "Orange", hex: _COLOURS["orange"] },
-  ],
-  2: [
-    { name: "Green", hex: _COLOURS["green"] },
-    { name: "Gray", hex: _COLOURS["gray"] },
-    { name: "Orange", hex: _COLOURS["orange"] },
-    { name: "White", hex: _COLOURS["white"] },
-  ],
-  3: [
-    { name: "Yellow", hex: _COLOURS["yellow"] },
-    { name: "Pink", hex: _COLOURS["pink"] },
-    { name: "Blue", hex: _COLOURS["blue"] },
-    { name: "Red", hex: _COLOURS["red"] },
-    { name: "Purple", hex: _COLOURS["purple"] },
-  ],
-  4: [
-    { name: "Purple", hex: _COLOURS["purple"] },
-    { name: "Brown", hex: _COLOURS["brown"] },
-    { name: "Seafoam", hex: _COLOURS["seafoam"] },
-    { name: "Black", hex: _COLOURS["black"] },
-    { name: "Red", hex: _COLOURS["red"] },
-  ],
-  5: [
-    { name: "Black", hex: _COLOURS["black"] },
-    { name: "Yellow", hex: _COLOURS["yellow"] },
-    { name: "Purple", hex: _COLOURS["purple"] },
-    { name: "Green", hex: _COLOURS["green"] },
-  ],
-  6: [
-    { name: "Orange", hex: _COLOURS["orange"] },
-    { name: "Blue", hex: _COLOURS["blue"] },
-    { name: "Green", hex: _COLOURS["green"] },
-    { name: "Yellow", hex: _COLOURS["yellow"] },
-    { name: "Pink", hex: _COLOURS["pink"] },
-  ],
-};
+// One colour on the wheel. `text` is for writing the colour's name on the
+// light page, so the palest colours get a darker shade there.
+type WheelColour = { name: string; fill: string; text: string };
+
+const TEXT_SHADES: Record<string, string> = { White: "#AFAFAF", Clear: "#9CA3AF" };
+// A wheel slice is a solid band of the conic gradient, so Multi-Colour is
+// drawn as a few thin stripes instead of its usual gradient swatch.
+const MULTI_COLOUR = "Multi-Colour";
+const MULTI_COLOUR_STRIPES = ["#ef4444", "#eab308", "#22c55e", "#3b82f6", "#a855f7"];
+
+// New first, then up the scale, then grades that aren't on it.
+function routeOrder(a: Climb, b: Climb) {
+  const rank = (grade: string) => {
+    if (grade === NEW_GRADE) return -1;
+    const index = ROUTE_GRADES.indexOf(grade);
+    return index === -1 ? ROUTE_GRADES.length : index;
+  };
+  return rank(a.grade) - rank(b.grade);
+}
+
+// The colours of the routes up on a line, easiest first, each colour once.
+// Combos are two colours, so they don't get a slice.
+function lineColours(climbs: Climb[], line: Line): WheelColour[] {
+  const routes = climbs
+    .filter((climb) => climb.status === "active" && climb.type === "route" && climb.line === line)
+    .sort(routeOrder);
+  const names = [...new Set(routes.map((route) => route.colour))];
+  return names.map((name) => ({
+    name,
+    fill: name === MULTI_COLOUR ? MULTI_COLOUR_STRIPES[0] : swatchFor(name),
+    text: TEXT_SHADES[name] ?? (name === MULTI_COLOUR ? "#6B7280" : swatchFor(name)),
+  }));
+}
 
 type RerollMode = "none" | "noReroll" | "noRerollPlus";
 
@@ -90,11 +67,11 @@ type LineHistory = {
 
 const EMPTY_HISTORY: LineHistory = { lastLimb: null, lastColourByLimb: {} };
 
-function buildSlices(limbs: readonly LimbKey[], colours: { name: string; hex: string[] }[]): Slice[] {
+function buildSlices(limbs: readonly LimbKey[], colours: WheelColour[]): Slice[] {
   const slices: Slice[] = [];
   for (const limb of limbs) {
     for (const colour of colours) {
-      slices.push({ limb, colourName: colour.name, colourHex: colour.hex[0] });
+      slices.push({ limb, colourName: colour.name, colourHex: colour.fill });
     }
   }
   return slices;
@@ -152,9 +129,26 @@ export default function TwisterPage() {
   const [rotation, setRotation] = useState(0);
   const [showLockedPopup, setShowLockedPopup] = useState(false);
   const [skipAnimation, setSkipAnimation] = useState(false);
+  // The wall's climbs - undefined while loading, null if they couldn't be loaded.
+  const [climbs, setClimbs] = useState<Climb[] | null>();
 
-  const colours = LINE_COLOURS[selectedLine];
+  useEffect(() => {
+    fetchClimbs()
+      .then(setClimbs)
+      .catch(() => setClimbs(null));
+  }, []);
+
+  const colours = useMemo(() => lineColours(climbs ?? [], selectedLine), [climbs, selectedLine]);
   const currentHistory = history[selectedLine];
+  // Why there's no wheel to play yet, if there isn't.
+  const unavailable =
+    climbs === undefined
+      ? "Loading routes…"
+      : climbs === null
+        ? "Couldn't load the routes"
+        : colours.length === 0
+          ? `No routes up on line ${selectedLine}`
+          : null;
 
   // The wheel always shows the full, unfiltered slice set - reroll rules
   // only affect which slice gets picked (see pickValidSlice), not what's
@@ -162,8 +156,15 @@ export default function TwisterPage() {
   const wheelSlices = useMemo(() => buildSlices(LIMBS.map((l) => l.key), colours), [colours]);
 
   const wheelBackground = useMemo(() => {
+    if (wheelSlices.length === 0) return "#d4d4d4";
     const step = 360 / wheelSlices.length;
-    const stops = wheelSlices.map((slice, i) => `${slice.colourHex} ${i * step}deg ${(i + 1) * step}deg`);
+    const stops = wheelSlices.flatMap((slice, i) => {
+      if (slice.colourName !== MULTI_COLOUR) return [`${slice.colourHex} ${i * step}deg ${(i + 1) * step}deg`];
+      const stripe = step / MULTI_COLOUR_STRIPES.length;
+      return MULTI_COLOUR_STRIPES.map(
+        (hex, j) => `${hex} ${i * step + j * stripe}deg ${i * step + (j + 1) * stripe}deg`,
+      );
+    });
     return `conic-gradient(${stops.join(", ")})`;
   }, [wheelSlices]);
 
@@ -258,13 +259,16 @@ export default function TwisterPage() {
           <div className="grid grid-cols-2 gap-x-8 gap-y-2">
             {LIMBS.map((limb) => {
               const colourName = currentHistory.lastColourByLimb[limb.key];
-              const colourHex = colourName ? colours.find((c) => c.name === colourName)?.hex : undefined;
+              const colour = colourName ? colours.find((c) => c.name === colourName) : undefined;
               return (
                 <div key={limb.key} className="flex items-center gap-2">
                   <span className="font-medium text-neutral-500">{limb.label}:</span>
-                  <span className="flex items-center gap-1.5 font-semibold" style={{ color: colourHex?.[1] }}>
-                    {colourHex && (
-                      <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ backgroundColor: colourHex?.[0] }} />
+                  <span className="flex items-center gap-1.5 font-semibold" style={{ color: colour?.text }}>
+                    {colour && (
+                      <span
+                        className="inline-block h-2.5 w-2.5 rounded-full ring-1 ring-black/10"
+                        style={{ background: swatchFor(colour.name) }}
+                      />
                     )}
                     {colourName ?? "—"}
                   </span>
@@ -278,7 +282,7 @@ export default function TwisterPage() {
                 className="font-semibold"
                 style={{
                   color: colours.find((c) => c.name === currentHistory.lastColourByLimb[currentHistory.lastLimb!])
-                    ?.hex?.[1],
+                    ?.text,
                 }}
               >
                 {LIMBS.find((l) => l.key === currentHistory.lastLimb)!.label} —{" "}
@@ -293,45 +297,54 @@ export default function TwisterPage() {
         <div className="relative flex h-72 w-72 items-center justify-center sm:h-80 sm:w-80">
           <div className="absolute -top-2 left-1/2 z-10 h-4 w-4 -translate-x-1/2 rotate-45 border-b-2 border-r-2 border-neutral-800 bg-neutral-800" />
 
-          <button
-            type="button"
-            onClick={handleWheelClick}
-            disabled={!gameActive || spinning}
-            aria-label="Roll the wheel"
-            className="relative h-full w-full rounded-full border-4 border-neutral-800 shadow-xl disabled:cursor-default"
-            style={{
-              background: wheelBackground,
-              transform: `rotate(${rotation}deg)`,
-              transition: spinning ? `transform ${SPIN_DURATION_MS}ms cubic-bezier(0.17, 0.67, 0.2, 1)` : "none",
-              cursor: gameActive && !spinning ? "pointer" : undefined,
-            }}
-          >
-            {wheelSlices.map((slice, i) => {
-              const step = 360 / wheelSlices.length;
-              const mid = i * step + step / 2;
-              return (
-                <div
-                  key={`${slice.limb}-${slice.colourName}-${i}`}
-                  className="pointer-events-none absolute inset-0 flex justify-center"
-                  style={{ transform: `rotate(${mid}deg)` }}
-                >
-                  <span className="mt-4 whitespace-nowrap text-[11px] font-bold text-white drop-shadow-[0_1px_1px_rgba(0,0,0,0.6)]">
-                    {LIMB_SHORT_LABEL[slice.limb]}
-                  </span>
-                </div>
-              );
-            })}
-          </button>
+          {/* Clips the spinning wheel to its circle - turned part-way, its square
+              box and the label layers' corners would otherwise poke past the
+              edge of a phone screen and make the page scroll sideways. */}
+          <div className="absolute inset-0 overflow-hidden rounded-full shadow-xl">
+            <button
+              type="button"
+              onClick={handleWheelClick}
+              disabled={!gameActive || spinning}
+              aria-label="Roll the wheel"
+              className="relative h-full w-full rounded-full border-4 border-neutral-800 disabled:cursor-default"
+              style={{
+                background: wheelBackground,
+                transform: `rotate(${rotation}deg)`,
+                transition: spinning ? `transform ${SPIN_DURATION_MS}ms cubic-bezier(0.17, 0.67, 0.2, 1)` : "none",
+                cursor: gameActive && !spinning ? "pointer" : undefined,
+              }}
+            >
+              {wheelSlices.map((slice, i) => {
+                const step = 360 / wheelSlices.length;
+                const mid = i * step + step / 2;
+                return (
+                  <div
+                    key={`${slice.limb}-${slice.colourName}-${i}`}
+                    className="pointer-events-none absolute inset-0 flex justify-center"
+                    style={{ transform: `rotate(${mid}deg)` }}
+                  >
+                    <span className="mt-4 whitespace-nowrap text-[11px] font-bold text-white drop-shadow-[0_1px_1px_rgba(0,0,0,0.6)]">
+                      {LIMB_SHORT_LABEL[slice.limb]}
+                    </span>
+                  </div>
+                );
+              })}
+            </button>
+          </div>
 
           {!gameActive && (
             <div className="absolute inset-0 z-20 flex items-center justify-center rounded-full bg-black/50">
-              <button
-                type="button"
-                onClick={handleStartGame}
-                className="rounded-full bg-secondary px-8 py-3 text-lg font-semibold text-primary shadow-md transition-colors hover:bg-secondary/80"
-              >
-                Start
-              </button>
+              {unavailable ? (
+                <p className="max-w-[12rem] text-center text-sm font-semibold text-white">{unavailable}</p>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleStartGame}
+                  className="rounded-full bg-secondary px-8 py-3 text-lg font-semibold text-primary shadow-md transition-colors hover:bg-secondary/80"
+                >
+                  Start
+                </button>
+              )}
             </div>
           )}
 
@@ -401,7 +414,7 @@ export default function TwisterPage() {
                 >
                   4 limb start
                 </button>
-                <InfoTip text="Randomly selects the starting colours" />
+                <InfoTip text="Randomly selects the starting colours" align="end" />
               </div>
 
               <div className="flex items-center gap-2">
@@ -416,7 +429,7 @@ export default function TwisterPage() {
                 >
                   No rerolls
                 </button>
-                <InfoTip text="Cannot reroll the same limb/colour combo" />
+                <InfoTip text="Cannot reroll the same limb/colour combo" align="end" />
               </div>
 
               <div className="flex items-center gap-2">
@@ -431,7 +444,7 @@ export default function TwisterPage() {
                 >
                   No rerolls +
                 </button>
-                <InfoTip text="Cannot reroll the same limb" />
+                <InfoTip text="Cannot reroll the same limb" align="end" />
               </div>
             </div>
           </div>
