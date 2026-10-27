@@ -14,7 +14,10 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "The Wall",
+  title: {
+    default: "The Wall Archives",
+    template: "%s | The Wall Archives",
+  },
   description: "The TPASC climbing wall - schedule, routes, and updates.",
 };
 
