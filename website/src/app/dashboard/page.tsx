@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import AccessNotice from "@/components/AccessNotice";
+import { withReturnTo } from "@/lib/returnTo";
 import { USER_LEVEL, useSessionUser } from "@/lib/session";
 
 type DashboardUpdate = {
@@ -137,7 +138,7 @@ export default function DashboardPage() {
         title="Your dashboard"
         message="Log in to see updates, your climbing stats, and your recent comments."
         actionLabel="Log in"
-        actionHref="/login"
+        actionHref={withReturnTo("/login", "/dashboard")}
       />
     );
   }
