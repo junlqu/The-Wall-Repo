@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import type { ComponentType } from "react";
+import AdminAddAnnouncement from "@/components/AdminAddAnnouncement";
 import AdminAddClimb from "@/components/AdminAddClimb";
+import { AdminActiveAnnouncements, AdminArchivedAnnouncements } from "@/components/AdminAnnouncements";
 import { AdminAttendanceWeeks } from "@/components/AdminAttendance";
 import AdminAttendanceForm from "@/components/AdminAttendanceForm";
 import AdminClimbExport from "@/components/AdminClimbExport";
@@ -13,6 +15,9 @@ import { ADMIN_SECTIONS, getAdminSection } from "@/lib/adminSections";
 // Subpages whose tool is built, by "section/subpage". The rest show
 // AdminSectionView's empty panel.
 const TOOLS: Record<string, ComponentType> = {
+  "announcements/new": AdminAddAnnouncement,
+  "announcements/active": AdminActiveAnnouncements,
+  "announcements/archived": AdminArchivedAnnouncements,
   "climbs/new": AdminAddClimb,
   "climbs/active": AdminActiveClimbs,
   "climbs/archived": AdminPastClimbs,

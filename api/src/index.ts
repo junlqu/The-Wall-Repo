@@ -1,3 +1,5 @@
+import "./functions/announcementItem";
+import "./functions/announcements";
 import "./functions/attendance";
 import "./functions/authLogin";
 import "./functions/authLogout";

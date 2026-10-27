@@ -1,6 +1,6 @@
 // Climb data shared by the admin climbs table and the climb import.
 
-import { apiUrl } from "@/lib/api";
+import { adminRequest, apiUrl } from "@/lib/api";
 
 export const CLIMB_TYPES = { route: "Route", boulder: "Boulder", combo: "Combo" } as const;
 export type ClimbType = keyof typeof CLIMB_TYPES;
@@ -76,21 +76,6 @@ export type ClimbDetails = Pick<
   Climb,
   "type" | "colour" | "secondary" | "tape" | "line" | "grade" | "setter" | "setAt" | "leadable"
 >;
-
-// Admin-only requests that change climbs. Errors carry the API's message,
-// which is written for the admin to read.
-async function adminRequest(path: string, init: RequestInit) {
-  const res = await fetch(apiUrl(path), {
-    ...init,
-    credentials: "include",
-    headers: { "Content-Type": "application/json" },
-  }).catch(() => {
-    throw new Error("Couldn't reach the server. Check your connection and try again.");
-  });
-  const body = res.status === 204 ? null : await res.json().catch(() => null);
-  if (!res.ok) throw new Error(body?.error ?? "Something went wrong. Try again.");
-  return body;
-}
 
 function climbRequest(id: string, path: string, init: RequestInit) {
   return adminRequest(`/routes/${encodeURIComponent(id)}${path}`, init);
