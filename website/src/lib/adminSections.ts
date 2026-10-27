@@ -59,10 +59,11 @@ export const ADMIN_SECTIONS: AdminSection[] = [
   {
     slug: "attendance",
     title: "Attendance",
-    description: "Daily attendance, with weekly and monthly metrics.",
+    description: "Hourly drop-in tallies, entered weekly, with weekly, monthly and yearly metrics.",
     subpages: [
       { slug: "all", label: "See all attendance" },
       { slug: "new", label: "Fill in attendance" },
+      { slug: "import", label: "Import attendance" },
     ],
   },
   {

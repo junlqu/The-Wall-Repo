@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
+import AdminAttendance from "@/components/AdminAttendance";
 import AdminClimbs from "@/components/AdminClimbs";
 import AdminSectionView from "@/components/AdminSectionView";
 import { ADMIN_SECTIONS, getAdminSection } from "@/lib/adminSections";
@@ -20,9 +21,12 @@ export default async function AdminSectionPage({ params }: PageProps<"/admin/[se
   const section = getAdminSection((await params).section);
   if (!section) notFound();
 
-  return (
-    <AdminSectionView section={section}>
-      {section.slug === "climbs" ? <AdminClimbs section={section} /> : undefined}
-    </AdminSectionView>
-  );
+  // Sections with a page of their own; the rest list their subpages.
+  const body =
+    section.slug === "climbs" ? (
+      <AdminClimbs section={section} />
+    ) : section.slug === "attendance" ? (
+      <AdminAttendance section={section} />
+    ) : undefined;
+  return <AdminSectionView section={section}>{body}</AdminSectionView>;
 }

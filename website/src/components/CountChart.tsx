@@ -1,7 +1,7 @@
 // Single-series column chart: one bar per category, including categories with
 // nothing in them so gaps are visible. The tallest bar is labelled on its cap
 // and every bar shows its count on hover/focus; a screen-reader table carries
-// the same numbers.
+// the same numbers. Bars grow or shrink into place when the counts change.
 export default function CountChart({
   counts,
   noun,
@@ -9,6 +9,8 @@ export default function CountChart({
   categoryHeader,
   emptyText,
   barClassName = "min-w-9",
+  formatCount = String,
+  countHeader = "Count",
 }: {
   counts: { label: string; count: number }[];
   // "3 routes" - used in each bar's accessible name.
@@ -18,6 +20,9 @@ export default function CountChart({
   emptyText: string;
   // Each bar's minimum width - wider for long labels like names.
   barClassName?: string;
+  // How a count is written on its bar and in the table - "$120", "4.5".
+  formatCount?: (count: number) => string;
+  countHeader?: string;
 }) {
   const max = Math.max(0, ...counts.map((entry) => entry.count));
 
@@ -39,17 +44,17 @@ export default function CountChart({
                 className={`group relative flex flex-1 items-end justify-center outline-none ${barClassName}`}
               >
                 <div
-                  className="w-6 rounded-t bg-primary transition-colors group-hover:bg-secondary group-focus-visible:bg-secondary"
+                  className="w-6 rounded-t bg-primary transition-[background-color,height] duration-300 group-hover:bg-secondary group-focus-visible:bg-secondary"
                   style={{ height }}
                 />
                 <span
                   aria-hidden="true"
                   style={{ bottom: `calc(${height} + 4px)` }}
-                  className={`pointer-events-none absolute whitespace-nowrap text-xs font-semibold text-neutral-700 ${
+                  className={`pointer-events-none absolute whitespace-nowrap text-xs font-semibold text-neutral-700 transition-[bottom] duration-300 ${
                     count === max ? "" : "opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100"
                   }`}
                 >
-                  {count}
+                  {formatCount(count)}
                 </span>
               </div>
             );
@@ -69,14 +74,14 @@ export default function CountChart({
         <thead>
           <tr>
             <th scope="col">{categoryHeader}</th>
-            <th scope="col">Count</th>
+            <th scope="col">{countHeader}</th>
           </tr>
         </thead>
         <tbody>
           {counts.map(({ label, count }) => (
             <tr key={label}>
               <td>{label}</td>
-              <td>{count}</td>
+              <td>{formatCount(count)}</td>
             </tr>
           ))}
         </tbody>

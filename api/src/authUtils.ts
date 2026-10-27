@@ -75,14 +75,18 @@ export function readSessionUser(request: HttpRequest): SessionUser | null {
 }
 
 // The 401/403 to send back when the request isn't from a logged-in admin, or
-// null when it is.
-export function rejectUnlessAdmin(request: HttpRequest, headers: Record<string, string>): HttpResponseInit | null {
+// null when it is. `forbidden` is the 403's message, naming what was refused.
+export function rejectUnlessAdmin(
+  request: HttpRequest,
+  headers: Record<string, string>,
+  forbidden = "Only admins can change climbs.",
+): HttpResponseInit | null {
   const session = readSessionUser(request);
   if (!session) {
     return { status: 401, headers, jsonBody: { error: "You need to be logged in." } };
   }
   if (session.level !== USER_LEVEL.admin) {
-    return { status: 403, headers, jsonBody: { error: "Only admins can change climbs." } };
+    return { status: 403, headers, jsonBody: { error: forbidden } };
   }
   return null;
 }

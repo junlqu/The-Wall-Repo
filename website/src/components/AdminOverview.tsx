@@ -19,7 +19,8 @@ const ANNOUNCEMENT_MESSAGES: DashboardMessage[] = [
   { id: "cotw", message: "CotW announcement not made yet for upcoming Friday.", severity: "medium" },
 ];
 
-const STALE_AFTER_DAYS = 180;
+// How long a climb can stay up before the dashboard reminds admins to reset it.
+const STALE_AFTER_DAYS: Partial<Record<Climb["type"], number>> = { route: 180, boulder: 120 };
 const SUGGESTED_ROUTE_COUNT = 5;
 const SUGGESTED_BOULDER_COUNT = 3;
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
@@ -54,13 +55,20 @@ function climbLabel(climb: Climb) {
   return `${climb.colour}${tape} ${climb.grade}`;
 }
 
-// One alert per route or boulder that's been up too long, oldest first.
+// One reminder per route or boulder that's been up past its limit, oldest first.
 function staleMessages(climbs: Climb[], now: Date): DashboardMessage[] {
   return longestStanding(climbs, climbs.length).flatMap((climb) => {
+    const limit = STALE_AFTER_DAYS[climb.type];
     const days = daysUp(climb.setAt, now);
-    if (days === null || days <= STALE_AFTER_DAYS) return [];
+    if (limit === undefined || days === null || days <= limit) return [];
     const where = climb.line === undefined ? "" : ` on line ${climb.line}`;
-    return [{ id: climb.id, message: `${climbLabel(climb)}${where} has been up for ${days} days.`, severity: "medium" }];
+    return [
+      {
+        id: climb.id,
+        message: `${climbLabel(climb)}${where} has been up for ${days} days - past the ${limit}-day ${climb.type} limit.`,
+        severity: "medium",
+      },
+    ];
   });
 }
 
