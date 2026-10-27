@@ -1,3 +1,4 @@
+import "./functions/attendance";
 import "./functions/authLogin";
 import "./functions/authLogout";
 import "./functions/authMe";

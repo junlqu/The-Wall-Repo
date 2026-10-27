@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import type { ComponentType } from "react";
 import AdminAddClimb from "@/components/AdminAddClimb";
+import { AdminAttendanceWeeks } from "@/components/AdminAttendance";
+import AdminAttendanceForm from "@/components/AdminAttendanceForm";
 import AdminClimbExport from "@/components/AdminClimbExport";
 import AdminClimbImport from "@/components/AdminClimbImport";
 import { AdminActiveClimbs, AdminPastClimbs } from "@/components/AdminClimbs";
@@ -16,6 +18,8 @@ const TOOLS: Record<string, ComponentType> = {
   "climbs/archived": AdminPastClimbs,
   "climbs/import": AdminClimbImport,
   "climbs/export": AdminClimbExport,
+  "attendance/all": AdminAttendanceWeeks,
+  "attendance/new": AdminAttendanceForm,
 };
 
 // Static export - every subpage is known up front, anything else is a 404.

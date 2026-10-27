@@ -32,14 +32,15 @@ import { BOULDER_GRADES, NEW_GRADE } from "@/lib/grades";
 // the screen instead of off the edge.
 const MENU_HEIGHT_PX = 140;
 
-const DANGER_BUTTON_CLASS =
+export const DANGER_BUTTON_CLASS =
   "inline-flex items-center justify-center rounded-full bg-red-600 px-5 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50";
 
 type MenuItem = { label: string; onSelect: () => void; danger?: boolean };
 
-// The "..." button and its dropdown. The dropdown is fixed to the viewport so
-// the table's scroll container can't clip it.
-function ActionsMenu({ label, items }: { label: string; items: MenuItem[] }) {
+// The "..." button and its dropdown, shared with the attendance weeks list.
+// The dropdown is fixed to the viewport so the table's scroll container can't
+// clip it.
+export function ActionsMenu({ label, items }: { label: string; items: MenuItem[] }) {
   const [position, setPosition] = useState<{ top?: number; bottom?: number; right: number } | null>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -180,7 +181,7 @@ function Modal({
 }
 
 // A small box in the middle of the screen, for confirmations.
-function Dialog({ title, children, ...props }: ModalProps) {
+export function Dialog({ title, children, ...props }: ModalProps) {
   const titleId = useId();
   return (
     <Modal
