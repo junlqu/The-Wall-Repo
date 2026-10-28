@@ -239,12 +239,12 @@ export default function ClimbsPage() {
         ) : (
           <>
             <section className="flex flex-col gap-6">
-              <SectionRule title="Routes" />
+              <SectionRule title="Routes" href="/climbs/routes" />
               <LineGrid climbs={arranged.routes} noun="route" />
             </section>
 
             <section className="flex flex-col gap-6">
-              <SectionRule title="Boulders" />
+              <SectionRule title="Boulders" href="/climbs/boulders" />
               <div className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm sm:p-6">
                 {arranged.boulders.length > 0 ? (
                   <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
@@ -259,7 +259,7 @@ export default function ClimbsPage() {
             </section>
 
             <section className="flex flex-col gap-6">
-              <SectionRule title="Combos" />
+              <SectionRule title="Combos" href="/climbs/combos" />
               <LineGrid climbs={arranged.combos} noun="combo" />
             </section>
           </>

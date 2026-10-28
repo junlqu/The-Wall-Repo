@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { ReactNode } from "react";
 
 // The newspaper look shared by the public updates and schedule pages.
@@ -20,10 +21,22 @@ export function Kicker({ children, className }: { children: ReactNode; className
   return <span className={`text-xs font-bold uppercase tracking-[0.2em] ${className}`}>{children}</span>;
 }
 
-export function SectionRule({ title }: { title: string }) {
+// With `href`, the title links to a page with more of the section.
+export function SectionRule({ title, href }: { title: string; href?: string }) {
   return (
     <div className="flex items-center gap-4">
-      <h2 className="shrink-0 font-serif text-2xl font-bold text-primary">{title}</h2>
+      <h2 className="shrink-0 font-serif text-2xl font-bold text-primary">
+        {href ? (
+          <Link href={href} className="group inline-flex items-center gap-2 hover:text-secondary">
+            {title}
+            <span aria-hidden="true" className="text-lg transition-transform group-hover:translate-x-1">
+              →
+            </span>
+          </Link>
+        ) : (
+          title
+        )}
+      </h2>
       <span aria-hidden="true" className="h-px flex-1 bg-neutral-300" />
     </div>
   );
