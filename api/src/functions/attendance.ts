@@ -12,7 +12,7 @@ import {
 } from "../models/Attendance";
 import { isDate } from "../routeFields";
 
-const FORBIDDEN = "Only admins can see and change attendance.";
+const FORBIDDEN = "Only staff and admins can see and change attendance.";
 // Ten years of weeks in one import, and still a bound on one request.
 const MAX_WEEKS = 520;
 // Far more than fit on the wall in an hour - anything bigger is a typo.

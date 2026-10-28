@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { CLIMBS_LINKS, EXTRAS_LINKS, type NavLink } from "@/lib/navLinks";
-import { USER_LEVEL, useSessionUser } from "@/lib/session";
+import { canUseAdminTools, useSessionUser } from "@/lib/session";
 import logo from "@/static/logo.svg";
 
 function FooterColumn({ title, links }: { title: string; links: NavLink[] }) {
@@ -24,7 +24,7 @@ function FooterColumn({ title, links }: { title: string; links: NavLink[] }) {
 
 export default function Footer() {
   const user = useSessionUser();
-  const isAdmin = user?.level === USER_LEVEL.admin;
+  const isAdmin = canUseAdminTools(user);
 
   // Mirrors the header's top-level tabs, including the login-dependent ones.
   const siteLinks: NavLink[] = [

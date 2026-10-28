@@ -94,7 +94,8 @@ export async function authRegister(request: HttpRequest, context: InvocationCont
       passwordHash: await hashPassword(body.password),
       createdAt,
       avatarUpdatedAt: createdAt,
-      level: USER_LEVEL.default,
+      level: USER_LEVEL.member,
+      settings: {},
     };
 
     await container.items.create(user);

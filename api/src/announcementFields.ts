@@ -22,7 +22,7 @@ const MAX_BODY_LENGTH = 4000;
 // More than a full reset of the wall.
 const MAX_CLIMBS = 100;
 
-export const FORBIDDEN = "Only admins can change announcements.";
+export const FORBIDDEN = "Only staff and admins can change announcements.";
 
 const FRIDAY = 5;
 

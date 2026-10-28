@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { avatarUrl } from "@/lib/avatar";
 import { ACCOUNT_LINKS, CLIMBS_LINKS, EXTRAS_LINKS } from "@/lib/navLinks";
-import { USER_LEVEL, logout, useSessionUser } from "@/lib/session";
+import { canUseAdminTools, logout, useSessionUser } from "@/lib/session";
 import logo from "@/static/logo.svg";
 
 function ChevronIcon({ className = "" }: { className?: string }) {
@@ -42,7 +42,7 @@ export default function Header() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [climbsOpen, setClimbsOpen] = useState(false);
   const [extrasOpen, setExtrasOpen] = useState(false);
-  const isAdmin = user?.level === USER_LEVEL.admin;
+  const isAdmin = canUseAdminTools(user);
 
   const closeMenu = () => {
     setMenuOpen(false);

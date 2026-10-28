@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { Cookie, HttpRequest, HttpResponseInit } from "@azure/functions";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
-import { User, USER_LEVEL, UserLevel } from "./models/User";
+import { canUseAdminTools, User, UserLevel } from "./models/User";
 
 export type SessionUser = {
   userID: string;
@@ -74,18 +74,19 @@ export function readSessionUser(request: HttpRequest): SessionUser | null {
   }
 }
 
-// The 401/403 to send back when the request isn't from a logged-in admin, or
-// null when it is. `forbidden` is the 403's message, naming what was refused.
+// The 401/403 to send back when the request isn't from someone logged in who
+// can use the admin tools (staff and admins), or null when it is. `forbidden`
+// is the 403's message, naming what was refused.
 export function rejectUnlessAdmin(
   request: HttpRequest,
   headers: Record<string, string>,
-  forbidden = "Only admins can change climbs.",
+  forbidden = "Only staff and admins can change climbs.",
 ): HttpResponseInit | null {
   const session = readSessionUser(request);
   if (!session) {
     return { status: 401, headers, jsonBody: { error: "You need to be logged in." } };
   }
-  if (session.level !== USER_LEVEL.admin) {
+  if (!canUseAdminTools(session.level)) {
     return { status: 403, headers, jsonBody: { error: forbidden } };
   }
   return null;

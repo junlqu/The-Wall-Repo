@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import AccessNotice from "@/components/AccessNotice";
 import { withReturnTo } from "@/lib/returnTo";
-import { USER_LEVEL, useSessionUser } from "@/lib/session";
+import { canUseAdminTools, useSessionUser } from "@/lib/session";
 
 type DashboardUpdate = {
   id: string;
@@ -151,7 +151,7 @@ export default function DashboardPage() {
             <h1 className="text-3xl font-bold text-primary sm:text-4xl">Welcome back, {user.fname}</h1>
             <p className="mt-2 text-neutral-600">Here&apos;s what&apos;s new on the wall and how your climbing is going.</p>
           </div>
-          {user.level === USER_LEVEL.admin && (
+          {canUseAdminTools(user) && (
             <Link
               href="/admin"
               className="rounded-full border border-primary px-4 py-1.5 text-sm font-semibold text-primary transition-colors hover:bg-primary hover:text-white"
