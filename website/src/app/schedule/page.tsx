@@ -1,7 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
+import Carousel from "@/components/Carousel";
 import InfoTip from "@/components/InfoTip";
+import { Kicker, Masthead, SectionRule } from "@/components/Masthead";
+import { formatShortDate } from "@/lib/announcements";
+import { parseDate } from "@/lib/climbs";
 import { type BookingSlot, type DayHours, fetchBookingSlots, WEEKLY_HOURS } from "@/lib/schedule";
 
 const DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
@@ -77,7 +81,7 @@ const PRICE_GROUPS: { audience: string; items: PriceItem[] }[] = [
     items: [
       { label: "Drop-in", price: "$0", note: "You have your own gear (shoes + harness)", needsBelayTest: true },
       { label: "Drop-in + Gear", price: "$6", needsBelayTest: true },
-      { label: "Belay service (1 hour)", price: "$12" },
+      { label: "Belay service + Gear (1 hour)", price: "$12" },
       { label: "Learn-to-Climb", price: "$30" },
     ],
   },
@@ -98,13 +102,17 @@ const PRICE_GROUPS: { audience: string; items: PriceItem[] }[] = [
   },
 ];
 
-const CONTAINER_TABS = [
-  { id: "hours", label: "Our Hours" },
-  { id: "prices", label: "Prices" },
-] as const;
-
 function formatHours(hours: DayHours): string {
   return hours ? `${hours.open} – ${hours.close}` : "Closed";
+}
+
+// The next day after `weekday` that the wall is open, as a Monday-first index.
+function nextOpenDay(weekday: number) {
+  for (let ahead = 1; ahead <= 7; ahead++) {
+    const day = (weekday + ahead) % 7;
+    if (WEEKLY_HOURS[day]) return { day, ahead };
+  }
+  return null;
 }
 
 function getMonthGrid(year: number, month: number): (number | null)[] {
@@ -122,9 +130,8 @@ const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 // Online booking opens 48 hours ahead - today, tomorrow and the day after.
 const BOOKABLE_DAYS = 3;
 
-// The booking system's slots for the bookable days, fetched the first time
-// the calendar is opened. Unset until then.
-type SlotsState = Map<string, BookingSlot[]> | "loading" | "error" | undefined;
+// The booking system's slots for the bookable days, fetched when the page loads.
+type SlotsState = Map<string, BookingSlot[]> | "loading" | "error";
 
 function pad(part: number) {
   return String(part).padStart(2, "0");
@@ -177,8 +184,8 @@ function availabilityClass(slot: BookingSlot) {
 
 function SlotSection({ title, slots }: { title: string; slots: BookingSlot[] }) {
   return (
-    <section>
-      <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-neutral-500">{title}</h3>
+    <section className="flex flex-col gap-1">
+      <Kicker className="text-neutral-500">{title}</Kicker>
       <ul className="flex flex-col">
         {slots.map((slot) => {
           const left = spotsLeft(slot);
@@ -203,8 +210,258 @@ function openDropIns(slots: BookingSlot[]) {
   return slots.filter((slot) => slot.kind === "dropin" && spotsLeft(slot) > 0).length;
 }
 
+function ClockIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 20 20" fill="currentColor" className="h-3.5 w-3.5">
+      <path
+        fillRule="evenodd"
+        d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16zm.75-13a.75.75 0 0 0-1.5 0v5c0 .2.08.39.22.53l3 3a.75.75 0 1 0 1.06-1.06l-2.78-2.78V5z"
+        clipRule="evenodd"
+      />
+    </svg>
+  );
+}
+
+function UpdateSlide({ update }: { update: ScheduleUpdate }) {
+  return (
+    <article className="flex h-full flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50 p-6 sm:p-8">
+      <div className="flex items-center justify-between gap-2">
+        <Kicker className="text-amber-700">Schedule update</Kicker>
+        <span className="text-xs font-semibold text-amber-800/70">{formatShortDate(parseDate(update.postedAt))}</span>
+      </div>
+      <p className="font-serif text-2xl leading-snug font-bold text-neutral-900 sm:text-3xl">{update.message}</p>
+    </article>
+  );
+}
+
+// The lesson times as chips - what today shows if the booking system can't
+// be reached.
+function LessonTimes({ weekday }: { weekday: number }) {
+  const lessonSlots = getLessonSlots(weekday);
+  if (!lessonSlots) return <p className="text-sm text-neutral-600">No lessons today - drop-ins only.</p>;
+  return (
+    <div className="flex flex-col gap-2">
+      <p className="text-sm text-neutral-600">Learn-to-Climb lessons today:</p>
+      <div className="flex flex-wrap gap-2">
+        {lessonSlots.map((slot) => (
+          <span
+            key={slot.open}
+            className="inline-flex w-fit items-center gap-1.5 rounded-full bg-secondary/15 px-2.5 py-1 text-xs font-semibold text-primary"
+          >
+            <ClockIcon />
+            {`${slot.open} – ${slot.close}`}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Today's sessions and how many online spots each has left.
+function TodaySlots({ weekday, slots }: { weekday: number; slots: BookingSlot[] }) {
+  if (slots.length === 0) {
+    return <p className="text-sm text-neutral-600">No sessions left to book online today.</p>;
+  }
+  // Anything that isn't a lesson is booked like a drop-in.
+  const dropIns = slots.filter((slot) => slot.kind !== "lesson");
+  const lessons = slots.filter((slot) => slot.kind === "lesson");
+  return (
+    <div className="flex flex-col gap-3 border-t border-neutral-100 pt-4">
+      {dropIns.length > 0 && <SlotSection title="Drop-ins" slots={dropIns} />}
+      {lessons.length > 0 ? (
+        <SlotSection title="Lessons" slots={lessons} />
+      ) : (
+        getLessonSlots(weekday) === null && <p className="text-xs text-neutral-500">No lessons today.</p>
+      )}
+      <p className="text-[11px] text-neutral-400">Spots shown are for online booking.</p>
+    </div>
+  );
+}
+
+// Today's hours and sessions up front - or when the wall opens next.
+function TodayCard({ weekday, today, slots }: { weekday: number; today: Date; slots: SlotsState }) {
+  const hours = WEEKLY_HOURS[weekday];
+  const next = hours ? null : nextOpenDay(weekday);
+
+  return (
+    <article className="relative flex h-full flex-col gap-4 overflow-hidden rounded-xl border border-neutral-200 bg-white p-6 shadow-sm sm:p-8">
+      <div aria-hidden="true" className="absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r from-primary via-secondary to-primary" />
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <Kicker className="text-secondary">Today at the wall</Kicker>
+        <span className="text-sm font-semibold text-neutral-500">{DAY_NAMES[weekday]}</span>
+      </div>
+
+      {hours ? (
+        <>
+          <h2 className="font-serif text-3xl leading-tight font-bold text-primary sm:text-4xl">
+            Drop-ins run {formatHours(hours)}
+          </h2>
+          {slots === "loading" ? (
+            <div className="flex flex-col gap-2 border-t border-neutral-100 pt-4" aria-label="Checking available slots">
+              <div className="h-4 w-1/3 animate-pulse rounded bg-neutral-200/70" />
+              <div className="h-4 w-full animate-pulse rounded bg-neutral-200/70" />
+              <div className="h-4 w-full animate-pulse rounded bg-neutral-200/70" />
+            </div>
+          ) : slots === "error" ? (
+            <>
+              <LessonTimes weekday={weekday} />
+              <p className="text-xs text-neutral-500">Couldn&apos;t load available slots right now.</p>
+            </>
+          ) : (
+            <TodaySlots weekday={weekday} slots={slots.get(dateKey(today)) ?? []} />
+          )}
+        </>
+      ) : (
+        <>
+          <h2 className="font-serif text-3xl leading-tight font-bold text-primary sm:text-4xl">Closed today</h2>
+          {next && (
+            <p className="text-sm text-neutral-600">
+              Open again {next.ahead === 1 ? "tomorrow" : DAY_NAMES[next.day]},{" "}
+              <span className="font-semibold text-neutral-800">{formatHours(WEEKLY_HOURS[next.day])}</span>.
+            </p>
+          )}
+        </>
+      )}
+    </article>
+  );
+}
+
+function Step({
+  number,
+  title,
+  children,
+  notes = [],
+  action,
+}: {
+  number: number;
+  title: string;
+  children: ReactNode;
+  notes?: string[];
+  action?: ReactNode;
+}) {
+  return (
+    <li className="flex gap-4 py-5 first:pt-0 last:pb-0">
+      <span
+        aria-hidden="true"
+        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary font-serif text-lg font-bold text-white"
+      >
+        {number}
+      </span>
+      <div className="flex min-w-0 flex-col items-start gap-2">
+        <h3 className="text-lg font-bold text-neutral-900">{title}</h3>
+        <p className="text-sm text-neutral-600">{children}</p>
+        {action}
+        {notes.map((note) => (
+          <p key={note} className="text-xs text-neutral-500">
+            {note}
+          </p>
+        ))}
+      </div>
+    </li>
+  );
+}
+
+function BeforeYouClimb() {
+  return (
+    <article className="flex h-full flex-col gap-5 rounded-xl border border-neutral-200 bg-white p-6 shadow-sm sm:p-8">
+      <Kicker className="text-neutral-500">Before you climb</Kicker>
+      <ol className="flex flex-col divide-y divide-neutral-100">
+        <Step
+          number={1}
+          title="Book your spot"
+          notes={["UTSC students must book a Learn-to-Climb lesson before becoming eligible for regular drop-ins."]}
+          action={
+            <a
+              href={BOOKING_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="group inline-flex items-center gap-2 rounded-full bg-secondary px-5 py-2 text-sm font-semibold text-primary shadow-sm transition-colors hover:bg-secondary/80"
+            >
+              Book online
+              <span aria-hidden="true" className="transition-transform group-hover:translate-x-1">
+                →
+              </span>
+            </a>
+          }
+        >
+          Reserve your spot through our online booking system.
+        </Step>
+        <Step
+          number={2}
+          title="Sign the waiver"
+          notes={["Climbers under the age of 18 must have a parent or guardian sign the waiver for them."]}
+          action={
+            <a
+              href={WAIVER_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="group inline-flex items-center gap-2 rounded-full border border-primary px-5 py-2 text-sm font-semibold text-primary shadow-sm transition-colors hover:bg-primary hover:text-white"
+            >
+              Sign waiver
+              <span aria-hidden="true" className="transition-transform group-hover:translate-x-1">
+                →
+              </span>
+            </a>
+          }
+        >
+          Every climber must sign our waiver before climbing.
+        </Step>
+        <Step
+          number={3}
+          title="Pay at the front desk"
+          notes={["Show up at least 5 minutes early to get geared up."]}
+        >
+          Pay at the front desk, then bring the receipt down to show staff at the wall.
+        </Step>
+      </ol>
+    </article>
+  );
+}
+
+function PriceCard({ audience, items }: { audience: string; items: PriceItem[] }) {
+  return (
+    <article className="flex flex-col gap-3 rounded-xl border border-neutral-200 bg-white p-5 shadow-sm">
+      <h3 className="font-serif text-xl font-bold text-primary">{audience}</h3>
+      <div className="flex flex-col divide-y divide-neutral-100 border-t border-neutral-100">
+        {items.map((item) => (
+          <div key={item.label} className="flex flex-col gap-1 py-3 text-sm text-neutral-700">
+            <div className="flex items-start justify-between gap-4">
+              <span className="flex items-center gap-1.5">
+                {item.label}
+                {item.needsBelayTest && <InfoTip text={BELAY_TEST_NOTE} size={14} />}
+              </span>
+              {item.price && <span className="font-semibold text-primary tabular-nums">{item.price}</span>}
+            </div>
+            {item.note && <span className="text-xs text-neutral-500">{item.note}</span>}
+            {item.tiers?.map((tier) => (
+              <div key={tier.label} className="flex items-center justify-between pl-4 text-neutral-600">
+                <span>{tier.label}</span>
+                <span className="font-semibold text-primary tabular-nums">{tier.price}</span>
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+    </article>
+  );
+}
+
+function ViewToggle({ active, label, onClick }: { active: boolean; label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={`rounded-full px-3.5 py-1 text-sm font-semibold transition-colors ${
+        active ? "bg-primary text-white" : "text-neutral-600 hover:bg-neutral-100"
+      }`}
+    >
+      {label}
+    </button>
+  );
+}
+
 export default function SchedulePage() {
-  const [tab, setTab] = useState<(typeof CONTAINER_TABS)[number]["id"]>("hours");
   const [view, setView] = useState<"weekly" | "calendar">("weekly");
 
   const today = useMemo(() => new Date(), []);
@@ -213,37 +470,15 @@ export default function SchedulePage() {
   const todayIndex = (today.getDay() + 6) % 7;
   const [calendarCursor, setCalendarCursor] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1));
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
-  const [slots, setSlots] = useState<SlotsState>(undefined);
+  const [slots, setSlots] = useState<SlotsState>("loading");
 
-  // Asks the booking system only the first time the calendar is opened.
-  function showCalendar() {
-    setView("calendar");
-    if (slots !== undefined) return;
-    setSlots("loading");
+  useEffect(() => {
     fetchBookingSlots()
       .then(setSlots)
       .catch(() => setSlots("error"));
-  }
+  }, []);
 
   const activeUpdates = useMemo(() => getActiveUpdates(SCHEDULE_UPDATES, today), [today]);
-  const [updateIndex, setUpdateIndex] = useState(0);
-  const [updateVisible, setUpdateVisible] = useState(true);
-
-  function stepUpdate(delta: number) {
-    if (activeUpdates.length <= 1) return;
-    setUpdateVisible(false);
-    setTimeout(() => {
-      setUpdateIndex((i) => (i + delta + activeUpdates.length) % activeUpdates.length);
-      setUpdateVisible(true);
-    }, 300);
-  }
-
-  useEffect(() => {
-    if (activeUpdates.length <= 1) return;
-    const interval = setInterval(() => stepUpdate(1), UPDATE_ROTATE_MS);
-    return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeUpdates.length]);
 
   const monthGrid = useMemo(
     () => getMonthGrid(calendarCursor.getFullYear(), calendarCursor.getMonth()),
@@ -259,295 +494,173 @@ export default function SchedulePage() {
 
   return (
     <div className="min-h-[calc(100vh-4rem)] bg-neutral-50">
-      <div className="mx-auto flex max-w-3xl flex-col gap-8 px-4 py-12 sm:px-6 lg:px-8">
-        <div className="text-center">
-          <h1 className="text-3xl font-bold text-primary sm:text-4xl">Schedule</h1>
-          <p className="mt-2 text-neutral-600">Wall hours and upcoming schedule changes.</p>
-        </div>
+      <div className="mx-auto flex max-w-6xl flex-col gap-10 px-4 py-10 sm:px-6 lg:px-8">
+        <Masthead
+          title="The Wall Schedule"
+          tagline="Opening hours, lessons, prices, and how to book your spot on the wall."
+          now={today}
+        />
 
         {activeUpdates.length > 0 && (
-          <div className="relative rounded-lg bg-neutral-200 px-10 py-4 text-center text-sm text-neutral-700">
-            {activeUpdates.length > 1 && (
-              <button
-                type="button"
-                onClick={() => stepUpdate(-1)}
-                aria-label="Previous update"
-                className="absolute inset-y-0 left-0 flex items-center px-2 text-neutral-500 hover:text-neutral-800"
-              >
-                <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
-                  <path d="M12.7 15.3a1 1 0 0 1-1.4 0l-5-5a1 1 0 0 1 0-1.4l5-5a1 1 0 1 1 1.4 1.4L8.42 9.6l4.3 4.3a1 1 0 0 1 0 1.4z" />
-                </svg>
-              </button>
-            )}
-
-            <span className="font-semibold text-neutral-800">Update: </span>
-            <span className={`transition-opacity duration-300 ${updateVisible ? "opacity-100" : "opacity-0"}`}>
-              {activeUpdates[updateIndex % activeUpdates.length].message}
-            </span>
-            {activeUpdates.length > 1 && (
-              <div className="mt-2 flex justify-center gap-1.5">
-                {activeUpdates.map((update, i) => (
-                  <span
-                    key={update.id}
-                    className={`h-1.5 w-1.5 rounded-full ${
-                      i === updateIndex % activeUpdates.length ? "bg-neutral-600" : "bg-neutral-400"
-                    }`}
-                  />
-                ))}
-              </div>
-            )}
-
-            {activeUpdates.length > 1 && (
-              <button
-                type="button"
-                onClick={() => stepUpdate(1)}
-                aria-label="Next update"
-                className="absolute inset-y-0 right-0 flex items-center px-2 text-neutral-500 hover:text-neutral-800"
-              >
-                <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
-                  <path d="M7.3 4.7a1 1 0 0 1 1.4 0l5 5a1 1 0 0 1 0 1.4l-5 5a1 1 0 1 1-1.4-1.4l4.29-4.3-4.3-4.3a1 1 0 0 1 0-1.4z" />
-                </svg>
-              </button>
-            )}
-          </div>
+          <Carousel
+            label="Schedule updates"
+            items={activeUpdates}
+            getKey={(update) => update.id}
+            renderItem={(update) => <UpdateSlide update={update} />}
+            rotateMs={UPDATE_ROTATE_MS}
+          />
         )}
 
-        <div className="flex flex-col gap-6">
-          <div className="flex flex-col items-center gap-3 text-center">
-            <p className="text-sm text-neutral-600">Reserve your spot through our online booking system.</p>
-            <a
-              href={BOOKING_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="group inline-flex items-center gap-2 rounded-full bg-secondary px-6 py-2.5 text-sm font-semibold text-primary shadow-sm transition-colors hover:bg-secondary/80"
-            >
-              Book online
-              <span aria-hidden="true" className="transition-transform group-hover:translate-x-1">
-                →
-              </span>
-            </a>
-            <p className="text-xs text-neutral-500">
-              UTSC students must book a Learn-to-Climb lesson before becoming eligible for regular drop-ins.
-            </p>
-          </div>
-
-          <div className="flex flex-col items-center gap-3 text-center">
-            <p className="text-sm text-neutral-600">Every climber must also sign our waiver before climbing.</p>
-            <a
-              href={WAIVER_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="group inline-flex items-center gap-2 rounded-full border border-primary px-6 py-2.5 text-sm font-semibold text-primary shadow-sm transition-colors hover:bg-primary hover:text-white"
-            >
-              Sign waiver
-              <span aria-hidden="true" className="transition-transform group-hover:translate-x-1">
-                →
-              </span>
-            </a>
-            <p className="text-xs text-neutral-500">
-              Climbers under the age of 18 must have a parent or guardian sign the waiver for them.
-            </p>
-          </div>
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+          <TodayCard weekday={todayIndex} today={today} slots={slots} />
+          <BeforeYouClimb />
         </div>
 
-        <div className="rounded-lg border border-neutral-200 bg-white p-6 shadow-sm">
-          <div role="tablist" className="-mx-6 -mt-6 mb-5 flex border-b border-neutral-200">
-            {CONTAINER_TABS.map(({ id, label }) => (
-              <button
-                key={id}
-                type="button"
-                role="tab"
-                id={`tab-${id}`}
-                aria-selected={tab === id}
-                aria-controls={`panel-${id}`}
-                onClick={() => setTab(id)}
-                className={`-mb-px flex-1 border-b-2 py-3 text-sm font-semibold transition-colors ${
-                  tab === id
-                    ? "border-primary text-primary"
-                    : "border-transparent text-neutral-500 hover:border-neutral-300 hover:text-neutral-700"
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-
-          {tab === "prices" ? (
-            <div role="tabpanel" id="panel-prices" aria-labelledby="tab-prices" className="flex flex-col gap-6">
-              {PRICE_GROUPS.map((group) => (
-                <section key={group.audience}>
-                  <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-neutral-500">
-                    {group.audience}
-                  </h2>
-                  <div className="flex flex-col divide-y divide-neutral-100">
-                    {group.items.map((item) => (
-                      <div key={item.label} className="flex flex-col gap-1 px-2 py-3 text-sm text-neutral-700">
-                        <div className="flex items-start justify-between gap-4">
-                          <span className="flex items-center gap-1.5">
-                            {item.label}
-                            {item.needsBelayTest && <InfoTip text={BELAY_TEST_NOTE} size={14} />}
-                          </span>
-                          {item.price && <span className="font-semibold text-primary">{item.price}</span>}
-                        </div>
-                        {item.note && <span className="text-xs text-neutral-500">{item.note}</span>}
-                        {item.tiers?.map((tier) => (
-                          <div key={tier.label} className="flex items-center justify-between pl-4 text-neutral-600">
-                            <span>{tier.label}</span>
-                            <span className="font-semibold text-primary">{tier.price}</span>
-                          </div>
-                        ))}
-                      </div>
-                    ))}
-                  </div>
-                </section>
-              ))}
-
+        <section className="flex flex-col gap-6">
+          <SectionRule title="Hours" />
+          <div className="flex flex-col gap-4 rounded-xl border border-neutral-200 bg-white p-5 shadow-sm sm:p-6">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <Kicker className="text-neutral-500">Drop-in hours</Kicker>
+              <div className="flex gap-1 rounded-full bg-neutral-50 p-1 ring-1 ring-neutral-200">
+                <ViewToggle active={view === "weekly"} label="Weekly" onClick={() => setView("weekly")} />
+                <ViewToggle active={view === "calendar"} label="Calendar" onClick={() => setView("calendar")} />
+              </div>
             </div>
-          ) : (
-            <div role="tabpanel" id="panel-hours" aria-labelledby="tab-hours">
-              <div className="mb-4 flex items-center justify-between">
-                <span className="text-sm font-semibold uppercase tracking-wide text-neutral-500">Drop-in hours</span>
-                <div className="flex gap-1">
+
+            {view === "weekly" ? (
+              <div className="flex flex-col divide-y divide-neutral-100">
+                {DAY_NAMES.map((name, i) => {
+                  const isToday = i === todayIndex;
+                  const lessonSlots = getLessonSlots(i);
+                  return (
+                    <div
+                      key={name}
+                      className={`flex flex-col gap-1 px-3 py-3 text-sm ${
+                        isToday ? "rounded-lg bg-secondary/10 text-primary" : "text-neutral-700"
+                      }`}
+                    >
+                      <div className={`flex items-center justify-between ${isToday ? "font-semibold" : ""}`}>
+                        <span className="flex items-center gap-2">
+                          {name}
+                          {isToday && (
+                            <span className="rounded-full bg-primary px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">
+                              Today
+                            </span>
+                          )}
+                        </span>
+                        <span className="tabular-nums">{formatHours(WEEKLY_HOURS[i])}</span>
+                      </div>
+                      {lessonSlots && (
+                        <div className="flex items-start justify-between text-xs text-neutral-500">
+                          <span>Learn-to-Climb</span>
+                          <span className="flex flex-col items-end tabular-nums">
+                            {lessonSlots.map((slot) => (
+                              <span key={slot.open}>{`${slot.open} – ${slot.close}`}</span>
+                            ))}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div>
+                <div className="mb-3 flex items-center justify-between">
                   <button
                     type="button"
-                    onClick={() => setView("weekly")}
-                    className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-                      view === "weekly" ? "bg-primary text-white" : "bg-neutral-100 text-neutral-700 hover:bg-neutral-200"
-                    }`}
+                    onClick={() => changeMonth(-1)}
+                    aria-label="Previous month"
+                    className="rounded-full px-2.5 py-1 text-sm text-neutral-600 hover:bg-neutral-100"
                   >
-                    Weekly
+                    ←
                   </button>
+                  <span className="font-serif text-lg font-bold text-primary">
+                    {calendarCursor.toLocaleDateString(undefined, { month: "long", year: "numeric" })}
+                  </span>
                   <button
                     type="button"
-                    onClick={showCalendar}
-                    className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-                      view === "calendar" ? "bg-primary text-white" : "bg-neutral-100 text-neutral-700 hover:bg-neutral-200"
-                    }`}
+                    onClick={() => changeMonth(1)}
+                    aria-label="Next month"
+                    className="rounded-full px-2.5 py-1 text-sm text-neutral-600 hover:bg-neutral-100"
                   >
-                    Calendar
+                    →
                   </button>
                 </div>
-              </div>
 
-              {view === "weekly" ? (
-                <div className="flex flex-col divide-y divide-neutral-100">
-                  {DAY_NAMES.map((name, i) => {
-                    const isToday = i === todayIndex;
-                    const lessonSlots = getLessonSlots(i);
+                <div className="grid grid-cols-7 gap-1 text-center text-xs font-medium text-neutral-500">
+                  {DAY_SHORT.map((d) => (
+                    <div key={d} className="py-1">
+                      {d}
+                    </div>
+                  ))}
+                </div>
+
+                <div className="grid grid-cols-7 gap-1">
+                  {monthGrid.map((day, i) => {
+                    if (day === null) return <div key={i} />;
+                    const weekday = (i % 7) as number;
+                    const date = new Date(calendarCursor.getFullYear(), calendarCursor.getMonth(), day);
+                    const isToday = isCurrentMonth && day === today.getDate();
+                    const hours = WEEKLY_HOURS[weekday];
+                    const bookable = isBookable(date, today, slots);
+                    const daySlots = slots instanceof Map ? slots.get(dateKey(date)) : undefined;
+                    let slotText: string | null = null;
+                    if (bookable && slots === "loading") slotText = "…";
+                    else if (bookable && daySlots) {
+                      const open = openDropIns(daySlots);
+                      slotText = open > 0 ? `${open} open` : "Full";
+                    }
                     return (
-                      <div
-                        key={name}
-                        className={`flex flex-col gap-1 px-2 py-3 text-sm ${
-                          isToday ? "text-primary" : "text-neutral-700"
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => setSelectedDate(date)}
+                        className={`flex cursor-pointer flex-col items-center gap-0.5 rounded-lg border px-1 py-2 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-secondary ${
+                          isToday
+                            ? `border-transparent bg-primary text-white hover:bg-primary/90 ${bookable ? "ring-2 ring-secondary ring-offset-1" : ""}`
+                            : bookable
+                              ? "border-secondary bg-secondary/15 text-primary hover:bg-secondary/25"
+                              : "border-transparent text-neutral-700 hover:border-secondary hover:bg-secondary/10"
                         }`}
                       >
-                        <div className={`flex items-center justify-between ${isToday ? "font-semibold" : ""}`}>
-                          <span>{name}</span>
-                          <span>{formatHours(WEEKLY_HOURS[i])}</span>
-                        </div>
-                        {lessonSlots && (
-                          <div className="flex items-start justify-between text-xs text-neutral-500">
-                            <span>Learn-to-Climb</span>
-                            <span className="flex flex-col items-end">
-                              {lessonSlots.map((slot) => (
-                                <span key={slot.open}>{`${slot.open} – ${slot.close}`}</span>
-                              ))}
-                            </span>
-                          </div>
+                        <span className="text-sm font-semibold">{day}</span>
+                        <span className={`text-[10px] leading-tight ${isToday ? "text-white/80" : "text-neutral-500"}`}>
+                          {hours ? hours.open.replace(" AM", "a").replace(" PM", "p") : "Closed"}
+                        </span>
+                        {slotText && (
+                          <span
+                            className={`text-[10px] font-semibold leading-tight ${isToday ? "text-secondary" : "text-primary"}`}
+                          >
+                            {slotText}
+                          </span>
                         )}
-                      </div>
+                      </button>
                     );
                   })}
                 </div>
-              ) : (
-                <div>
-                  <div className="mb-3 flex items-center justify-between">
-                    <button
-                      type="button"
-                      onClick={() => changeMonth(-1)}
-                      aria-label="Previous month"
-                      className="rounded-md px-2 py-1 text-sm text-neutral-600 hover:bg-neutral-100"
-                    >
-                      ←
-                    </button>
-                    <span className="text-sm font-semibold text-neutral-800">
-                      {calendarCursor.toLocaleDateString(undefined, { month: "long", year: "numeric" })}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => changeMonth(1)}
-                      aria-label="Next month"
-                      className="rounded-md px-2 py-1 text-sm text-neutral-600 hover:bg-neutral-100"
-                    >
-                      →
-                    </button>
-                  </div>
 
-                  <div className="grid grid-cols-7 gap-1 text-center text-xs font-medium text-neutral-500">
-                    {DAY_SHORT.map((d) => (
-                      <div key={d} className="py-1">
-                        {d}
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="grid grid-cols-7 gap-1">
-                    {monthGrid.map((day, i) => {
-                      if (day === null) return <div key={i} />;
-                      const weekday = (i % 7) as number;
-                      const date = new Date(calendarCursor.getFullYear(), calendarCursor.getMonth(), day);
-                      const isToday = isCurrentMonth && day === today.getDate();
-                      const hours = WEEKLY_HOURS[weekday];
-                      const bookable = isBookable(date, today, slots);
-                      const daySlots = slots instanceof Map ? slots.get(dateKey(date)) : undefined;
-                      let slotText: string | null = null;
-                      if (bookable && slots === "loading") slotText = "…";
-                      else if (bookable && daySlots) {
-                        const open = openDropIns(daySlots);
-                        slotText = open > 0 ? `${open} open` : "Full";
-                      }
-                      return (
-                        <button
-                          key={i}
-                          type="button"
-                          onClick={() => setSelectedDate(date)}
-                          className={`flex cursor-pointer flex-col items-center gap-0.5 rounded-md border px-1 py-2 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-secondary ${
-                            isToday
-                              ? `border-transparent bg-primary text-white hover:bg-primary/90 ${bookable ? "ring-2 ring-secondary ring-offset-1" : ""}`
-                              : bookable
-                                ? "border-secondary bg-secondary/15 text-primary hover:bg-secondary/25"
-                                : "border-transparent text-neutral-700 hover:border-secondary hover:bg-secondary/10"
-                          }`}
-                        >
-                          <span className="text-sm font-semibold">{day}</span>
-                          <span className={`text-[10px] leading-tight ${isToday ? "text-white/80" : "text-neutral-500"}`}>
-                            {hours ? hours.open.replace(" AM", "a").replace(" PM", "p") : "Closed"}
-                          </span>
-                          {slotText && (
-                            <span
-                              className={`text-[10px] font-semibold leading-tight ${isToday ? "text-secondary" : "text-primary"}`}
-                            >
-                              {slotText}
-                            </span>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-neutral-500">
-                    <span className="flex items-center gap-1.5">
-                      <span className="h-3 w-3 rounded-sm border border-secondary bg-secondary/15" />
-                      Bookable online
-                    </span>
-                    {slots === "loading" && <span>Checking available slots…</span>}
-                    {slots === "error" && <span>Couldn&apos;t load available slots right now.</span>}
-                  </div>
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-neutral-500">
+                  <span className="flex items-center gap-1.5">
+                    <span className="h-3 w-3 rounded-sm border border-secondary bg-secondary/15" />
+                    Bookable online
+                  </span>
+                  {slots === "loading" && <span>Checking available slots…</span>}
+                  {slots === "error" && <span>Couldn&apos;t load available slots right now.</span>}
                 </div>
-              )}
-            </div>
-          )}
-        </div>
+              </div>
+            )}
+          </div>
+        </section>
+
+        <section className="flex flex-col gap-6">
+          <SectionRule title="Prices" />
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+            {PRICE_GROUPS.map((group) => (
+              <PriceCard key={group.audience} audience={group.audience} items={group.items} />
+            ))}
+          </div>
+        </section>
       </div>
 
       {selectedDate && (() => {
@@ -565,13 +678,14 @@ export default function SchedulePage() {
             onClick={() => setSelectedDate(null)}
           >
             <div
-              className="w-full max-w-sm rounded-lg bg-white p-6 shadow-xl"
+              className="relative w-full max-w-sm overflow-hidden rounded-xl bg-white p-6 shadow-xl"
               onClick={(e) => e.stopPropagation()}
             >
-              <p className="text-lg font-semibold text-neutral-900">
+              <div aria-hidden="true" className="absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r from-primary via-secondary to-primary" />
+              <p className="font-serif text-2xl leading-tight font-bold text-primary">
                 {selectedDate.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}
               </p>
-              <p className="text-sm text-neutral-600">{formatHours(hours)}</p>
+              <p className="mt-1 text-sm text-neutral-600">{formatHours(hours)}</p>
 
               {bookable && daySlots ? (
                 <div className="mt-4 flex flex-col gap-3">
@@ -580,8 +694,8 @@ export default function SchedulePage() {
                   <p className="text-[11px] text-neutral-400">Spots shown are for online booking.</p>
                 </div>
               ) : lessonSlots && (
-                <div className="mt-2 text-sm text-neutral-600">
-                  <span className="font-medium text-neutral-700">Lessons:</span>
+                <div className="mt-4 flex flex-col gap-1 text-sm text-neutral-600">
+                  <Kicker className="text-neutral-500">Lessons</Kicker>
                   {lessonSlots.map((slot) => (
                     <p key={slot.open}>{`${slot.open} – ${slot.close}`}</p>
                   ))}
@@ -593,7 +707,7 @@ export default function SchedulePage() {
               )}
 
               {bookable && (
-                <div className="mt-4 rounded-md bg-secondary/10 p-3 text-sm">
+                <div className="mt-4 rounded-lg bg-secondary/10 p-3 text-sm">
                   <p className="font-medium text-primary">Booking is available for this time.</p>
                   <a
                     href={BOOKING_URL}
