@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import InfoTip from "@/components/InfoTip";
-import { type DayHours, parseTimeString, WEEKLY_HOURS } from "@/lib/schedule";
+import { type BookingSlot, type DayHours, fetchBookingSlots, WEEKLY_HOURS } from "@/lib/schedule";
 
 const DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const DAY_SHORT = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -118,25 +118,89 @@ function getMonthGrid(year: number, month: number): (number | null)[] {
   return cells;
 }
 
-function combineDateAndTime(date: Date, time: string): Date {
-  const { hours, minutes } = parseTimeString(time);
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate(), hours, minutes);
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+// Online booking opens 48 hours ahead - today, tomorrow and the day after.
+const BOOKABLE_DAYS = 3;
+
+// The booking system's slots for the bookable days, fetched the first time
+// the calendar is opened. Unset until then.
+type SlotsState = Map<string, BookingSlot[]> | "loading" | "error" | undefined;
+
+function pad(part: number) {
+  return String(part).padStart(2, "0");
 }
 
-const ONE_HOUR_MS = 60 * 60 * 1000;
-const BOOKING_WINDOW_MS = 48 * ONE_HOUR_MS;
+// A local date as "YYYY-MM-DD", matching the booking system's days.
+function dateKey(date: Date) {
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
 
-// Booking for a day is only surfaced once its closing time is close enough to
-// be worth booking (within 48 hours) but not so close it's already too late
-// (within the last hour before closing).
-function getClosingSoon(date: Date, hours: DayHours, now: Date): Date | null {
-  if (!hours) return null;
-  const closingAt = combineDateAndTime(date, hours.close);
-  const msUntilClose = closingAt.getTime() - now.getTime();
-  if (msUntilClose >= ONE_HOUR_MS && msUntilClose <= BOOKING_WINDOW_MS) {
-    return closingAt;
-  }
-  return null;
+// Whether a day can be booked online. Once the booking system has answered,
+// it decides - a day with nothing left isn't bookable. Until then, any open
+// day in the window counts.
+function isBookable(date: Date, today: Date, slots: SlotsState) {
+  const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  // Rounded, since a day with a clock change isn't exactly 24 hours.
+  const daysAhead = Math.round((date.getTime() - startOfToday.getTime()) / ONE_DAY_MS);
+  if (daysAhead < 0 || daysAhead >= BOOKABLE_DAYS) return false;
+  if (slots instanceof Map) return (slots.get(dateKey(date))?.length ?? 0) > 0;
+  return WEEKLY_HOURS[(date.getDay() + 6) % 7] !== null;
+}
+
+// A booking system time ("...T16:00") split into "4:00" and "PM".
+function slotClock(stamp: string) {
+  const [hours, minutes] = stamp.slice(11, 16).split(":").map(Number);
+  return { time: `${hours % 12 || 12}:${pad(minutes)}`, period: hours < 12 ? "AM" : "PM" };
+}
+
+// "4:00 – 5:30 PM", or "11:00 AM – 12:30 PM" when it crosses noon.
+function formatSlotRange(slot: BookingSlot) {
+  const start = slotClock(slot.start);
+  const end = slotClock(slot.end);
+  const startText = start.period === end.period ? start.time : `${start.time} ${start.period}`;
+  return `${startText} – ${end.time} ${end.period}`;
+}
+
+function spotsLeft(slot: BookingSlot) {
+  return Math.max(0, slot.spots - slot.booked);
+}
+
+// Green with plenty left, amber at half or less, red for the last one (or a
+// quarter or less), grey once it's full.
+function availabilityClass(slot: BookingSlot) {
+  const left = spotsLeft(slot);
+  if (left === 0) return "bg-neutral-100 text-neutral-500";
+  if (left === 1 || left / slot.spots <= 0.25) return "bg-red-100 text-red-700";
+  if (left / slot.spots <= 0.5) return "bg-amber-100 text-amber-800";
+  return "bg-green-100 text-green-700";
+}
+
+function SlotSection({ title, slots }: { title: string; slots: BookingSlot[] }) {
+  return (
+    <section>
+      <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-neutral-500">{title}</h3>
+      <ul className="flex flex-col">
+        {slots.map((slot) => {
+          const left = spotsLeft(slot);
+          return (
+            <li key={slot.id} className="flex items-center justify-between gap-3 py-1 text-sm">
+              <span className="tabular-nums text-neutral-800">{formatSlotRange(slot)}</span>
+              <span
+                className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums ${availabilityClass(slot)}`}
+              >
+                {left > 0 ? `${left}/${slot.spots} left` : "Full"}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
+// How many drop-ins on a day still have an online spot.
+function openDropIns(slots: BookingSlot[]) {
+  return slots.filter((slot) => slot.kind === "dropin" && spotsLeft(slot) > 0).length;
 }
 
 export default function SchedulePage() {
@@ -149,6 +213,17 @@ export default function SchedulePage() {
   const todayIndex = (today.getDay() + 6) % 7;
   const [calendarCursor, setCalendarCursor] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1));
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
+  const [slots, setSlots] = useState<SlotsState>(undefined);
+
+  // Asks the booking system only the first time the calendar is opened.
+  function showCalendar() {
+    setView("calendar");
+    if (slots !== undefined) return;
+    setSlots("loading");
+    fetchBookingSlots()
+      .then(setSlots)
+      .catch(() => setSlots("error"));
+  }
 
   const activeUpdates = useMemo(() => getActiveUpdates(SCHEDULE_UPDATES, today), [today]);
   const [updateIndex, setUpdateIndex] = useState(0);
@@ -344,7 +419,7 @@ export default function SchedulePage() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setView("calendar")}
+                    onClick={showCalendar}
                     className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
                       view === "calendar" ? "bg-primary text-white" : "bg-neutral-100 text-neutral-700 hover:bg-neutral-200"
                     }`}
@@ -420,28 +495,53 @@ export default function SchedulePage() {
                     {monthGrid.map((day, i) => {
                       if (day === null) return <div key={i} />;
                       const weekday = (i % 7) as number;
+                      const date = new Date(calendarCursor.getFullYear(), calendarCursor.getMonth(), day);
                       const isToday = isCurrentMonth && day === today.getDate();
                       const hours = WEEKLY_HOURS[weekday];
+                      const bookable = isBookable(date, today, slots);
+                      const daySlots = slots instanceof Map ? slots.get(dateKey(date)) : undefined;
+                      let slotText: string | null = null;
+                      if (bookable && slots === "loading") slotText = "…";
+                      else if (bookable && daySlots) {
+                        const open = openDropIns(daySlots);
+                        slotText = open > 0 ? `${open} open` : "Full";
+                      }
                       return (
                         <button
                           key={i}
                           type="button"
-                          onClick={() =>
-                            setSelectedDate(new Date(calendarCursor.getFullYear(), calendarCursor.getMonth(), day))
-                          }
+                          onClick={() => setSelectedDate(date)}
                           className={`flex cursor-pointer flex-col items-center gap-0.5 rounded-md border px-1 py-2 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-secondary ${
                             isToday
-                              ? "border-transparent bg-primary text-white hover:bg-primary/90"
-                              : "border-transparent text-neutral-700 hover:border-secondary hover:bg-secondary/10"
+                              ? `border-transparent bg-primary text-white hover:bg-primary/90 ${bookable ? "ring-2 ring-secondary ring-offset-1" : ""}`
+                              : bookable
+                                ? "border-secondary bg-secondary/15 text-primary hover:bg-secondary/25"
+                                : "border-transparent text-neutral-700 hover:border-secondary hover:bg-secondary/10"
                           }`}
                         >
                           <span className="text-sm font-semibold">{day}</span>
                           <span className={`text-[10px] leading-tight ${isToday ? "text-white/80" : "text-neutral-500"}`}>
                             {hours ? hours.open.replace(" AM", "a").replace(" PM", "p") : "Closed"}
                           </span>
+                          {slotText && (
+                            <span
+                              className={`text-[10px] font-semibold leading-tight ${isToday ? "text-secondary" : "text-primary"}`}
+                            >
+                              {slotText}
+                            </span>
+                          )}
                         </button>
                       );
                     })}
+                  </div>
+
+                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-neutral-500">
+                    <span className="flex items-center gap-1.5">
+                      <span className="h-3 w-3 rounded-sm border border-secondary bg-secondary/15" />
+                      Bookable online
+                    </span>
+                    {slots === "loading" && <span>Checking available slots…</span>}
+                    {slots === "error" && <span>Couldn&apos;t load available slots right now.</span>}
                   </div>
                 </div>
               )}
@@ -454,7 +554,11 @@ export default function SchedulePage() {
         const weekday = (selectedDate.getDay() + 6) % 7;
         const hours = WEEKLY_HOURS[weekday];
         const lessonSlots = getLessonSlots(weekday);
-        const closingAt = getClosingSoon(selectedDate, hours, today);
+        const bookable = isBookable(selectedDate, today, slots);
+        const daySlots = slots instanceof Map ? slots.get(dateKey(selectedDate)) : undefined;
+        // Anything that isn't a lesson is booked like a drop-in.
+        const dropIns = daySlots?.filter((slot) => slot.kind !== "lesson") ?? [];
+        const lessons = daySlots?.filter((slot) => slot.kind === "lesson") ?? [];
         return (
           <div
             className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4"
@@ -464,12 +568,18 @@ export default function SchedulePage() {
               className="w-full max-w-sm rounded-lg bg-white p-6 shadow-xl"
               onClick={(e) => e.stopPropagation()}
             >
-              <p className="text-sm font-semibold text-neutral-800">
+              <p className="text-lg font-semibold text-neutral-900">
                 {selectedDate.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}
               </p>
-              <p className="mt-1 text-sm text-neutral-600">{formatHours(hours)}</p>
+              <p className="text-sm text-neutral-600">{formatHours(hours)}</p>
 
-              {lessonSlots && (
+              {bookable && daySlots ? (
+                <div className="mt-4 flex flex-col gap-3">
+                  {dropIns.length > 0 && <SlotSection title="Drop-ins" slots={dropIns} />}
+                  {lessons.length > 0 && <SlotSection title="Lessons" slots={lessons} />}
+                  <p className="text-[11px] text-neutral-400">Spots shown are for online booking.</p>
+                </div>
+              ) : lessonSlots && (
                 <div className="mt-2 text-sm text-neutral-600">
                   <span className="font-medium text-neutral-700">Lessons:</span>
                   {lessonSlots.map((slot) => (
@@ -478,7 +588,11 @@ export default function SchedulePage() {
                 </div>
               )}
 
-              {closingAt && (
+              {bookable && slots === "loading" && (
+                <p className="mt-4 text-sm text-neutral-500">Checking available slots…</p>
+              )}
+
+              {bookable && (
                 <div className="mt-4 rounded-md bg-secondary/10 p-3 text-sm">
                   <p className="font-medium text-primary">Booking is available for this time.</p>
                   <a
