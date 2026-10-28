@@ -12,6 +12,22 @@ function notFound(headers: Record<string, string>): HttpResponseInit {
   return { status: 404, headers, jsonBody: { error: "That climb doesn't exist any more." } };
 }
 
+// GET /routes/{routeID} - one climb, for its own page.
+export async function getRoute(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
+  const headers = corsHeaders(request);
+
+  try {
+    const { resource } = await getContainer(ROUTE_CONTAINER)
+      .item(request.params.routeID, request.params.routeID)
+      .read<Route>();
+    if (!resource) return notFound(headers);
+    return { status: 200, headers, jsonBody: resource };
+  } catch (error) {
+    context.error("Failed to fetch route", error);
+    return { status: 500, headers, jsonBody: { error: "Failed to load the climb." } };
+  }
+}
+
 // PUT /routes/{routeID} - replaces the climb's details. Its type, ascents,
 // comment count, rating and whether it's up or down are left alone.
 export async function updateRoute(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
@@ -116,13 +132,14 @@ export async function restoreRoute(request: HttpRequest, context: InvocationCont
 }
 
 app.http("routeItem", {
-  methods: ["PUT", "DELETE", "OPTIONS"],
+  methods: ["GET", "PUT", "DELETE", "OPTIONS"],
   authLevel: "anonymous",
   route: "routes/{routeID}",
   handler: async (request, context) => {
     if (request.method === "OPTIONS") {
       return { status: 204, headers: corsHeaders(request) };
     }
+    if (request.method === "GET") return getRoute(request, context);
     return request.method === "DELETE" ? deleteRoute(request, context) : updateRoute(request, context);
   },
 });

@@ -49,6 +49,39 @@ function toStars(rating: { total: number; count: number } | undefined) {
   return Math.round((rating.total / rating.count / RATING_SCALE) * MAX_STARS * 10) / 10;
 }
 
+// One comment's 0-10 rating as stars.
+export function ratingStars(rating: number) {
+  return toStars({ total: rating, count: 1 })!;
+}
+
+// All the API shares of someone. Mirrors PublicPerson in
+// api/src/functions/routeActivity.ts.
+export type ClimbPerson = { userID: string; username: string; avatarUpdatedAt?: string };
+
+export type ClimbComment = {
+  commentID: string;
+  commentedAt: string;
+  comment: string;
+  // 0-10.
+  rating?: number;
+  grade?: string;
+  send?: boolean;
+  // Null once their account is gone.
+  author: ClimbPerson | null;
+};
+
+// A climb's newest comments and who sent it last - null when nobody has, or
+// their account is gone.
+export type ClimbActivity = { comments: ClimbComment[]; lastSend: ClimbPerson | null };
+
+// The newest `limit` comments - the API caps it at 50.
+export async function fetchClimbActivity(id: string, limit?: number): Promise<ClimbActivity> {
+  const query = limit ? `?limit=${limit}` : "";
+  const res = await fetch(apiUrl(`/routes/${encodeURIComponent(id)}/activity${query}`));
+  if (!res.ok) throw new Error(`Failed to load the climb's activity (${res.status})`);
+  return (await res.json()) as ClimbActivity;
+}
+
 // Mirrors Route in api/src/models/Route.ts. Documents written before climb
 // types, setter names, leadable, comment counts and ratings existed may lack
 // them.
@@ -94,6 +127,20 @@ export async function fetchClimbs(): Promise<Climb[]> {
   const res = await fetch(apiUrl("/routes"));
   if (!res.ok) throw new Error(`Failed to load climbs (${res.status})`);
   return ((await res.json()) as ApiRoute[]).map(toClimb);
+}
+
+// One climb, or null when there's no climb with that ID.
+export async function fetchClimb(id: string): Promise<Climb | null> {
+  const res = await fetch(apiUrl(`/routes/${encodeURIComponent(id)}`));
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`Failed to load the climb (${res.status})`);
+  return toClimb((await res.json()) as ApiRoute);
+}
+
+// A climb's own page. The site is a static export, so the ID goes in the
+// query rather than the path.
+export function climbHref(id: string) {
+  return `/climbs/climb?id=${encodeURIComponent(id)}`;
 }
 
 // What an admin can change on a climb with the edit form.

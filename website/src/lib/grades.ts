@@ -22,3 +22,28 @@ export const GRADE_SCALES: Record<ClimbKind, string[]> = {
   route: ROUTE_GRADES,
   boulder: BOULDER_GRADES,
 };
+
+// A route grade as a number to compare, so "5.10" (no letter, as people
+// often write it) sits between 5.10b and 5.10c. Null when it isn't one.
+function routeGradeValue(grade: string) {
+  const match = /^5\.(\d+)([a-d])?$/i.exec(grade.trim());
+  if (!match) return null;
+  const letter = match[2] ? "abcd".indexOf(match[2].toLowerCase()) : 1.5;
+  return Number(match[1]) + letter / 4;
+}
+
+function boulderGradeValue(grade: string) {
+  const index = BOULDER_GRADES.indexOf(grade.trim());
+  // Dyno isn't a difficulty, so it can't be harder or easier.
+  return index === -1 || BOULDER_GRADES[index] === "Dyno" ? null : index;
+}
+
+// Whether `grade` is harder (1), easier (-1) or the same (0) as `than`, or
+// null when either can't be placed on the scale.
+export function compareGrades(kind: ClimbKind, grade: string, than: string): -1 | 0 | 1 | null {
+  const value = kind === "route" ? routeGradeValue : boulderGradeValue;
+  const a = value(grade);
+  const b = value(than);
+  if (a === null || b === null) return null;
+  return a > b ? 1 : a < b ? -1 : 0;
+}
