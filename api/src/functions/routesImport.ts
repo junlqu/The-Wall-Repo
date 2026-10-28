@@ -47,6 +47,8 @@ function toNewRoute(value: unknown): Route | null {
     removedAt: removedAtFor(status, removedAt),
     leadable: fields.type === "boulder" ? "No" : "?",
     ascents: [],
+    comments: 0,
+    rating: { total: 0, count: 0 },
   };
 }
 

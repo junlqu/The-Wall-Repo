@@ -37,4 +37,13 @@ export type Route = {
   leadable: Leadable;
   // userIDs in the order they sent the route.
   ascents: string[];
+  // How many comments it has, kept in step by changeCommentCount. Climbs
+  // added before the count existed lack it until their first comment.
+  comments?: number;
+  // The sum of its comments' ratings (each 0-10) and how many there are, so
+  // the average is total / count. Kept in step by changeRating, and missing
+  // on older climbs until their first rating.
+  rating?: RouteRating;
 };
+
+export type RouteRating = { total: number; count: number };

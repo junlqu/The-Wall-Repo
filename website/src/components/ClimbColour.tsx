@@ -10,10 +10,17 @@ export function Swatch({ colour, tape = false }: { colour: string; tape?: boolea
   );
 }
 
-// A climb's hold colour(s) with dots, plus its tape when it has one.
-export default function ClimbColour({ climb }: { climb: Pick<Climb, "colour" | "secondary" | "tape"> }) {
+// A climb's hold colour(s) with dots, plus its tape when it has one - beside
+// them where there's room, or always on its own row when `stacked`.
+export default function ClimbColour({
+  climb,
+  stacked = false,
+}: {
+  climb: Pick<Climb, "colour" | "secondary" | "tape">;
+  stacked?: boolean;
+}) {
   return (
-    <span className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+    <span className={`flex gap-x-2.5 gap-y-1 ${stacked ? "flex-col items-start" : "flex-wrap items-center"}`}>
       <span className="flex items-center gap-2">
         <span className="flex items-center gap-0.5">
           <Swatch colour={climb.colour} />

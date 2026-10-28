@@ -30,10 +30,28 @@ export type Climb = {
   // Past climbs only, and only when the removal date was recorded.
   removedAt?: string;
   leadable: Leadable;
+  sends: number;
+  comments: number;
+  // Average of its comments' ratings as stars out of 5, or null when nobody
+  // has rated it.
+  stars: number | null;
+  // How many ratings the average is of.
+  ratings: number;
 };
 
+// Comments rate a climb 0-10, shown as stars out of 5.
+const RATING_SCALE = 10;
+export const MAX_STARS = 5;
+
+// Rounded to the nearest tenth of a star.
+function toStars(rating: { total: number; count: number } | undefined) {
+  if (!rating || rating.count <= 0) return null;
+  return Math.round((rating.total / rating.count / RATING_SCALE) * MAX_STARS * 10) / 10;
+}
+
 // Mirrors Route in api/src/models/Route.ts. Documents written before climb
-// types, setter names and leadable existed may lack them.
+// types, setter names, leadable, comment counts and ratings existed may lack
+// them.
 type ApiRoute = {
   routeID: string;
   type?: ClimbType;
@@ -46,6 +64,9 @@ type ApiRoute = {
   proposedGrade: string;
   secondary?: string;
   leadable?: Leadable;
+  ascents?: string[];
+  comments?: number;
+  rating?: { total: number; count: number };
 };
 
 function toClimb(route: ApiRoute): Climb {
@@ -62,6 +83,10 @@ function toClimb(route: ApiRoute): Climb {
     setAt: route.setAt,
     removedAt: typeof route.removedAt === "string" ? route.removedAt : undefined,
     leadable: route.leadable ?? "?",
+    sends: route.ascents?.length ?? 0,
+    comments: route.comments ?? 0,
+    stars: toStars(route.rating),
+    ratings: Math.max(0, route.rating?.count ?? 0),
   };
 }
 

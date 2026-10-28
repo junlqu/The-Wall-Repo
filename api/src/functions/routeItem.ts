@@ -12,8 +12,8 @@ function notFound(headers: Record<string, string>): HttpResponseInit {
   return { status: 404, headers, jsonBody: { error: "That climb doesn't exist any more." } };
 }
 
-// PUT /routes/{routeID} - replaces the climb's details. Its type, ascents and
-// whether it's up or down are left alone.
+// PUT /routes/{routeID} - replaces the climb's details. Its type, ascents,
+// comment count, rating and whether it's up or down are left alone.
 export async function updateRoute(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
   const headers = corsHeaders(request);
 
@@ -35,9 +35,17 @@ export async function updateRoute(request: HttpRequest, context: InvocationConte
 
     // Optional details left out of the edit come through as undefined, so a
     // cleared tape or line is dropped from the document rather than kept.
-    const { resource: updated } = await item.replace<Route>({ ...existing, ...fields, leadable: body.leadable });
+    // Only saved if nothing else changed it since it was read, so a send,
+    // comment or rating counted in between isn't written over.
+    const { resource: updated } = await item.replace<Route>(
+      { ...existing, ...fields, leadable: body.leadable },
+      { accessCondition: { type: "IfMatch", condition: existing._etag } }
+    );
     return { status: 200, headers, jsonBody: updated };
   } catch (error) {
+    if ((error as { code?: number }).code === 412) {
+      return { status: 409, headers, jsonBody: { error: "The climb changed while you were editing it. Try saving again." } };
+    }
     context.error("Failed to update route", error);
     return { status: 500, headers, jsonBody: { error: "Failed to save the climb." } };
   }
