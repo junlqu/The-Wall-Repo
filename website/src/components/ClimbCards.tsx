@@ -19,6 +19,7 @@ import {
   ratingStars,
 } from "@/lib/climbs";
 import { BOULDER_GRADES, compareGrades, ROUTE_GRADES } from "@/lib/grades";
+import { useSessionUser } from "@/lib/session";
 
 // The pieces the public climbs pages are built from.
 
@@ -47,6 +48,9 @@ export function useActiveClimbs() {
   return { climbs, error };
 }
 
+// The blue a visitor's own send glows in.
+const MINE_GLOW = "text-sky-500 drop-shadow-[0_0_5px_rgba(14,165,233,0.85)]";
+
 function SendIcon() {
   return (
     <svg aria-hidden="true" viewBox="0 0 20 20" fill="currentColor" className="h-3.5 w-3.5">
@@ -59,24 +63,42 @@ function SendIcon() {
   );
 }
 
-function StarRow() {
+export function CommentIcon({ className = "h-3.5 w-3.5" }: { className?: string }) {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 20 20" fill="currentColor" className={className}>
+      <path
+        fillRule="evenodd"
+        d="M10 2c-2.24 0-4.44.18-6.6.53C2.12 2.73 1 3.86 1 5.25v5.5c0 1.39 1.12 2.52 2.4 2.72.53.09 1.06.16 1.6.22v3.56a.75.75 0 0 0 1.28.53l3.65-3.65c.27-.27.63-.42 1-.43 1.52-.04 3.02-.17 4.47-.4C16.88 13.27 18 12.14 18 10.75v-5.5c0-1.39-1.12-2.52-2.4-2.72A42.6 42.6 0 0 0 10 2z"
+        clipRule="evenodd"
+      />
+    </svg>
+  );
+}
+
+export function StarIcon({ className = "h-3.5 w-3.5" }: { className?: string }) {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 20 20" fill="currentColor" className={`shrink-0 ${className}`}>
+      <path d="M10.87 2.88c-.32-.77-1.42-.77-1.74 0L7.3 7.29l-4.75.38c-.83.07-1.17 1.1-.54 1.65l3.62 3.1-1.1 4.64c-.2.81.69 1.46 1.4 1.02L10 15.59l4.07 2.49c.71.44 1.6-.21 1.4-1.02l-1.1-4.64 3.62-3.1c.63-.55.3-1.58-.54-1.65l-4.75-.38-1.83-4.41z" />
+    </svg>
+  );
+}
+
+function StarRow({ iconClass }: { iconClass: string }) {
   return (
     <span className="flex w-max">
       {Array.from({ length: MAX_STARS }, (_, i) => (
-        <svg key={i} aria-hidden="true" viewBox="0 0 20 20" fill="currentColor" className="h-3.5 w-3.5 shrink-0">
-          <path d="M10.87 2.88c-.32-.77-1.42-.77-1.74 0L7.3 7.29l-4.75.38c-.83.07-1.17 1.1-.54 1.65l3.62 3.1-1.1 4.64c-.2.81.69 1.46 1.4 1.02L10 15.59l4.07 2.49c.71.44 1.6-.21 1.4-1.02l-1.1-4.64 3.62-3.1c.63-.55.3-1.58-.54-1.65l-4.75-.38-1.83-4.41z" />
-        </svg>
+        <StarIcon key={i} className={iconClass} />
       ))}
     </span>
   );
 }
 
 // Stands in for the stars until somebody rates the climb.
-function UnratedRow() {
+function UnratedRow({ iconClass }: { iconClass: string }) {
   return (
     <span className="flex w-max">
       {Array.from({ length: MAX_STARS }, (_, i) => (
-        <svg key={i} aria-hidden="true" viewBox="0 0 20 20" fill="currentColor" className="h-3.5 w-3.5 shrink-0">
+        <svg key={i} aria-hidden="true" viewBox="0 0 20 20" fill="currentColor" className={`shrink-0 ${iconClass}`}>
           <path
             fillRule="evenodd"
             d="M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0zM8.94 6.94a.75.75 0 1 1-1.06-1.06 3 3 0 1 1 2.87 5.01.75.75 0 0 0-.5.71v.4a.75.75 0 0 1-1.5 0v-.4c0-.97.63-1.82 1.53-2.13a1.5 1.5 0 1 0-1.34-2.53zM10 15a1 1 0 1 0 0-2 1 1 0 0 0 0 2z"
@@ -89,41 +111,56 @@ function UnratedRow() {
 }
 
 // Stars filled to the climb's average, to the tenth - or question marks
-// until somebody rates it - then how many ratings that's from.
-export function Stars({ climb }: { climb: Climb }) {
+// until somebody rates it - then how many ratings that's from. `large` is
+// for a climb's own page.
+export function Stars({ climb, large = false }: { climb: Climb; large?: boolean }) {
   const { stars, ratings } = climb;
-  const count = (
+  const iconClass = large ? "h-7 w-7" : "h-3.5 w-3.5";
+  const gap = large ? "gap-2" : "gap-1";
+  const plural = ratings === 1 ? "" : "s";
+  // Spelled out on a climb's own page; a bracketed number in the lists.
+  const count = large ? (
+    <span className="ml-1 rounded-full bg-neutral-100 px-3 py-1 text-sm font-semibold text-neutral-700 tabular-nums">
+      {ratings > 0 ? `from ${ratings} rating${plural}` : "No ratings yet"}
+    </span>
+  ) : (
     <>
       <span aria-hidden="true">({ratings})</span>
       <span className="sr-only">
-        from {ratings} rating{ratings === 1 ? "" : "s"}
+        from {ratings} rating{plural}
       </span>
     </>
   );
 
   if (stars === null) {
     return (
-      <span className="flex items-center gap-1" title="No ratings yet">
+      <span className={`flex items-center ${gap}`} title="No ratings yet">
         <span aria-hidden="true" className="text-neutral-300">
-          <UnratedRow />
+          <UnratedRow iconClass={iconClass} />
         </span>
-        <span className="sr-only">No ratings yet</span>
-        <span aria-hidden="true">({ratings})</span>
+        {large ? (
+          count
+        ) : (
+          <>
+            <span className="sr-only">No ratings yet</span>
+            <span aria-hidden="true">({ratings})</span>
+          </>
+        )}
       </span>
     );
   }
   return (
     <span
-      className="flex items-center gap-1"
+      className={`flex items-center ${gap}`}
       title={`${stars.toFixed(1)} out of ${MAX_STARS} stars from ${ratings} rating${ratings === 1 ? "" : "s"}`}
     >
       <span aria-hidden="true" className="relative text-neutral-300">
-        <StarRow />
+        <StarRow iconClass={iconClass} />
         <span className="absolute inset-y-0 left-0 overflow-hidden text-amber-400" style={{ width: `${(stars / MAX_STARS) * 100}%` }}>
-          <StarRow />
+          <StarRow iconClass={iconClass} />
         </span>
       </span>
-      {stars.toFixed(1)}
+      <span className={large ? "font-serif text-2xl font-bold text-primary" : undefined}>{stars.toFixed(1)}</span>
       <span className="sr-only">out of {MAX_STARS} stars</span>
       {count}
     </span>
@@ -138,12 +175,18 @@ export function GradeTag({ grade }: { grade: string }) {
   );
 }
 
+// The send count, its tick glowing blue when the logged-in visitor is one of
+// them.
 export function Sends({ climb }: { climb: Climb }) {
+  const userID = useSessionUser()?.userID;
+  const mine = Boolean(userID && climb.senderIDs.includes(userID));
   return (
-    <span className="flex items-center gap-1" title="Sends">
-      <SendIcon />
+    <span className={`flex items-center gap-1 ${mine ? "font-semibold text-sky-600" : ""}`} title={mine ? "Sends - you've sent it" : "Sends"}>
+      <span className={mine ? MINE_GLOW : undefined}>
+        <SendIcon />
+      </span>
       {climb.sends}
-      <span className="sr-only">sends</span>
+      <span className="sr-only">sends{mine && ", including yours"}</span>
     </span>
   );
 }
@@ -157,7 +200,7 @@ export function Counts({ climb }: { climb: Climb }) {
   );
 }
 
-function ChevronIcon({ open }: { open: boolean }) {
+export function ChevronIcon({ open }: { open: boolean }) {
   return (
     <svg
       aria-hidden="true"
@@ -249,15 +292,29 @@ function ProposedGrade({ grade, climb }: { grade: string; climb: Climb }) {
 }
 
 export function CommentItem({ comment, climb }: { comment: ClimbComment; climb: Climb }) {
+  const userID = useSessionUser()?.userID;
+  const mine = Boolean(userID && comment.author?.userID === userID);
   return (
-    <li className="flex flex-col gap-1 rounded-lg border border-neutral-200 bg-white p-2.5">
+    <li
+      className={`flex flex-col gap-1 rounded-lg border bg-white p-2.5 ${
+        mine ? "border-sky-200 ring-1 ring-sky-100" : "border-neutral-200"
+      }`}
+    >
       <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5">
-        <Person person={comment.author} />
-        <time dateTime={comment.commentedAt} className="text-neutral-500">
+        <span className="flex min-w-0 items-center gap-1.5">
+          <Person person={comment.author} />
+          {mine && <span className="rounded bg-sky-100 px-1.5 py-0.5 font-semibold text-sky-700">You</span>}
+        </span>
+        <time
+          dateTime={comment.commentedAt}
+          title={comment.editedAt ? `Edited ${formatShortDate(new Date(comment.editedAt))}` : undefined}
+          className="text-neutral-500"
+        >
           {formatShortDate(new Date(comment.commentedAt))}
+          {comment.editedAt && " (edited)"}
         </time>
       </div>
-      <p className="break-words text-sm text-neutral-700">{comment.comment}</p>
+      {comment.comment && <p className="whitespace-pre-line break-words text-sm text-neutral-700">{comment.comment}</p>}
       {(comment.send || comment.grade || comment.rating !== undefined) && (
         <div className="flex flex-wrap gap-1.5">
           {comment.send && (
@@ -348,9 +405,57 @@ function ClimbActivityPanel({ climb }: { climb: Climb }) {
   );
 }
 
-// One climb as a row of a list. Clicking it opens its dropdown.
-export function ClimbRow({ climb }: { climb: Climb }) {
+const ROW_CLASS =
+  "-mx-2 flex w-[calc(100%+1rem)] items-center justify-between gap-3 rounded-lg px-2 py-2 text-left text-sm transition-colors hover:bg-neutral-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-secondary";
+const CARD_CLASS =
+  "flex min-h-24 flex-col gap-3 rounded-lg p-4 text-left transition-colors hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-secondary";
+
+function RowContent({ climb, open }: { climb: Climb; open?: boolean }) {
+  return (
+    <>
+      <span className="flex min-w-0 items-center gap-2 font-medium text-neutral-800">
+        {open !== undefined && <ChevronIcon open={open} />}
+        <ClimbColour climb={climb} />
+      </span>
+      <span className="flex shrink-0 items-center gap-3">
+        <GradeTag grade={climb.grade} />
+        <Counts climb={climb} />
+      </span>
+    </>
+  );
+}
+
+function CardContent({ climb, open }: { climb: Climb; open?: boolean }) {
+  return (
+    <>
+      <span className="flex w-full items-start justify-between gap-2">
+        <span className="flex min-w-0 items-start gap-1.5 font-medium text-neutral-800">
+          {open !== undefined && <ChevronIcon open={open} />}
+          <ClimbColour climb={climb} stacked />
+        </span>
+        <GradeTag grade={climb.grade} />
+      </span>
+      <span className="mt-auto flex w-full flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs text-neutral-500 tabular-nums">
+        <Sends climb={climb} />
+        <Stars climb={climb} />
+      </span>
+    </>
+  );
+}
+
+// One climb as a row of a list. Clicking it opens its dropdown - or, when
+// `linked`, goes to the climb's own page.
+export function ClimbRow({ climb, linked = false }: { climb: Climb; linked?: boolean }) {
   const dropdown = useDropdown();
+  if (linked) {
+    return (
+      <li className="py-1">
+        <Link href={climbHref(climb.id)} className={ROW_CLASS}>
+          <RowContent climb={climb} />
+        </Link>
+      </li>
+    );
+  }
   return (
     <li className="py-1">
       <button
@@ -358,16 +463,9 @@ export function ClimbRow({ climb }: { climb: Climb }) {
         onClick={dropdown.toggle}
         aria-expanded={dropdown.open}
         aria-controls={dropdown.id}
-        className="-mx-2 flex w-[calc(100%+1rem)] items-center justify-between gap-3 rounded-lg px-2 py-2 text-left text-sm transition-colors hover:bg-neutral-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-secondary"
+        className={ROW_CLASS}
       >
-        <span className="flex min-w-0 items-center gap-2 font-medium text-neutral-800">
-          <ChevronIcon open={dropdown.open} />
-          <ClimbColour climb={climb} />
-        </span>
-        <span className="flex shrink-0 items-center gap-3">
-          <GradeTag grade={climb.grade} />
-          <Counts climb={climb} />
-        </span>
+        <RowContent climb={climb} open={dropdown.open} />
       </button>
       {dropdown.mounted && (
         <div id={dropdown.id} hidden={!dropdown.open} className="pt-1 pb-2">
@@ -379,20 +477,31 @@ export function ClimbRow({ climb }: { climb: Climb }) {
 }
 
 // The rows of `climbs`, or `empty` when there are none.
-export function ClimbRows({ climbs, empty }: { climbs: Climb[]; empty: string }) {
+export function ClimbRows({ climbs, empty, linked = false }: { climbs: Climb[]; empty: string; linked?: boolean }) {
   if (climbs.length === 0) return <p className="py-6 text-center text-sm text-neutral-500">{empty}</p>;
   return (
     <ul className="flex flex-col divide-y divide-neutral-100">
       {climbs.map((climb) => (
-        <ClimbRow key={climb.id} climb={climb} />
+        <ClimbRow key={climb.id} climb={climb} linked={linked} />
       ))}
     </ul>
   );
 }
 
-// One climb as a card. Clicking it opens its dropdown below.
-export function ClimbCard({ climb }: { climb: Climb }) {
+// One climb as a card. Clicking it opens its dropdown below - or, when
+// `linked`, goes to the climb's own page.
+export function ClimbCard({ climb, linked = false }: { climb: Climb; linked?: boolean }) {
   const dropdown = useDropdown();
+  if (linked) {
+    return (
+      <Link
+        href={climbHref(climb.id)}
+        className={`${CARD_CLASS} h-full border border-neutral-200 bg-neutral-50 text-sm`}
+      >
+        <CardContent climb={climb} />
+      </Link>
+    );
+  }
   return (
     <article className="flex flex-col rounded-lg border border-neutral-200 bg-neutral-50 text-sm">
       <button
@@ -400,19 +509,9 @@ export function ClimbCard({ climb }: { climb: Climb }) {
         onClick={dropdown.toggle}
         aria-expanded={dropdown.open}
         aria-controls={dropdown.id}
-        className="flex min-h-24 flex-col gap-3 rounded-lg p-4 text-left transition-colors hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-secondary"
+        className={CARD_CLASS}
       >
-        <span className="flex w-full items-start justify-between gap-2">
-          <span className="flex min-w-0 items-start gap-1.5 font-medium text-neutral-800">
-            <ChevronIcon open={dropdown.open} />
-            <ClimbColour climb={climb} stacked />
-          </span>
-          <GradeTag grade={climb.grade} />
-        </span>
-        <span className="mt-auto flex w-full flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs text-neutral-500 tabular-nums">
-          <Sends climb={climb} />
-          <Stars climb={climb} />
-        </span>
+        <CardContent climb={climb} open={dropdown.open} />
       </button>
       {dropdown.mounted && (
         <div id={dropdown.id} hidden={!dropdown.open} className="px-2 pb-2">
@@ -424,13 +523,16 @@ export function ClimbCard({ climb }: { climb: Climb }) {
 }
 
 // One large container of climb cards, or `empty` when there are none.
-export function ClimbCardGrid({ climbs, empty }: { climbs: Climb[]; empty: string }) {
+export function ClimbCardGrid({ climbs, empty, linked = false }: { climbs: Climb[]; empty: string; linked?: boolean }) {
   return (
     <div className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm sm:p-6">
       {climbs.length > 0 ? (
-        <div className="grid grid-cols-1 items-start gap-4 min-[420px]:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
+        // An open dropdown only grows its own card, not the rest of its row.
+        <div
+          className={`grid grid-cols-1 gap-4 min-[420px]:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 ${linked ? "" : "items-start"}`}
+        >
           {climbs.map((climb) => (
-            <ClimbCard key={climb.id} climb={climb} />
+            <ClimbCard key={climb.id} climb={climb} linked={linked} />
           ))}
         </div>
       ) : (

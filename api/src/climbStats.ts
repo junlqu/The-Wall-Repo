@@ -1,5 +1,6 @@
 import { getContainer } from "./cosmosClient";
-import { ROUTE_CONTAINER } from "./models/Route";
+import { Comment } from "./models/Comment";
+import { Route, ROUTE_CONTAINER } from "./models/Route";
 
 // Keeps a climb's comment count and rating in step with its comments, so
 // they come free with the climb instead of being worked out on every read.
@@ -16,8 +17,9 @@ function isPreconditionFailed(error: unknown) {
   return (error as { code?: number }).code === 412;
 }
 
-// Call with 1 once a comment is saved, and -1 once one is deleted. The
-// increment adds the field to climbs that don't have it yet.
+// Call with 1 once a comment with text is saved, and -1 once one loses its
+// text or is deleted. The increment adds the field to climbs that don't
+// have it yet.
 export async function changeCommentCount(routeID: string, delta: 1 | -1) {
   await routeItem(routeID).patch([{ op: "incr", path: "/comments", value: delta }]);
 }
@@ -56,4 +58,48 @@ export async function changeRating(routeID: string, total: number, count: 1 | 0 
     }
   }
   throw new Error(`Couldn't update the rating of climb ${routeID}`);
+}
+
+// Adds or takes `userID` off the climb's ascents. Taking someone off needs
+// their place in the list, so it only saves if the list hasn't changed since
+// it was read, and tries again if it has.
+export async function setSent(routeID: string, userID: string, sent: boolean) {
+  const item = routeItem(routeID);
+  if (sent) {
+    await item.patch([{ op: "add", path: "/ascents/-", value: userID }]);
+    return;
+  }
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const { resource: route } = await item.read<Route>();
+    const index = route?.ascents?.lastIndexOf(userID) ?? -1;
+    if (!route || index === -1) return;
+    try {
+      await item.patch([{ op: "remove", path: `/ascents/${index}` }], {
+        accessCondition: { type: "IfMatch", condition: route._etag },
+      });
+      return;
+    } catch (error) {
+      if (!isPreconditionFailed(error)) throw error;
+    }
+  }
+  throw new Error(`Couldn't take a send off climb ${routeID}`);
+}
+
+type Counted = Pick<Comment, "comment" | "rating" | "send">;
+
+// Brings the climb's comment count, rating and ascents in line with one
+// person's comment going from `before` to `after` - null for a comment that
+// doesn't exist (yet, or any more). Only comments with text are counted.
+export async function applyCommentChange(routeID: string, userID: string, before: Counted | null, after: Counted | null) {
+  const textDelta = Number(Boolean(after?.comment)) - Number(Boolean(before?.comment));
+  if (textDelta !== 0) await changeCommentCount(routeID, textDelta as 1 | -1);
+
+  const ratingBefore = before?.rating;
+  const ratingAfter = after?.rating;
+  if (ratingBefore !== ratingAfter) {
+    const countDelta = Number(ratingAfter !== undefined) - Number(ratingBefore !== undefined);
+    await changeRating(routeID, (ratingAfter ?? 0) - (ratingBefore ?? 0), countDelta as 1 | 0 | -1);
+  }
+
+  if (Boolean(before?.send) !== Boolean(after?.send)) await setSent(routeID, userID, Boolean(after?.send));
 }

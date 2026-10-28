@@ -31,6 +31,8 @@ export type Climb = {
   removedAt?: string;
   leadable: Leadable;
   sends: number;
+  // Who sent it, in order - so a list can tell the visitor which they have.
+  senderIDs: string[];
   comments: number;
   // Average of its comments' ratings as stars out of 5, or null when nobody
   // has rated it.
@@ -58,9 +60,12 @@ export function ratingStars(rating: number) {
 // api/src/functions/routeActivity.ts.
 export type ClimbPerson = { userID: string; username: string; avatarUpdatedAt?: string };
 
+// Mirrors toPublicComment in api/src/commentFields.ts.
 export type ClimbComment = {
   commentID: string;
   commentedAt: string;
+  editedAt?: string;
+  // "" when they only sent, graded or rated it.
   comment: string;
   // 0-10.
   rating?: number;
@@ -74,14 +79,63 @@ export type ClimbComment = {
 // their account is gone.
 export type ClimbActivity = { comments: ClimbComment[]; lastSend: ClimbPerson | null };
 
-// The newest `limit` comments - the API caps it at 50.
-export async function fetchClimbActivity(id: string, limit?: number): Promise<ClimbActivity> {
-  const query = limit ? `?limit=${limit}` : "";
-  const res = await fetch(apiUrl(`/routes/${encodeURIComponent(id)}/activity${query}`));
+export async function fetchClimbActivity(id: string): Promise<ClimbActivity> {
+  const res = await fetch(apiUrl(`/routes/${encodeURIComponent(id)}/activity`));
   if (!res.ok) throw new Error(`Failed to load the climb's activity (${res.status})`);
   return (await res.json()) as ClimbActivity;
 }
 
+function commentsUrl(id: string, path = "") {
+  return apiUrl(`/routes/${encodeURIComponent(id)}/comments${path}`);
+}
+
+// Ten of the climb's comments that have text, newest first, from `offset` on.
+export async function fetchClimbComments(
+  id: string,
+  offset: number,
+): Promise<{ comments: ClimbComment[]; hasMore: boolean }> {
+  const res = await fetch(commentsUrl(id, `?offset=${offset}`));
+  if (!res.ok) throw new Error(`Failed to load comments (${res.status})`);
+  return res.json();
+}
+
+// The logged-in visitor's comment on the climb, or null when they haven't
+// left one.
+export async function fetchMyComment(id: string): Promise<ClimbComment | null> {
+  const res = await fetch(commentsUrl(id, "/mine"), { credentials: "include" });
+  if (!res.ok) throw new Error(`Failed to load your comment (${res.status})`);
+  return ((await res.json()) as { comment: ClimbComment | null }).comment;
+}
+
+// What the visitor writes. Any part can be left out, but not all of them.
+export type CommentDraft = Pick<ClimbComment, "comment" | "rating" | "grade" | "send">;
+
+// A change to the visitor's own comment. Errors carry the API's message,
+// written for them to read.
+async function myCommentRequest(id: string, method: "POST" | "PUT" | "DELETE", draft?: CommentDraft) {
+  const res = await fetch(commentsUrl(id, "/mine"), {
+    method,
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: draft && JSON.stringify(draft),
+  }).catch(() => {
+    throw new Error("Couldn't reach the server. Check your connection and try again.");
+  });
+  const body = res.status === 204 ? null : await res.json().catch(() => null);
+  if (!res.ok) throw new Error(body?.error ?? "Something went wrong. Try again.");
+  return body;
+}
+
+// Posts the visitor's one comment on the climb, or replaces it when
+// `existing`.
+export async function saveMyComment(id: string, draft: CommentDraft, existing: boolean): Promise<ClimbComment> {
+  return ((await myCommentRequest(id, existing ? "PUT" : "POST", draft)) as { comment: ClimbComment }).comment;
+}
+
+// Takes the visitor's comment down, with the send, grade and rating in it.
+export async function deleteMyComment(id: string): Promise<void> {
+  await myCommentRequest(id, "DELETE");
+}
 // Mirrors Route in api/src/models/Route.ts. Documents written before climb
 // types, setter names, leadable, comment counts and ratings existed may lack
 // them.
@@ -117,6 +171,7 @@ function toClimb(route: ApiRoute): Climb {
     removedAt: typeof route.removedAt === "string" ? route.removedAt : undefined,
     leadable: route.leadable ?? "?",
     sends: route.ascents?.length ?? 0,
+    senderIDs: route.ascents ?? [],
     comments: route.comments ?? 0,
     stars: toStars(route.rating),
     ratings: Math.max(0, route.rating?.count ?? 0),

@@ -1,37 +1,22 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from "@azure/functions";
 import { corsHeaders } from "../authUtils";
+import { isNotFound, readPeople, toPublicComment } from "../commentFields";
 import { getContainer } from "../cosmosClient";
 import { Comment, COMMENT_CONTAINER } from "../models/Comment";
 import { Route, ROUTE_CONTAINER } from "../models/Route";
-import { User, USER_CONTAINER } from "../models/User";
 
-// How many comments come back unless `?limit=` asks for more - the climb's
-// own page asks for up to MAX_COMMENTS.
 const RECENT_COMMENTS = 3;
-const MAX_COMMENTS = 50;
-
-function readLimit(request: HttpRequest) {
-  const limit = Number(request.query.get("limit"));
-  return Number.isInteger(limit) && limit > 0 ? Math.min(limit, MAX_COMMENTS) : RECENT_COMMENTS;
-}
-
-// All the climbs pages show of someone - never the rest of their account.
-type PublicPerson = { userID: string; username: string; avatarUpdatedAt?: string };
-
-function isNotFound(error: unknown) {
-  return (error as { code?: number }).code === 404;
-}
 
 // The newest comments on a climb. Comments are partitioned by their own ID,
 // so this looks across every partition - fine for one climb, but not
 // something to run for every climb at once.
-async function recentComments(routeID: string, limit: number): Promise<Comment[]> {
+async function recentComments(routeID: string): Promise<Comment[]> {
   try {
     const { resources } = await getContainer(COMMENT_CONTAINER)
       .items.query<Comment>({
         query: "SELECT TOP @limit * FROM c WHERE c.routeID = @routeID ORDER BY c.commentedAt DESC",
         parameters: [
-          { name: "@limit", value: limit },
+          { name: "@limit", value: RECENT_COMMENTS },
           { name: "@routeID", value: routeID },
         ],
       })
@@ -44,21 +29,8 @@ async function recentComments(routeID: string, limit: number): Promise<Comment[]
   }
 }
 
-// One point read each. Anyone whose account is gone is left out.
-async function readPeople(userIDs: string[]): Promise<Map<string, PublicPerson>> {
-  const container = getContainer(USER_CONTAINER);
-  const people = await Promise.all(
-    [...new Set(userIDs)].map(async (userID): Promise<PublicPerson | null> => {
-      const { resource } = await container.item(userID, userID).read<User>();
-      return resource ? { userID, username: resource.username, avatarUpdatedAt: resource.avatarUpdatedAt } : null;
-    })
-  );
-  return new Map(people.filter((person) => person !== null).map((person) => [person.userID, person]));
-}
-
-// GET /routes/{routeID}/activity?limit= - the climb's newest comments (3
-// unless `limit` says otherwise) and who sent it last. `lastSend` is null
-// when nobody has, or their account is gone.
+// GET /routes/{routeID}/activity - the climb's newest comments and who sent
+// it last. `lastSend` is null when nobody has, or their account is gone.
 export async function getRouteActivity(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
   const headers = corsHeaders(request);
 
@@ -66,7 +38,7 @@ export async function getRouteActivity(request: HttpRequest, context: Invocation
     const { routeID } = request.params;
     const [{ resource: route }, comments] = await Promise.all([
       getContainer(ROUTE_CONTAINER).item(routeID, routeID).read<Route>(),
-      recentComments(routeID, readLimit(request)),
+      recentComments(routeID),
     ]);
     if (!route) return { status: 404, headers, jsonBody: { error: "That climb doesn't exist any more." } };
 
@@ -79,15 +51,7 @@ export async function getRouteActivity(request: HttpRequest, context: Invocation
       status: 200,
       headers,
       jsonBody: {
-        comments: comments.map((comment) => ({
-          commentID: comment.commentID,
-          commentedAt: comment.commentedAt,
-          comment: comment.comment,
-          rating: comment.rating,
-          grade: comment.grade,
-          send: comment.send,
-          author: people.get(comment.userID) ?? null,
-        })),
+        comments: comments.map((comment) => toPublicComment(comment, people)),
         lastSend: (lastSender && people.get(lastSender)) ?? null,
       },
     };

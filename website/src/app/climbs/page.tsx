@@ -15,7 +15,7 @@ function LineCard({ line, climbs, noun }: { line: number; climbs: Climb[]; noun:
           {climbs.length === 1 ? "" : "s"}
         </Kicker>
       </div>
-      <ClimbRows climbs={climbs} empty="Nothing up on this line right now." />
+      <ClimbRows climbs={climbs} empty="Nothing up on this line right now." linked />
     </article>
   );
 }
@@ -67,7 +67,7 @@ export default function ClimbsPage() {
 
             <section className="flex flex-col gap-6">
               <SectionRule title="Boulders" href="/climbs/boulders" />
-              <ClimbCardGrid climbs={arranged.boulders} empty="No boulders up right now." />
+              <ClimbCardGrid climbs={arranged.boulders} empty="No boulders up right now." linked />
             </section>
 
             <section className="flex flex-col gap-6">

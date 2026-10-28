@@ -8,6 +8,7 @@ import "./functions/authRegister";
 import "./functions/avatars";
 import "./functions/health";
 import "./functions/routeActivity";
+import "./functions/routeComments";
 import "./functions/routeItem";
 import "./functions/routes";
 import "./functions/routesImport";
