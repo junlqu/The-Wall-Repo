@@ -41,3 +41,7 @@ export type User = {
   // Accounts made before settings existed don't have it.
   settings?: UserSettings;
 };
+
+export function isUserLevel(value: unknown): value is UserLevel {
+  return Object.values(USER_LEVEL).includes(value as UserLevel);
+}

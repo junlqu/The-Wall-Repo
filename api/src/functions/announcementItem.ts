@@ -136,7 +136,7 @@ export async function updateAnnouncement(request: HttpRequest, context: Invocati
   const headers = corsHeaders(request);
 
   try {
-    const rejection = rejectUnlessAdmin(request, headers, FORBIDDEN);
+    const rejection = await rejectUnlessAdmin(request, headers, FORBIDDEN);
     if (rejection) return rejection;
 
     const item = announcementItem(request);
@@ -163,7 +163,7 @@ export async function deleteAnnouncement(request: HttpRequest, context: Invocati
   const headers = corsHeaders(request);
 
   try {
-    const rejection = rejectUnlessAdmin(request, headers, FORBIDDEN);
+    const rejection = await rejectUnlessAdmin(request, headers, FORBIDDEN);
     if (rejection) return rejection;
 
     await announcementItem(request).delete();
@@ -181,7 +181,7 @@ export async function archiveAnnouncement(request: HttpRequest, context: Invocat
   const headers = corsHeaders(request);
 
   try {
-    const rejection = rejectUnlessAdmin(request, headers, FORBIDDEN);
+    const rejection = await rejectUnlessAdmin(request, headers, FORBIDDEN);
     if (rejection) return rejection;
 
     const { resource: updated } = await announcementItem(request).patch<Announcement>([
@@ -202,7 +202,7 @@ export async function restoreAnnouncement(request: HttpRequest, context: Invocat
   const headers = corsHeaders(request);
 
   try {
-    const rejection = rejectUnlessAdmin(request, headers, FORBIDDEN);
+    const rejection = await rejectUnlessAdmin(request, headers, FORBIDDEN);
     if (rejection) return rejection;
 
     const { relevantUntil } = (await request.json()) as { relevantUntil?: unknown };

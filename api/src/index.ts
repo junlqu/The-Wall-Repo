@@ -13,3 +13,4 @@ import "./functions/routeItem";
 import "./functions/routes";
 import "./functions/routesImport";
 import "./functions/scheduleSlots";
+import "./functions/users";

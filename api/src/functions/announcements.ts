@@ -27,7 +27,7 @@ export async function createAnnouncement(request: HttpRequest, context: Invocati
   const headers = corsHeaders(request);
 
   try {
-    const rejection = rejectUnlessAdmin(request, headers, FORBIDDEN);
+    const rejection = await rejectUnlessAdmin(request, headers, FORBIDDEN);
     if (rejection) return rejection;
 
     const fields = readAnnouncementFields(await request.json());

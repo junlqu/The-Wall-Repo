@@ -83,7 +83,7 @@ export async function importRoutes(request: HttpRequest, context: InvocationCont
   const headers = corsHeaders(request);
 
   try {
-    const rejection = rejectUnlessAdmin(request, headers);
+    const rejection = await rejectUnlessAdmin(request, headers);
     if (rejection) return rejection;
 
     const body = (await request.json()) as ImportBody;

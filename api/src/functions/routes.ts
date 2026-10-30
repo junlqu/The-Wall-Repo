@@ -37,7 +37,7 @@ export async function createRoute(request: HttpRequest, context: InvocationConte
   const headers = corsHeaders(request);
 
   try {
-    const rejection = rejectUnlessAdmin(request, headers);
+    const rejection = await rejectUnlessAdmin(request, headers);
     if (rejection) return rejection;
 
     const body = (await request.json()) as { leadable?: unknown };

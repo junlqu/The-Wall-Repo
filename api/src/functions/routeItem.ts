@@ -34,7 +34,7 @@ export async function updateRoute(request: HttpRequest, context: InvocationConte
   const headers = corsHeaders(request);
 
   try {
-    const rejection = rejectUnlessAdmin(request, headers);
+    const rejection = await rejectUnlessAdmin(request, headers);
     if (rejection) return rejection;
 
     const item = getContainer(ROUTE_CONTAINER).item(request.params.routeID, request.params.routeID);
@@ -72,7 +72,7 @@ export async function deleteRoute(request: HttpRequest, context: InvocationConte
   const headers = corsHeaders(request);
 
   try {
-    const rejection = rejectUnlessAdmin(request, headers);
+    const rejection = await rejectUnlessAdmin(request, headers);
     if (rejection) return rejection;
 
     await getContainer(ROUTE_CONTAINER).item(request.params.routeID, request.params.routeID).delete();
@@ -91,7 +91,7 @@ export async function archiveRoute(request: HttpRequest, context: InvocationCont
   const headers = corsHeaders(request);
 
   try {
-    const rejection = rejectUnlessAdmin(request, headers);
+    const rejection = await rejectUnlessAdmin(request, headers);
     if (rejection) return rejection;
 
     const body = (await request.json()) as { removedAt?: unknown };
@@ -117,7 +117,7 @@ export async function restoreRoute(request: HttpRequest, context: InvocationCont
   const headers = corsHeaders(request);
 
   try {
-    const rejection = rejectUnlessAdmin(request, headers);
+    const rejection = await rejectUnlessAdmin(request, headers);
     if (rejection) return rejection;
 
     const { resource: updated } = await getContainer(ROUTE_CONTAINER)

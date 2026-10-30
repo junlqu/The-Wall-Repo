@@ -10,6 +10,8 @@ import AdminClimbExport from "@/components/AdminClimbExport";
 import AdminClimbImport from "@/components/AdminClimbImport";
 import { AdminActiveClimbs, AdminPastClimbs } from "@/components/AdminClimbs";
 import AdminSectionView from "@/components/AdminSectionView";
+import AdminUserPermissions from "@/components/AdminUserPermissions";
+import { AdminUserList } from "@/components/AdminUsers";
 import { ADMIN_SECTIONS, getAdminSection } from "@/lib/adminSections";
 
 // Subpages whose tool is built, by "section/subpage". The rest show
@@ -25,6 +27,8 @@ const TOOLS: Record<string, ComponentType> = {
   "climbs/export": AdminClimbExport,
   "attendance/all": AdminAttendanceWeeks,
   "attendance/new": AdminAttendanceForm,
+  "users/all": AdminUserList,
+  "users/permissions": AdminUserPermissions,
 };
 
 // Static export - every subpage is known up front, anything else is a 404.
