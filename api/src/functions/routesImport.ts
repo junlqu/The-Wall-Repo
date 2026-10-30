@@ -47,6 +47,8 @@ function toNewRoute(value: unknown): Route | null {
     removedAt: removedAtFor(status, removedAt),
     leadable: fields.type === "boulder" ? "No" : "?",
     ascents: [],
+    comments: 0,
+    rating: { total: 0, count: 0 },
   };
 }
 
@@ -81,7 +83,7 @@ export async function importRoutes(request: HttpRequest, context: InvocationCont
   const headers = corsHeaders(request);
 
   try {
-    const rejection = rejectUnlessAdmin(request, headers);
+    const rejection = await rejectUnlessAdmin(request, headers);
     if (rejection) return rejection;
 
     const body = (await request.json()) as ImportBody;

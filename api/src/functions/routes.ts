@@ -37,7 +37,7 @@ export async function createRoute(request: HttpRequest, context: InvocationConte
   const headers = corsHeaders(request);
 
   try {
-    const rejection = rejectUnlessAdmin(request, headers);
+    const rejection = await rejectUnlessAdmin(request, headers);
     if (rejection) return rejection;
 
     const body = (await request.json()) as { leadable?: unknown };
@@ -47,7 +47,7 @@ export async function createRoute(request: HttpRequest, context: InvocationConte
     }
 
     const routeID = randomUUID();
-    const route: Route = { id: routeID, routeID, ...fields, removedAt: 0, leadable: body.leadable, ascents: [] };
+    const route: Route = { id: routeID, routeID, ...fields, removedAt: 0, leadable: body.leadable, ascents: [], comments: 0, rating: { total: 0, count: 0 } };
     const { resource } = await getContainer(ROUTE_CONTAINER).items.create(route);
     return { status: 201, headers, jsonBody: resource };
   } catch (error) {

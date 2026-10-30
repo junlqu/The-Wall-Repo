@@ -4,6 +4,7 @@ import AdminAnnouncements from "@/components/AdminAnnouncements";
 import AdminAttendance from "@/components/AdminAttendance";
 import AdminClimbs from "@/components/AdminClimbs";
 import AdminSectionView from "@/components/AdminSectionView";
+import AdminUsers from "@/components/AdminUsers";
 import { ADMIN_SECTIONS, getAdminSection } from "@/lib/adminSections";
 
 // Static export - every section is known up front, anything else is a 404.
@@ -30,6 +31,8 @@ export default async function AdminSectionPage({ params }: PageProps<"/admin/[se
       <AdminClimbs section={section} />
     ) : section.slug === "attendance" ? (
       <AdminAttendance section={section} />
+    ) : section.slug === "users" ? (
+      <AdminUsers section={section} />
     ) : undefined;
   return <AdminSectionView section={section}>{body}</AdminSectionView>;
 }

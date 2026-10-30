@@ -3,10 +3,14 @@
 import { useEffect, useSyncExternalStore } from "react";
 import { apiUrl } from "@/lib/api";
 
-// Mirrors USER_LEVEL in api/src/models/User.ts.
+// Lowest to highest - a higher level has more control. Mirrors USER_LEVEL in
+// api/src/models/User.ts.
 export const USER_LEVEL = {
-  default: 0,
-  admin: 1,
+  member: 0,
+  executive: 1, // club executives
+  moderator: 2,
+  staff: 3,
+  admin: 4,
 } as const;
 
 // Mirrors SessionUser in api/src/authUtils.ts.
@@ -29,6 +33,12 @@ function subscribe(listener: () => void) {
   return () => {
     listeners.delete(listener);
   };
+}
+
+// Staff and admins can use the admin tools. Mirrors canUseAdminTools in
+// api/src/models/User.ts.
+export function canUseAdminTools(user: Pick<SessionUser, "level"> | null | undefined) {
+  return user != null && user.level >= USER_LEVEL.staff;
 }
 
 export function setSessionUser(user: SessionUser | null) {

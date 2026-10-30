@@ -12,7 +12,7 @@ import {
 } from "../models/Attendance";
 import { isDate } from "../routeFields";
 
-const FORBIDDEN = "Only admins can see and change attendance.";
+const FORBIDDEN = "Only staff and admins can see and change attendance.";
 // Ten years of weeks in one import, and still a bound on one request.
 const MAX_WEEKS = 520;
 // Far more than fit on the wall in an hour - anything bigger is a typo.
@@ -80,7 +80,7 @@ export async function getAttendance(request: HttpRequest, context: InvocationCon
   const headers = corsHeaders(request);
 
   try {
-    const rejection = rejectUnlessAdmin(request, headers, FORBIDDEN);
+    const rejection = await rejectUnlessAdmin(request, headers, FORBIDDEN);
     if (rejection) return rejection;
 
     const { resources } = await getContainer(ATTENDANCE_CONTAINER).items.query("SELECT * FROM c").fetchAll();
@@ -98,7 +98,7 @@ export async function saveAttendance(request: HttpRequest, context: InvocationCo
   const headers = corsHeaders(request);
 
   try {
-    const rejection = rejectUnlessAdmin(request, headers, FORBIDDEN);
+    const rejection = await rejectUnlessAdmin(request, headers, FORBIDDEN);
     if (rejection) return rejection;
 
     const { weeks } = (await request.json()) as { weeks?: unknown };
@@ -145,7 +145,7 @@ export async function deleteAttendance(request: HttpRequest, context: Invocation
   const headers = corsHeaders(request);
 
   try {
-    const rejection = rejectUnlessAdmin(request, headers, FORBIDDEN);
+    const rejection = await rejectUnlessAdmin(request, headers, FORBIDDEN);
     if (rejection) return rejection;
 
     const { attendanceID } = request.params;

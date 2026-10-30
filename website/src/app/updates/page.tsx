@@ -1,8 +1,9 @@
 "use client";
 
-import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import AnnouncementDetails from "@/components/AnnouncementDetails";
 import Carousel from "@/components/Carousel";
+import { Kicker, Masthead, SectionRule } from "@/components/Masthead";
 import {
   type Announcement,
   ANNOUNCEMENT_TYPES,
@@ -207,10 +208,6 @@ function TargetChip({ announcement, light = false }: { announcement: Announcemen
   );
 }
 
-function Kicker({ children, className }: { children: ReactNode; className: string }) {
-  return <span className={`text-xs font-bold uppercase tracking-[0.2em] ${className}`}>{children}</span>;
-}
-
 // The front page story - one urgent announcement across the full width.
 function UrgentSlide({ announcement, now }: { announcement: Announcement; now: Date }) {
   const ref = useCountView<HTMLElement>(announcement.id);
@@ -308,15 +305,6 @@ function FeedCard({ announcement, now }: { announcement: Announcement; now: Date
   );
 }
 
-function SectionRule({ title }: { title: string }) {
-  return (
-    <div className="flex items-center gap-4">
-      <h2 className="shrink-0 font-serif text-2xl font-bold text-primary">{title}</h2>
-      <span aria-hidden="true" className="h-px flex-1 bg-neutral-300" />
-    </div>
-  );
-}
-
 function Placeholder({ className }: { className: string }) {
   return <div className={`animate-pulse rounded-xl bg-neutral-200/70 ${className}`} />;
 }
@@ -378,17 +366,11 @@ export default function UpdatesPage() {
     <PostContext.Provider value={post}>
       <div className="min-h-[calc(100vh-4rem)] bg-neutral-50">
         <div className="mx-auto flex max-w-6xl flex-col gap-10 px-4 py-10 sm:px-6 lg:px-8">
-          <header className="flex flex-col gap-3">
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-300 pb-2 text-xs font-semibold uppercase tracking-[0.2em] text-neutral-500">
-              <span>{now.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" })}</span>
-              <span>TPASC Climbing Wall</span>
-            </div>
-            <h1 className="text-center font-serif text-5xl font-black tracking-tight text-primary sm:text-7xl">The Wall Updates</h1>
-            <p className="text-center text-sm text-neutral-600 italic sm:text-base">
-              Route setting, challenges, closures, and everything else happening on the wall.
-            </p>
-            <div aria-hidden="true" className="h-1.5 border-y border-primary" />
-          </header>
+          <Masthead
+            title="The Wall Updates"
+            tagline="Route setting, challenges, closures, and everything else happening on the wall."
+            now={now}
+          />
 
           {error ? (
             <p className="rounded-xl border border-red-200 bg-red-50 p-6 text-center text-sm text-red-800">

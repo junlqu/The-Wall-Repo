@@ -10,10 +10,21 @@ export function Swatch({ colour, tape = false }: { colour: string; tape?: boolea
   );
 }
 
-// A climb's hold colour(s) with dots, plus its tape when it has one.
-export default function ClimbColour({ climb }: { climb: Pick<Climb, "colour" | "secondary" | "tape"> }) {
+// A climb's hold colour(s) with dots, plus its tape when it has one - beside
+// them where there's room, or always on its own row when `stacked`. With
+// `tapeRow` the tape row is always there, saying so when there's no tape, so
+// a list of them lines up.
+export default function ClimbColour({
+  climb,
+  stacked = false,
+  tapeRow = false,
+}: {
+  climb: Pick<Climb, "colour" | "secondary" | "tape">;
+  stacked?: boolean;
+  tapeRow?: boolean;
+}) {
   return (
-    <span className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+    <span className={`flex gap-x-2.5 gap-y-1 ${stacked || tapeRow ? "flex-col items-start" : "flex-wrap items-center"}`}>
       <span className="flex items-center gap-2">
         <span className="flex items-center gap-0.5">
           <Swatch colour={climb.colour} />
@@ -21,11 +32,13 @@ export default function ClimbColour({ climb }: { climb: Pick<Climb, "colour" | "
         </span>
         {climbColour(climb)}
       </span>
-      {climb.tape && (
+      {climb.tape ? (
         <span className="flex items-center gap-1.5 text-xs text-neutral-500">
           <Swatch colour={climb.tape} tape />
           {climb.tape} tape
         </span>
+      ) : (
+        tapeRow && <span className="text-xs text-neutral-400">No tape</span>
       )}
     </span>
   );

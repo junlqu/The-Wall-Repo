@@ -8,8 +8,8 @@ export function apiUrl(path: string): string {
   return `${API_BASE_URL}${path}`;
 }
 
-// Admin-only requests that change climbs or announcements. Errors carry the
-// API's message, which is written for the admin to read.
+// Admin-only requests - changing climbs or announcements, looking up users.
+// Errors carry the API's message, which is written for the admin to read.
 export async function adminRequest(path: string, init: RequestInit) {
   const res = await fetch(apiUrl(path), {
     ...init,

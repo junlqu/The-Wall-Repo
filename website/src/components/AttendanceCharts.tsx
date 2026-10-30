@@ -2,6 +2,7 @@
 
 import { type ReactNode, useState } from "react";
 import CountChart from "@/components/CountChart";
+import SlidingTabs from "@/components/SlidingTabs";
 import ToggleSwitch from "@/components/ToggleSwitch";
 import {
   type AttendanceDay,
@@ -61,33 +62,8 @@ function describePeriod({ scale, key }: Period) {
   return key;
 }
 
-// Three-way slider for the chart's scale. The white thumb slides under
-// whichever is chosen.
 function ScaleSlider({ scale, onChange }: { scale: Scale; onChange: (scale: Scale) => void }) {
-  const index = SCALES.findIndex((item) => item.id === scale);
-  return (
-    <div role="tablist" aria-label="Period" className="relative flex w-44 rounded-md bg-neutral-200/70 p-0.5">
-      <span
-        aria-hidden="true"
-        style={{ width: "calc((100% - 0.25rem) / 3)", transform: `translateX(${index * 100}%)` }}
-        className="absolute inset-y-0.5 left-0.5 rounded bg-white shadow-sm transition-transform duration-200"
-      />
-      {SCALES.map((item) => (
-        <button
-          key={item.id}
-          type="button"
-          role="tab"
-          aria-selected={item.id === scale}
-          onClick={() => onChange(item.id)}
-          className={`relative flex-1 rounded px-2 py-1 text-xs font-semibold transition-colors ${
-            item.id === scale ? "text-primary" : "text-neutral-500 hover:text-neutral-800"
-          }`}
-        >
-          {item.label}
-        </button>
-      ))}
-    </div>
-  );
+  return <SlidingTabs label="Period" tabs={SCALES} active={scale} onChange={onChange} />;
 }
 
 function formatter(metric: Metric, average: boolean) {

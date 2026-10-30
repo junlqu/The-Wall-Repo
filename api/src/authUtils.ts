@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 import { Cookie, HttpRequest, HttpResponseInit } from "@azure/functions";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
-import { User, USER_LEVEL, UserLevel } from "./models/User";
+import { getContainer } from "./cosmosClient";
+import { canUseAdminTools, User, USER_CONTAINER, UserLevel } from "./models/User";
 
 export type SessionUser = {
   userID: string;
@@ -74,18 +75,30 @@ export function readSessionUser(request: HttpRequest): SessionUser | null {
   }
 }
 
-// The 401/403 to send back when the request isn't from a logged-in admin, or
-// null when it is. `forbidden` is the 403's message, naming what was refused.
-export function rejectUnlessAdmin(
+// The signed-in user's account as it is now, or null when there's no valid
+// session or the account is gone. The session token carries the level they
+// had when they logged in, so anything that hangs on their level reads this
+// instead - a promotion or demotion counts from their next request.
+export async function readCurrentUser(request: HttpRequest): Promise<User | null> {
+  const session = readSessionUser(request);
+  if (!session) return null;
+  const { resource } = await getContainer(USER_CONTAINER).item(session.userID, session.userID).read<User>();
+  return resource ?? null;
+}
+
+// The 401/403 to send back when the request isn't from someone logged in who
+// can use the admin tools (staff and admins), or null when it is. `forbidden`
+// is the 403's message, naming what was refused.
+export async function rejectUnlessAdmin(
   request: HttpRequest,
   headers: Record<string, string>,
-  forbidden = "Only admins can change climbs.",
-): HttpResponseInit | null {
-  const session = readSessionUser(request);
-  if (!session) {
+  forbidden = "Only staff and admins can change climbs.",
+): Promise<HttpResponseInit | null> {
+  const user = await readCurrentUser(request);
+  if (!user) {
     return { status: 401, headers, jsonBody: { error: "You need to be logged in." } };
   }
-  if (session.level !== USER_LEVEL.admin) {
+  if (!canUseAdminTools(user.level)) {
     return { status: 403, headers, jsonBody: { error: forbidden } };
   }
   return null;
