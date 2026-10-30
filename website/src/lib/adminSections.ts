@@ -39,7 +39,7 @@ export const ADMIN_SECTIONS: AdminSection[] = [
   },
   {
     slug: "equipment",
-    title: "Equipment",
+    title: "Equipment (WIP)",
     description: "Track the gear on hand and retire what's worn out.",
     subpages: [
       { slug: "all", label: "See all equipment" },
@@ -49,7 +49,7 @@ export const ADMIN_SECTIONS: AdminSection[] = [
   },
   {
     slug: "maintenance",
-    title: "Maintenance",
+    title: "Maintenance (WIP)",
     description: "Maintenance reports and logs database, with equipment tracking and scheduling.",
     subpages: [
       { slug: "new", label: "Start new maintenance report" },
