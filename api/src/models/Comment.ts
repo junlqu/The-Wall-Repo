@@ -18,6 +18,9 @@ export type Comment = {
   rating?: number; // 0-10
   grade?: string;
   send?: boolean;
+  // YYYY-MM-DD - the day they sent it, as they wrote it. Only with a send.
+  // Sends from before this was asked for don't have it.
+  sentAt?: string;
 };
 
 export function commentIDFor(routeID: string, userID: string) {

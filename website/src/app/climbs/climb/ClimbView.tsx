@@ -19,6 +19,7 @@ import {
   type Climb,
   type ClimbComment,
   type ClimbPerson,
+  type ClimbType,
   CLIMB_TYPES,
   climbColour,
   climbHref,
@@ -51,10 +52,19 @@ function SendIcon() {
   );
 }
 
-function BackLink() {
+// Each type's own list, which a climb's page goes back to.
+const TYPE_PAGES: Record<ClimbType, { href: string; label: string }> = {
+  route: { href: "/climbs/routes", label: "Routes" },
+  boulder: { href: "/climbs/boulders", label: "Boulders" },
+  combo: { href: "/climbs/combos", label: "Combos" },
+};
+
+// Back to the climb's own type's list - or every climb, without one.
+function BackLink({ type }: { type?: ClimbType }) {
+  const { href, label } = type ? TYPE_PAGES[type] : { href: "/climbs", label: "All climbs" };
   return (
-    <Link href="/climbs" className="w-fit text-sm font-semibold text-primary hover:text-secondary">
-      ← All climbs
+    <Link href={href} className="w-fit text-sm font-semibold text-primary hover:text-secondary">
+      ← {label}
     </Link>
   );
 }
@@ -84,14 +94,31 @@ function joinNames(names: string[]) {
   return names.length < 2 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 }
 
-// One of the climb's headline numbers, beside its title.
+// One of the climb's headline numbers, beside its title - smaller on phones,
+// where it shares the row with the title.
 function Tally({ icon, count, label }: { icon: ReactNode; count: number; label: string }) {
   return (
-    <div className="flex min-w-24 flex-col items-center gap-1 rounded-xl border border-neutral-200 bg-neutral-50 px-5 py-3 text-center">
-      <span className="text-secondary">{icon}</span>
-      <span className="font-serif text-3xl leading-none font-bold text-primary tabular-nums">{count}</span>
-      <Kicker className="text-neutral-400">{label}</Kicker>
+    <div className="flex min-w-12 flex-col items-center gap-0.5 rounded-md border border-neutral-200 bg-neutral-50 px-2 py-1.5 text-center sm:min-w-16 sm:rounded-lg sm:px-3 sm:py-2">
+      <span className="text-secondary [&_svg]:h-3 [&_svg]:w-3 sm:[&_svg]:h-4 sm:[&_svg]:w-4">{icon}</span>
+      <span className="font-serif text-base leading-none font-bold text-primary tabular-nums sm:text-xl">{count}</span>
+      <span className="text-[0.6rem] font-bold tracking-[0.1em] text-neutral-400 uppercase sm:text-xs sm:tracking-[0.2em]">
+        {label}
+      </span>
     </div>
+  );
+}
+
+// The climb's grade, under its tallies. Hidden from screen readers, as the
+// heading reads it out.
+function GradeBox({ grade }: { grade: string }) {
+  return (
+    <span
+      aria-hidden="true"
+      className="rounded-md bg-primary px-2 py-1 font-serif text-sm leading-none font-bold text-white tabular-nums shadow-sm sm:rounded-lg sm:px-3 sm:py-1.5 sm:text-lg"
+      title="Grade"
+    >
+      {grade || "New"}
+    </span>
   );
 }
 
@@ -125,25 +152,19 @@ function PostCard({ climb, lastSend }: { climb: Climb; lastSend: LastSend }) {
       <div aria-hidden="true" className="absolute inset-x-0 top-0 h-1.5 bg-gradient-to-r from-primary via-secondary to-primary" />
 
       <div className="flex flex-col gap-6 p-6 pt-8 sm:p-10">
-        <Kicker className="text-secondary">
-          {type}
-          {climb.line !== undefined && ` · Line ${climb.line}`}
-        </Kicker>
+        <div className="flex min-w-0 flex-col gap-6">
+          <Kicker className="text-secondary">
+            {type}
+            {climb.line !== undefined && ` · Line ${climb.line}`}
+          </Kicker>
 
-        {climb.status === "past" && (
-          <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-            This climb has come down
-            {climb.removedAt ? ` - it was taken off the wall on ${formatDate(climb.removedAt)}` : ""}.
-          </p>
-        )}
-
-        <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
           <div className="flex min-w-0 flex-col gap-4">
-            <div className="flex items-center gap-4 sm:gap-5">
+            <div className="flex items-center gap-4 pr-12 sm:gap-5 sm:pr-16">
               <ColourCircle climb={climb} />
               <div className="flex min-w-0 flex-col gap-1">
                 <h1 className="font-serif text-4xl leading-tight font-black tracking-tight text-primary sm:text-6xl">
-                  {climbColour(climb)} {climb.grade || "New"}
+                  {climbColour(climb)}
+                  <span className="sr-only"> {climb.grade || "New"}</span>
                 </h1>
                 {climb.tape && (
                   <span className="flex items-center gap-1.5 text-sm text-neutral-500">
@@ -166,17 +187,29 @@ function PostCard({ climb, lastSend }: { climb: Climb; lastSend: LastSend }) {
               </span>
             </div>
           </div>
-
-          <div className="flex shrink-0 gap-3">
-            <Tally icon={<SendIcon />} count={climb.sends} label={climb.sends === 1 ? "Send" : "Sends"} />
-            <Tally icon={<CommentIcon className="h-4 w-4" />} count={climb.comments} label={climb.comments === 1 ? "Comment" : "Comments"} />
-          </div>
         </div>
+
+        {climb.status === "past" && (
+          <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            This climb has come down
+            {climb.removedAt ? ` - it was taken off the wall on ${formatDate(climb.removedAt)}` : ""}.
+          </p>
+        )}
 
         <dl className="grid grid-cols-1 gap-px overflow-hidden rounded-lg border border-neutral-200 bg-neutral-200 sm:grid-cols-2">
           <Fact label="Most recent send">{lastSender}</Fact>
           <Fact label="Leadable">{climb.type === "boulder" ? "Boulders aren't led" : LEADABLE_TEXT[climb.leadable]}</Fact>
         </dl>
+      </div>
+
+      {/* Tucked into the corner rather than given a column, so the title keeps
+          its width - it only needs to clear the grade box. */}
+      <div className="absolute top-4 right-3 flex flex-col items-end gap-2 sm:top-5 sm:right-5 sm:gap-3">
+        <div className="flex gap-1.5 sm:gap-2">
+          <Tally icon={<SendIcon />} count={climb.sends} label={climb.sends === 1 ? "Send" : "Sends"} />
+          <Tally icon={<CommentIcon className="h-4 w-4" />} count={climb.comments} label={climb.comments === 1 ? "Comment" : "Comments"} />
+        </div>
+        <GradeBox grade={climb.grade} />
       </div>
     </article>
   );
@@ -383,14 +416,34 @@ function ClimbDetails({ id }: { id: string }) {
 
   useEffect(load, [load]);
 
-  if (climb === "loading") return <Placeholder className="h-96" />;
-  if (climb === "error") return <ClimbsError />;
+  if (climb === "loading") {
+    return (
+      <>
+        <Placeholder className="h-5 w-24" />
+        <Placeholder className="h-96" />
+      </>
+    );
+  }
+  if (climb === "error") {
+    return (
+      <>
+        <BackLink />
+        <ClimbsError />
+      </>
+    );
+  }
   if (climb === null) {
-    return <Notice title="Climb not found">There&apos;s no climb with that ID - it may have been deleted.</Notice>;
+    return (
+      <>
+        <BackLink />
+        <Notice title="Climb not found">There&apos;s no climb with that ID - it may have been deleted.</Notice>
+      </>
+    );
   }
 
   return (
     <>
+      <BackLink type={climb.type} />
       <PostCard climb={climb} lastSend={lastSend} />
 
       <section className="flex flex-col gap-6">
@@ -418,12 +471,14 @@ export default function ClimbView() {
   return (
     <div className="min-h-[calc(100vh-4rem)] bg-neutral-50">
       <div className="mx-auto flex max-w-4xl flex-col gap-10 px-4 py-10 sm:px-6 lg:px-8">
-        <BackLink />
         {id ? (
           // Keyed so moving to another climb starts it fresh.
           <ClimbDetails key={id} id={id} />
         ) : (
-          <Notice title="No climb picked">Open a climb from the climbs list to see it here.</Notice>
+          <>
+            <BackLink />
+            <Notice title="No climb picked">Open a climb from the climbs list to see it here.</Notice>
+          </>
         )}
       </div>
     </div>

@@ -71,6 +71,9 @@ export type ClimbComment = {
   rating?: number;
   grade?: string;
   send?: boolean;
+  // YYYY-MM-DD, only with a send. Sends from before it was asked for don't
+  // have it - commentSentAt falls back to when they commented.
+  sentAt?: string;
   // Null once their account is gone.
   author: ClimbPerson | null;
 };
@@ -108,7 +111,13 @@ export async function fetchMyComment(id: string): Promise<ClimbComment | null> {
 }
 
 // What the visitor writes. Any part can be left out, but not all of them.
-export type CommentDraft = Pick<ClimbComment, "comment" | "rating" | "grade" | "send">;
+export type CommentDraft = Pick<ClimbComment, "comment" | "rating" | "grade" | "send" | "sentAt">;
+
+// The day a comment's send was, as YYYY-MM-DD - null when it isn't a send.
+export function commentSentAt(comment: ClimbComment) {
+  if (!comment.send) return null;
+  return comment.sentAt ?? localDate(new Date(comment.commentedAt));
+}
 
 // A change to the visitor's own comment. Errors carry the API's message,
 // written for them to read.
@@ -231,10 +240,14 @@ export async function deleteClimb(id: string): Promise<void> {
   await climbRequest(id, "", { method: "DELETE" });
 }
 
+// A moment as the day it falls on in the visitor's own timezone, YYYY-MM-DD.
+export function localDate(date: Date) {
+  return [date.getFullYear(), date.getMonth() + 1, date.getDate()].map((part) => String(part).padStart(2, "0")).join("-");
+}
+
 // Today in the admin's own timezone, as YYYY-MM-DD.
 export function todayDate() {
-  const now = new Date();
-  return [now.getFullYear(), now.getMonth() + 1, now.getDate()].map((part) => String(part).padStart(2, "0")).join("-");
+  return localDate(new Date());
 }
 
 // The wall's hold and tape colours, in the order the colour pickers list them.

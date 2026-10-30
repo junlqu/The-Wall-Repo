@@ -13,8 +13,10 @@ import {
   type ClimbPerson,
   climbHref,
   climbSetters,
+  commentSentAt,
   fetchClimbActivity,
   fetchClimbs,
+  formatDate,
   MAX_STARS,
   ratingStars,
 } from "@/lib/climbs";
@@ -294,6 +296,7 @@ function ProposedGrade({ grade, climb }: { grade: string; climb: Climb }) {
 export function CommentItem({ comment, climb }: { comment: ClimbComment; climb: Climb }) {
   const userID = useSessionUser()?.userID;
   const mine = Boolean(userID && comment.author?.userID === userID);
+  const sentAt = commentSentAt(comment);
   return (
     <li
       className={`flex flex-col gap-1 rounded-lg border bg-white p-2.5 ${
@@ -315,19 +318,25 @@ export function CommentItem({ comment, climb }: { comment: ClimbComment; climb: 
         </time>
       </div>
       {comment.comment && <p className="whitespace-pre-line break-words text-sm text-neutral-700">{comment.comment}</p>}
-      {(comment.send || comment.grade || comment.rating !== undefined) && (
-        <div className="flex flex-wrap gap-1.5">
-          {comment.send && (
-            <span className="rounded bg-green-100 px-1.5 py-0.5 font-semibold text-green-700">Sent</span>
-          )}
-          {comment.grade && (
-            <ProposedGrade grade={comment.grade} climb={climb} />
-          )}
-          {comment.rating !== undefined && (
-            <span className="rounded bg-amber-50 px-1.5 py-0.5 font-semibold text-amber-700">
-              ★ {ratingStars(comment.rating).toFixed(1)}
+      {(sentAt || comment.grade || comment.rating !== undefined) && (
+        // The send on the left, the grade and rating they gave on the right.
+        <div className="flex flex-wrap items-center justify-between gap-1.5">
+          {sentAt && (
+            <span className="flex items-center gap-1.5">
+              <span className="rounded bg-green-100 px-1.5 py-0.5 font-semibold text-green-700">Sent</span>
+              <span className="text-neutral-500">
+                on <time dateTime={sentAt}>{formatDate(sentAt)}</time>
+              </span>
             </span>
           )}
+          <span className="ml-auto flex flex-wrap gap-1.5">
+            {comment.grade && <ProposedGrade grade={comment.grade} climb={climb} />}
+            {comment.rating !== undefined && (
+              <span className="rounded bg-amber-50 px-1.5 py-0.5 font-semibold text-amber-700">
+                ★ {ratingStars(comment.rating).toFixed(1)}
+              </span>
+            )}
+          </span>
         </div>
       )}
     </li>
@@ -405,17 +414,21 @@ function ClimbActivityPanel({ climb }: { climb: Climb }) {
   );
 }
 
-const ROW_CLASS =
-  "-mx-2 flex w-[calc(100%+1rem)] items-center justify-between gap-3 rounded-lg px-2 py-2 text-left text-sm transition-colors hover:bg-neutral-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-secondary";
+// A row with the tape on a line of its own is a little taller.
+function rowClass(tapeRow: boolean) {
+  return `-mx-2 flex w-[calc(100%+1rem)] items-center justify-between gap-3 rounded-lg px-2 ${
+    tapeRow ? "py-3" : "py-2"
+  } text-left text-sm transition-colors hover:bg-neutral-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-secondary`;
+}
 const CARD_CLASS =
   "flex min-h-24 flex-col gap-3 rounded-lg p-4 text-left transition-colors hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-secondary";
 
-function RowContent({ climb, open }: { climb: Climb; open?: boolean }) {
+function RowContent({ climb, open, tapeRow }: { climb: Climb; open?: boolean; tapeRow: boolean }) {
   return (
     <>
       <span className="flex min-w-0 items-center gap-2 font-medium text-neutral-800">
         {open !== undefined && <ChevronIcon open={open} />}
-        <ClimbColour climb={climb} />
+        <ClimbColour climb={climb} tapeRow={tapeRow} />
       </span>
       <span className="flex shrink-0 items-center gap-3">
         <GradeTag grade={climb.grade} />
@@ -444,14 +457,23 @@ function CardContent({ climb, open }: { climb: Climb; open?: boolean }) {
 }
 
 // One climb as a row of a list. Clicking it opens its dropdown - or, when
-// `linked`, goes to the climb's own page.
-export function ClimbRow({ climb, linked = false }: { climb: Climb; linked?: boolean }) {
+// `linked`, goes to the climb's own page. `tapeRow` gives the tape a line of
+// its own beneath the colour.
+export function ClimbRow({
+  climb,
+  linked = false,
+  tapeRow = false,
+}: {
+  climb: Climb;
+  linked?: boolean;
+  tapeRow?: boolean;
+}) {
   const dropdown = useDropdown();
   if (linked) {
     return (
       <li className="py-1">
-        <Link href={climbHref(climb.id)} className={ROW_CLASS}>
-          <RowContent climb={climb} />
+        <Link href={climbHref(climb.id)} className={rowClass(tapeRow)}>
+          <RowContent climb={climb} tapeRow={tapeRow} />
         </Link>
       </li>
     );
@@ -463,9 +485,9 @@ export function ClimbRow({ climb, linked = false }: { climb: Climb; linked?: boo
         onClick={dropdown.toggle}
         aria-expanded={dropdown.open}
         aria-controls={dropdown.id}
-        className={ROW_CLASS}
+        className={rowClass(tapeRow)}
       >
-        <RowContent climb={climb} open={dropdown.open} />
+        <RowContent climb={climb} open={dropdown.open} tapeRow={tapeRow} />
       </button>
       {dropdown.mounted && (
         <div id={dropdown.id} hidden={!dropdown.open} className="pt-1 pb-2">
@@ -477,12 +499,22 @@ export function ClimbRow({ climb, linked = false }: { climb: Climb; linked?: boo
 }
 
 // The rows of `climbs`, or `empty` when there are none.
-export function ClimbRows({ climbs, empty, linked = false }: { climbs: Climb[]; empty: string; linked?: boolean }) {
+export function ClimbRows({
+  climbs,
+  empty,
+  linked = false,
+  tapeRow = false,
+}: {
+  climbs: Climb[];
+  empty: string;
+  linked?: boolean;
+  tapeRow?: boolean;
+}) {
   if (climbs.length === 0) return <p className="py-6 text-center text-sm text-neutral-500">{empty}</p>;
   return (
     <ul className="flex flex-col divide-y divide-neutral-100">
       {climbs.map((climb) => (
-        <ClimbRow key={climb.id} climb={climb} linked={linked} />
+        <ClimbRow key={climb.id} climb={climb} linked={linked} tapeRow={tapeRow} />
       ))}
     </ul>
   );

@@ -3,7 +3,7 @@
 import { type FormEvent, useState } from "react";
 import { StarIcon } from "@/components/ClimbCards";
 import { Kicker } from "@/components/Masthead";
-import { type Climb, type ClimbComment, MAX_STARS, saveMyComment } from "@/lib/climbs";
+import { type Climb, type ClimbComment, commentSentAt, MAX_STARS, saveMyComment, todayDate } from "@/lib/climbs";
 import { GRADE_SCALES } from "@/lib/grades";
 
 const MAX_LENGTH = 1000;
@@ -83,6 +83,9 @@ export default function CommentForm({
 }) {
   const [text, setText] = useState(initial?.comment ?? "");
   const [send, setSend] = useState(initial?.send ?? false);
+  // Today, the day the comment is posted, unless they already gave one.
+  const [today] = useState(todayDate);
+  const [sentAt, setSentAt] = useState((initial && commentSentAt(initial)) ?? today);
   const [grade, setGrade] = useState(initial?.grade ?? "");
   const [rating, setRating] = useState<number | undefined>(initial?.rating);
   const [saving, setSaving] = useState(false);
@@ -91,7 +94,8 @@ export default function CommentForm({
   const scale = GRADE_SCALES[climb.type === "boulder" ? "boulder" : "route"];
   // Keeps a grade from before the scale changed choosable.
   const grades = grade && !scale.includes(grade) ? [grade, ...scale] : scale;
-  const canSave = !saving && (text.trim() !== "" || send || grade !== "" || rating !== undefined);
+  const sendDateValid = !send || (sentAt !== "" && sentAt <= today);
+  const canSave = !saving && sendDateValid && (text.trim() !== "" || send || grade !== "" || rating !== undefined);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -101,7 +105,7 @@ export default function CommentForm({
     try {
       const saved = await saveMyComment(
         climb.id,
-        { comment: text.trim(), send, grade: grade || undefined, rating },
+        { comment: text.trim(), send, sentAt: send ? sentAt : undefined, grade: grade || undefined, rating },
         Boolean(initial),
       );
       onSaved(saved);
@@ -141,6 +145,20 @@ export default function CommentForm({
             I sent it
           </label>
         </div>
+
+        {send && (
+          <label className="flex flex-col gap-2">
+            <Kicker className="text-neutral-400">Sent on</Kicker>
+            <input
+              type="date"
+              value={sentAt}
+              max={today}
+              required
+              onChange={(event) => setSentAt(event.target.value)}
+              className="rounded-full border border-neutral-300 bg-white px-3.5 py-1.5 text-sm font-semibold text-neutral-700 focus:border-secondary focus:outline-none focus:ring-2 focus:ring-secondary/40"
+            />
+          </label>
+        )}
 
         <label className="flex flex-col gap-2">
           <Kicker className="text-neutral-400">Grade</Kicker>
