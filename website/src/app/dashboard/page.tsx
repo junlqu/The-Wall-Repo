@@ -7,7 +7,7 @@ import AnnouncementDetails, { EyeIcon } from "@/components/AnnouncementDetails";
 import { LikeButton, useToggleLike } from "@/components/AnnouncementLike";
 import { GradeTag, Person, Placeholder } from "@/components/ClimbCards";
 import ClimbColour from "@/components/ClimbColour";
-import { type Announcement, formatShortDate } from "@/lib/announcements";
+import { type Announcement, formatDateTime, formatShortDate } from "@/lib/announcements";
 import { type Climb, CLIMB_TYPES, climbHref, formatDate, ratingStars } from "@/lib/climbs";
 import {
   type Dashboard,
@@ -240,11 +240,15 @@ function RecentComment({ comment, climb }: DashboardComment) {
         ) : (
           <span>That climb is gone now</span>
         )}
-        <PostedAt at={comment.commentedAt} />
+        {/* With the time, as several in a day would otherwise look the same. */}
+        <time dateTime={comment.commentedAt} className="shrink-0">
+          {formatDateTime(comment.commentedAt)}
+        </time>
       </div>
       <p className="whitespace-pre-line break-words text-sm text-neutral-700">{comment.comment}</p>
-      {(comment.grade || comment.rating !== undefined) && (
-        <div className="flex gap-2 text-xs">
+      {(comment.send || comment.grade || comment.rating !== undefined) && (
+        <div className="flex flex-wrap gap-2 text-xs">
+          {comment.send && <span className="rounded bg-green-100 px-1.5 py-0.5 font-semibold text-green-700">Sent</span>}
           {comment.grade && (
             <span className="rounded bg-secondary/15 px-1.5 py-0.5 font-medium text-primary">Graded {comment.grade}</span>
           )}
