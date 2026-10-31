@@ -12,7 +12,7 @@ export default function BouldersPage() {
   return (
     <div className="min-h-[calc(100vh-4rem)] bg-neutral-50">
       <div className="mx-auto flex max-w-6xl flex-col gap-10 px-4 py-10 sm:px-6 lg:px-8">
-        <Masthead title="The Wall Boulders" tagline="Every boulder up on the wall right now." now={now} />
+        <Masthead title="Boulders" tagline="Every boulder up on the wall right now." now={now} />
 
         {error ? (
           <ClimbsError />

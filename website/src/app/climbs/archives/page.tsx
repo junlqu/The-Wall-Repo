@@ -51,7 +51,7 @@ export default function ArchivesPage() {
   return (
     <div className="min-h-[calc(100vh-4rem)] bg-neutral-50">
       <div className="mx-auto flex max-w-6xl flex-col gap-10 px-4 py-10 sm:px-6 lg:px-8">
-        <Masthead title="The Wall Archives" tagline="The climbs you've commented on that have since come down." now={now} />
+        <Masthead title="Archives" tagline="The climbs you've commented on that have since come down." now={now} />
 
         {error ? (
           <ClimbsError />
