@@ -4,6 +4,7 @@ import { buildSessionCookie, corsHeaders, hashPassword, newUserId, signSessionTo
 import { getStarterAvatar } from "../avatarUtils";
 import { Avatar, AVATAR_CONTAINER } from "../models/Avatar";
 import { User, USER_CONTAINER, USER_LEVEL } from "../models/User";
+import { buildMetrics } from "../userMetrics";
 
 // Keep in sync with website/src/app/signup/page.tsx.
 const MAX_NAME_LENGTH = 128;
@@ -94,8 +95,9 @@ export async function authRegister(request: HttpRequest, context: InvocationCont
       passwordHash: await hashPassword(body.password),
       createdAt,
       avatarUpdatedAt: createdAt,
+      lastOnline: createdAt,
       level: USER_LEVEL.member,
-      settings: {},
+      settings: { metrics: buildMetrics([], []) },
     };
 
     await container.items.create(user);

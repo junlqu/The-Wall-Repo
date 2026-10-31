@@ -163,12 +163,12 @@ export type Announcement = {
 };
 
 // Mirrors toPublicAnnouncement in api/src/announcementFields.ts.
-type ApiAnnouncement = Omit<Announcement, "id" | "content"> & {
+export type ApiAnnouncement = Omit<Announcement, "id" | "content"> & {
   announcementID: string;
   announcement: AnnouncementContent;
 };
 
-function toAnnouncement({ announcementID, announcement, ...rest }: ApiAnnouncement): Announcement {
+export function toAnnouncement({ announcementID, announcement, ...rest }: ApiAnnouncement): Announcement {
   return {
     id: announcementID,
     type: rest.type,

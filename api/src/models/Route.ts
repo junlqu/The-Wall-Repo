@@ -37,6 +37,9 @@ export type Route = {
   leadable: Leadable;
   // userIDs in the order they sent the route.
   ascents: string[];
+  // userIDs of everyone following the climb, whose dashboards show its new
+  // comments. Climbs added before follows existed don't have it.
+  follows?: string[];
   // How many comments it has, kept in step by changeCommentCount. Climbs
   // added before the count existed lack it until their first comment.
   comments?: number;

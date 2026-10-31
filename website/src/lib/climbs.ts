@@ -146,9 +146,9 @@ export async function deleteMyComment(id: string): Promise<void> {
   await myCommentRequest(id, "DELETE");
 }
 // Mirrors Route in api/src/models/Route.ts. Documents written before climb
-// types, setter names, leadable, comment counts and ratings existed may lack
-// them.
-type ApiRoute = {
+// types, setter names, leadable, follows, comment counts and ratings existed
+// may lack them.
+export type ApiRoute = {
   routeID: string;
   type?: ClimbType;
   setter?: string;
@@ -161,11 +161,12 @@ type ApiRoute = {
   secondary?: string;
   leadable?: Leadable;
   ascents?: string[];
+  follows?: string[];
   comments?: number;
   rating?: { total: number; count: number };
 };
 
-function toClimb(route: ApiRoute): Climb {
+export function toClimb(route: ApiRoute): Climb {
   return {
     id: route.routeID,
     type: route.type ?? "route",

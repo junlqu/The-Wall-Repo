@@ -1,3 +1,5 @@
+import { ClimbType } from "./Route";
+
 export const USER_CONTAINER = "User";
 
 // Lowest to highest - a higher level has more control.
@@ -16,9 +18,25 @@ export function canUseAdminTools(level: number) {
   return level >= USER_LEVEL.staff;
 }
 
-// The user's saved preferences. None exist yet, so every account starts with
-// an empty object.
-export type UserSettings = Record<string, unknown>;
+// The numbers on someone's dashboard, kept up to date by userMetrics.ts.
+export type UserMetrics = {
+  // Climbs they've sent, by type.
+  sends: Record<ClimbType, number>;
+  // The hardest grade they've sent on each scale - combos are on the route
+  // scale. A scale they haven't sent anything graded on is left out.
+  hardestSend: { route?: string; boulder?: string };
+  // Climbs they've sent on each line, by line number. Boulders aren't on one.
+  lineSends: Record<string, number>;
+  // Comments with text, as on the climbs.
+  commentsPosted: number;
+  // Their most recent send, or null when they haven't sent anything. `date` is
+  // YYYY-MM-DD.
+  latestSend: { routeID: string; date: string } | null;
+};
+
+// What's saved with the user's account. `metrics` is missing on older accounts
+// until they first open their dashboard.
+export type UserSettings = { metrics?: UserMetrics };
 
 // Partition key: /userID. Cosmos also requires an `id` on every document, so
 // it's always set to the same value as userID.
@@ -35,6 +53,10 @@ export type User = {
   // Mirrors the user's Avatar document's updatedAt, so pages can cache-bust the
   // avatar URL without reading the Avatars container.
   avatarUpdatedAt?: string;
+  // ISO date and time they last opened their dashboard - only that moves it, so
+  // no other request has to write to the account. Older accounts don't have it
+  // until they do.
+  lastOnline?: string;
   // Never accepted from a request body: new accounts get USER_LEVEL.member,
   // and anything higher is set by hand in the database.
   level: UserLevel;

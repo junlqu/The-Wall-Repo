@@ -1,6 +1,8 @@
+import { InvocationContext } from "@azure/functions";
 import { getContainer } from "./cosmosClient";
 import { Comment } from "./models/Comment";
 import { Route, ROUTE_CONTAINER } from "./models/Route";
+import { refreshMetrics } from "./userMetrics";
 
 // Keeps a climb's comment count and rating in step with its comments, so
 // they come free with the climb instead of being worked out on every read.
@@ -85,12 +87,19 @@ export async function setSent(routeID: string, userID: string, sent: boolean) {
   throw new Error(`Couldn't take a send off climb ${routeID}`);
 }
 
-type Counted = Pick<Comment, "comment" | "rating" | "send">;
+type Counted = Pick<Comment, "comment" | "rating" | "send" | "sentAt">;
 
 // Brings the climb's comment count, rating and ascents in line with one
 // person's comment going from `before` to `after` - null for a comment that
-// doesn't exist (yet, or any more). Only comments with text are counted.
-export async function applyCommentChange(routeID: string, userID: string, before: Counted | null, after: Counted | null) {
+// doesn't exist (yet, or any more) - and their dashboard's numbers too. Only
+// comments with text are counted.
+export async function applyCommentChange(
+  routeID: string,
+  userID: string,
+  before: Counted | null,
+  after: Counted | null,
+  context: InvocationContext,
+) {
   const textDelta = Number(Boolean(after?.comment)) - Number(Boolean(before?.comment));
   if (textDelta !== 0) await changeCommentCount(routeID, textDelta as 1 | -1);
 
@@ -101,5 +110,11 @@ export async function applyCommentChange(routeID: string, userID: string, before
     await changeRating(routeID, (ratingAfter ?? 0) - (ratingBefore ?? 0), countDelta as 1 | 0 | -1);
   }
 
-  if (Boolean(before?.send) !== Boolean(after?.send)) await setSent(routeID, userID, Boolean(after?.send));
+  const sendChanged = Boolean(before?.send) !== Boolean(after?.send);
+  if (sendChanged) await setSent(routeID, userID, Boolean(after?.send));
+
+  // Not fatal: the comment is saved, and the next change works them out afresh.
+  if (textDelta !== 0 || sendChanged || before?.sentAt !== after?.sentAt) {
+    await refreshMetrics(userID).catch((error) => context.warn("Failed to update the user's metrics", error));
+  }
 }

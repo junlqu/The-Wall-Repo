@@ -156,7 +156,7 @@ export async function createMyComment(request: HttpRequest, context: InvocationC
       throw error;
     }
 
-    await applyCommentChange(routeID, session.userID, null, comment);
+    await applyCommentChange(routeID, session.userID, null, comment, context);
     const people = await readPeople([session.userID]);
     return { status: 201, headers, jsonBody: { comment: toPublicComment(comment, people) } };
   } catch (error) {
@@ -203,7 +203,7 @@ export async function updateMyComment(request: HttpRequest, context: InvocationC
       throw error;
     }
 
-    await applyCommentChange(routeID, session.userID, existing, updated);
+    await applyCommentChange(routeID, session.userID, existing, updated, context);
     const people = await readPeople([session.userID]);
     return { status: 200, headers, jsonBody: { comment: toPublicComment(updated, people) } };
   } catch (error) {
@@ -233,7 +233,7 @@ export async function deleteMyComment(request: HttpRequest, context: InvocationC
       throw error;
     }
 
-    await applyCommentChange(routeID, session.userID, existing, null);
+    await applyCommentChange(routeID, session.userID, existing, null, context);
     return { status: 204, headers };
   } catch (error) {
     context.error("Failed to delete comment", error);
