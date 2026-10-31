@@ -26,7 +26,7 @@ import {
   SETTERS,
   todayDate,
 } from "@/lib/climbs";
-import { BOULDER_GRADES, NEW_GRADE } from "@/lib/grades";
+import { BOULDER_GRADES, NEW_GRADE, ROUTE_GRADES } from "@/lib/grades";
 
 const TYPE_OPTIONS: { id: ClimbType; label: string; description: string }[] = [
   { id: "route", label: "Route", description: "One colour, set on a line." },
@@ -73,6 +73,8 @@ function SharedFields({
 }) {
   const gradeListId = useId();
   const setterListId = useId();
+  // Combos aren't set, so these two fields hold their first ascent.
+  const isCombo = type === "combo";
 
   return (
     <>
@@ -98,7 +100,7 @@ function SharedFields({
           </>
         ) : (
           <ListSelect
-            options={ROUTE_GRADE_OPTIONS}
+            options={isCombo ? ROUTE_GRADES : ROUTE_GRADE_OPTIONS}
             required
             value={grade}
             onChange={setGrade}
@@ -123,13 +125,13 @@ function SharedFields({
         </label>
       )}
       <label className={LABEL_CLASS}>
-        Setter
+        {isCombo ? "First ascent" : "Setter"}
         <input
-          required
+          required={!isCombo}
           value={setter}
           onChange={(event) => setSetter(event.target.value)}
-          list={setterListId}
-          placeholder="e.g. Alex, or Denzil/Alex"
+          list={isCombo ? undefined : setterListId}
+          placeholder={isCombo ? "Who sent it first?" : "e.g. Alex, or Denzil/Alex"}
           maxLength={128}
           className={FIELD_CLASS}
         />
@@ -140,10 +142,10 @@ function SharedFields({
         </datalist>
       </label>
       <label className={LABEL_CLASS}>
-        Set date
+        {isCombo ? "First ascent date" : "Set date"}
         <input
           type="date"
-          required
+          required={!isCombo}
           value={setAt}
           max={todayDate()}
           onChange={(event) => setSetAt(event.target.value)}
@@ -171,7 +173,8 @@ function DetailsForm({
   const [tape, setTape] = useState("");
   const [leftId, setLeftId] = useState("");
   const [rightId, setRightId] = useState("");
-  const [grade, setGrade] = useState(NEW_GRADE);
+  // Combos always have a real grade - only a route or boulder can be new.
+  const [grade, setGrade] = useState(type === "combo" ? "" : NEW_GRADE);
   const [setter, setSetter] = useState("");
   const [setAt, setSetAt] = useState(todayDate);
   const [leadable, setLeadable] = useState<Leadable>("?");
@@ -180,8 +183,8 @@ function DetailsForm({
   const routesOnLine = (activeRoutes ?? []).filter((route) => route.line === Number(line));
   const left = routesOnLine.find((route) => route.id === leftId);
   const right = routesOnLine.find((route) => route.id === rightId);
-  // A combo is one colour per hand, so the second route can't share the first's colour.
-  const rightOptions = routesOnLine.filter((route) => route.id !== leftId && route.colour !== left?.colour);
+  // The hands can share a colour, but not a route.
+  const rightOptions = routesOnLine.filter((route) => route.id !== leftId);
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -196,7 +199,8 @@ function DetailsForm({
       setAt,
       leadable: type === "boulder" ? "No" : leadable,
     };
-    run(async () => onAdded(await createClimb(details)));
+    const combo = type === "combo" ? { hands: { left: leftId, right: rightId } } : undefined;
+    run(async () => onAdded(await createClimb(details, combo)));
   };
 
   const shared = (
@@ -307,7 +311,7 @@ function DetailsForm({
             Right hand
             <select required value={rightId} onChange={(event) => setRightId(event.target.value)} className={FIELD_CLASS}>
               <option value="" disabled>
-                {rightOptions.length > 0 ? "Choose a route" : "No other colour on this line"}
+                {rightOptions.length > 0 ? "Choose a route" : "No other route on this line"}
               </option>
               {rightOptions.map((route) => (
                 <option key={route.id} value={route.id}>

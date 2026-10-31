@@ -1,4 +1,5 @@
 import { PatchOperation } from "@azure/cosmos";
+import { InvocationContext } from "@azure/functions";
 import { getContainer } from "./cosmosClient";
 import { Comment, COMMENT_CONTAINER } from "./models/Comment";
 import { Route, ROUTE_CONTAINER } from "./models/Route";
@@ -114,4 +115,30 @@ export async function refreshMetrics(userID: string) {
   const item = getContainer(USER_CONTAINER).item(userID, userID);
   const { resource: user } = await item.read<User>();
   if (user) await item.patch([metricsPatch(user, metrics)]);
+}
+
+// Not fatal, like refreshing one person's: the change is saved, and their next
+// comment works them out afresh.
+export async function refreshMetricsOf(userIDs: string[], context: InvocationContext) {
+  const results = await Promise.allSettled([...new Set(userIDs)].map(refreshMetrics));
+  for (const result of results) {
+    if (result.status === "rejected") context.warn("Failed to update a user's metrics", result.reason);
+  }
+}
+
+// For when these climbs' grades or lines change: everyone who sent one has
+// different numbers now, whichever grade they'd taken as their hardest.
+export async function refreshSendersOf(routeIDs: string[], context: InvocationContext) {
+  if (routeIDs.length === 0) return;
+  try {
+    const { resources: userIDs } = await getContainer(COMMENT_CONTAINER)
+      .items.query<string>({
+        query: "SELECT DISTINCT VALUE c.userID FROM c WHERE ARRAY_CONTAINS(@routeIDs, c.routeID) AND c.send = true",
+        parameters: [{ name: "@routeIDs", value: routeIDs }],
+      })
+      .fetchAll();
+    await refreshMetricsOf(userIDs, context);
+  } catch (error) {
+    context.warn("Failed to find who sent the changed climbs", error);
+  }
 }

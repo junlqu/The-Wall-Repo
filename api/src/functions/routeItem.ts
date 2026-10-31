@@ -1,8 +1,19 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from "@azure/functions";
 import { corsHeaders, rejectUnlessAdmin } from "../authUtils";
+import {
+  archiveCombosOn,
+  canHaveCombos,
+  deleteClimbAndLinks,
+  findDeletionReach,
+  handsAreUp,
+  isLineInReach,
+  restoreCombosOn,
+  spreadClimbChange,
+} from "../climbLinks";
 import { getContainer } from "../cosmosClient";
 import { Route, ROUTE_CONTAINER } from "../models/Route";
 import { isDate, isLeadable, readRouteFields } from "../routeFields";
+import { refreshSendersOf } from "../userMetrics";
 
 function isNotFound(error: unknown) {
   return (error as { code?: number }).code === 404;
@@ -28,7 +39,8 @@ export async function getRoute(request: HttpRequest, context: InvocationContext)
   }
 }
 
-// PUT /routes/{routeID} - replaces the climb's details. Its type, ascents,
+// PUT /routes/{routeID} - replaces the climb's details, and passes them on to the
+// combos using it and the numbers of anyone who's sent it. Its type, ascents,
 // comment count, rating and whether it's up or down are left alone.
 export async function updateRoute(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
   const headers = corsHeaders(request);
@@ -49,6 +61,17 @@ export async function updateRoute(request: HttpRequest, context: InvocationConte
       return { status: 400, headers, jsonBody: { error: "Some of the climb's details are missing or invalid." } };
     }
 
+    // A combo's colours are its routes' colours, whatever the request says, and it
+    // can only move to a line both its hands reach.
+    if (existing.hands) {
+      const { left, right } = existing.hands;
+      fields.colour = left.colour;
+      fields.secondary = right.colour;
+      if (fields.line !== existing.line && !(isLineInReach(fields.line!, left) && isLineInReach(fields.line!, right))) {
+        return { status: 400, headers, jsonBody: { error: "A combo's hands have to reach the line it's on." } };
+      }
+    }
+
     // Optional details left out of the edit come through as undefined, so a
     // cleared tape or line is dropped from the document rather than kept.
     // Only saved if nothing else changed it since it was read, so a send,
@@ -57,6 +80,7 @@ export async function updateRoute(request: HttpRequest, context: InvocationConte
       { ...existing, ...fields, leadable: body.leadable },
       { accessCondition: { type: "IfMatch", condition: existing._etag } }
     );
+    await refreshSendersOf(await spreadClimbChange(existing, updated!), context);
     return { status: 200, headers, jsonBody: updated };
   } catch (error) {
     if ((error as { code?: number }).code === 412) {
@@ -67,7 +91,38 @@ export async function updateRoute(request: HttpRequest, context: InvocationConte
   }
 }
 
-// DELETE /routes/{routeID}
+// GET /routes/{routeID}/deletion - what deleting the climb would take with it, for
+// the admin to read before they do.
+export async function getRouteDeletion(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
+  const headers = corsHeaders(request);
+
+  try {
+    const rejection = await rejectUnlessAdmin(request, headers);
+    if (rejection) return rejection;
+
+    const { resource: climb } = await getContainer(ROUTE_CONTAINER)
+      .item(request.params.routeID, request.params.routeID)
+      .read<Route>();
+    if (!climb) return notFound(headers);
+
+    const { combos, comments } = await findDeletionReach(climb);
+    return {
+      status: 200,
+      headers,
+      jsonBody: {
+        combos,
+        comments: comments.length,
+        people: new Set(comments.map((comment) => comment.userID)).size,
+      },
+    };
+  } catch (error) {
+    context.error("Failed to work out what deleting a route would take", error);
+    return { status: 500, headers, jsonBody: { error: "Couldn't check what deleting this climb would remove." } };
+  }
+}
+
+// DELETE /routes/{routeID} - deletes the climb, the combos using it, and the
+// comments on all of them.
 export async function deleteRoute(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
   const headers = corsHeaders(request);
 
@@ -75,7 +130,12 @@ export async function deleteRoute(request: HttpRequest, context: InvocationConte
     const rejection = await rejectUnlessAdmin(request, headers);
     if (rejection) return rejection;
 
-    await getContainer(ROUTE_CONTAINER).item(request.params.routeID, request.params.routeID).delete();
+    const { resource: climb } = await getContainer(ROUTE_CONTAINER)
+      .item(request.params.routeID, request.params.routeID)
+      .read<Route>();
+    if (!climb) return notFound(headers);
+
+    await deleteClimbAndLinks(climb, context);
     return { status: 204, headers };
   } catch (error) {
     if (isNotFound(error)) return notFound(headers);
@@ -84,9 +144,9 @@ export async function deleteRoute(request: HttpRequest, context: InvocationConte
   }
 }
 
-// POST /routes/{routeID}/archive - takes the climb down. `removedAt` is the
-// date it came down; leaving it out (or null) archives it with the date
-// unrecorded.
+// POST /routes/{routeID}/archive - takes the climb down, along with the combos
+// using it. `removedAt` is the date it came down; leaving it out (or null)
+// archives it with the date unrecorded.
 export async function archiveRoute(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
   const headers = corsHeaders(request);
 
@@ -103,6 +163,7 @@ export async function archiveRoute(request: HttpRequest, context: InvocationCont
     const { resource: updated } = await getContainer(ROUTE_CONTAINER)
       .item(request.params.routeID, request.params.routeID)
       .patch<Route>([{ op: "set", path: "/removedAt", value: removedAt }]);
+    if (canHaveCombos(updated!)) await archiveCombosOn(updated!.routeID, removedAt);
     return { status: 200, headers, jsonBody: updated };
   } catch (error) {
     if (isNotFound(error)) return notFound(headers);
@@ -111,8 +172,9 @@ export async function archiveRoute(request: HttpRequest, context: InvocationCont
   }
 }
 
-// POST /routes/{routeID}/restore - puts an archived climb back up, clearing
-// its retirement date.
+// POST /routes/{routeID}/restore - puts an archived climb back up, clearing its
+// retirement date. The combos using it come back if their other route is up, and
+// a combo can only come back if both of its are.
 export async function restoreRoute(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
   const headers = corsHeaders(request);
 
@@ -120,9 +182,15 @@ export async function restoreRoute(request: HttpRequest, context: InvocationCont
     const rejection = await rejectUnlessAdmin(request, headers);
     if (rejection) return rejection;
 
-    const { resource: updated } = await getContainer(ROUTE_CONTAINER)
-      .item(request.params.routeID, request.params.routeID)
-      .patch<Route>([{ op: "set", path: "/removedAt", value: 0 }]);
+    const item = getContainer(ROUTE_CONTAINER).item(request.params.routeID, request.params.routeID);
+    const { resource: climb } = await item.read<Route>();
+    if (!climb) return notFound(headers);
+    if (!(await handsAreUp(climb))) {
+      return { status: 409, headers, jsonBody: { error: "One of this combo's routes is still archived. Restore it first." } };
+    }
+
+    const { resource: updated } = await item.patch<Route>([{ op: "set", path: "/removedAt", value: 0 }]);
+    if (canHaveCombos(climb)) await restoreCombosOn(climb.routeID);
     return { status: 200, headers, jsonBody: updated };
   } catch (error) {
     if (isNotFound(error)) return notFound(headers);
@@ -141,6 +209,18 @@ app.http("routeItem", {
     }
     if (request.method === "GET") return getRoute(request, context);
     return request.method === "DELETE" ? deleteRoute(request, context) : updateRoute(request, context);
+  },
+});
+
+app.http("routeDeletion", {
+  methods: ["GET", "OPTIONS"],
+  authLevel: "anonymous",
+  route: "routes/{routeID}/deletion",
+  handler: async (request, context) => {
+    if (request.method === "OPTIONS") {
+      return { status: 204, headers: corsHeaders(request) };
+    }
+    return getRouteDeletion(request, context);
   },
 });
 

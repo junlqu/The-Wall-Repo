@@ -3,10 +3,11 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { type ReactNode, useCallback, useEffect, useState } from "react";
-import { Swatch } from "@/components/ClimbColour";
+import { SplitDot, Swatch } from "@/components/ClimbColour";
 import {
   ChevronIcon,
   ClimbsError,
+  ComboHandRoute,
   CommentIcon,
   CommentItem,
   Person,
@@ -29,6 +30,7 @@ import {
   fetchClimbActivity,
   fetchClimbComments,
   fetchMyComment,
+  firstAscentText,
   formatDate,
   swatchFor,
 } from "@/lib/climbs";
@@ -122,20 +124,22 @@ function GradeBox({ grade }: { grade: string }) {
   );
 }
 
-// The hold colour as a big dot - split down the middle for a combo's two.
+// The hold colour as a big dot - or, for a combo's two, the dot cut in half.
 function ColourCircle({ climb }: { climb: Climb }) {
+  const size = "h-16 w-16 sm:h-20 sm:w-20";
+  // The margin keeps its offset halves in line with the rest of the card.
+  if (climb.secondary) return <SplitDot colour={climb.colour} secondary={climb.secondary} className={`mx-2 sm:mx-2.5 ${size}`} />;
   return (
     <span
       aria-hidden="true"
-      className="flex h-16 w-16 shrink-0 overflow-hidden rounded-full shadow-inner ring-1 ring-black/10 sm:h-20 sm:w-20"
-    >
-      <span className="h-full flex-1" style={{ background: swatchFor(climb.colour) }} />
-      {climb.secondary && <span className="h-full flex-1" style={{ background: swatchFor(climb.secondary) }} />}
-    </span>
+      className={`shrink-0 rounded-full shadow-inner ring-1 ring-black/10 ${size}`}
+      style={{ background: swatchFor(climb.colour) }}
+    />
   );
 }
 
-// The climb as one big post, by whoever set it.
+// The climb as one big post, by whoever set it - or, for a combo, whoever made
+// its first ascent.
 function PostCard({ climb, lastSend }: { climb: Climb; lastSend: LastSend }) {
   const setters = climbSetters(climb);
   const type = CLIMB_TYPES[climb.type];
@@ -175,17 +179,21 @@ function PostCard({ climb, lastSend }: { climb: Climb; lastSend: LastSend }) {
               </div>
             </div>
             <Stars climb={climb} large />
-            <div className="flex min-w-0 items-center gap-3">
-              <span
-                aria-hidden="true"
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary font-serif text-base font-bold text-white ring-2 ring-secondary/40"
-              >
-                {initials}
-              </span>
-              <span className="truncate text-sm font-semibold text-neutral-900">
-                {setters.length > 0 ? `Set by ${joinNames(setters)}` : "Setter unknown"}
-              </span>
-            </div>
+            {climb.type === "combo" ? (
+              <p className="text-sm font-semibold text-neutral-900">First ascent: {firstAscentText(climb)}</p>
+            ) : (
+              <div className="flex min-w-0 items-center gap-3">
+                <span
+                  aria-hidden="true"
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary font-serif text-base font-bold text-white ring-2 ring-secondary/40"
+                >
+                  {initials}
+                </span>
+                <span className="truncate text-sm font-semibold text-neutral-900">
+                  {setters.length > 0 ? `Set by ${joinNames(setters)}` : "Setter unknown"}
+                </span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -197,6 +205,16 @@ function PostCard({ climb, lastSend }: { climb: Climb; lastSend: LastSend }) {
         )}
 
         <dl className="grid grid-cols-1 gap-px overflow-hidden rounded-lg border border-neutral-200 bg-neutral-200 sm:grid-cols-2">
+          {climb.hands && (
+            <>
+              <Fact label="Left hand">
+                <ComboHandRoute hand={climb.hands.left} />
+              </Fact>
+              <Fact label="Right hand">
+                <ComboHandRoute hand={climb.hands.right} />
+              </Fact>
+            </>
+          )}
           <Fact label="Most recent send">{lastSender}</Fact>
           <Fact label="Leadable">{climb.type === "boulder" ? "Boulders aren't led" : LEADABLE_TEXT[climb.leadable]}</Fact>
         </dl>
@@ -215,9 +233,17 @@ function PostCard({ climb, lastSend }: { climb: Climb; lastSend: LastSend }) {
   );
 }
 
+function CommentsClosed() {
+  return (
+    <p className="rounded-xl border border-dashed border-neutral-300 bg-white p-6 text-center text-sm text-neutral-600">
+      This climb has come down, so it isn&apos;t taking new comments.
+    </p>
+  );
+}
+
 // The visitor's own comment: a prompt to log in, the form to write their one
 // comment, or - once they have - that comment in a dropdown they can edit or
-// delete it from.
+// delete it from. A climb that's come down takes no new ones.
 function MyComment({ climb, onChanged }: { climb: Climb; onChanged: () => void }) {
   const user = useSessionUser();
   const userID = user?.userID;
@@ -257,6 +283,7 @@ function MyComment({ climb, onChanged }: { climb: Climb; onChanged: () => void }
 
   if (user === undefined) return <Placeholder className="h-24" />;
   if (user === null) {
+    if (climb.status === "past") return <CommentsClosed />;
     return (
       <div className="flex flex-col items-center gap-1 rounded-xl border border-dashed border-neutral-300 bg-white p-6 text-center text-sm text-neutral-600">
         <p>Only logged-in users can comment.</p>
@@ -270,7 +297,7 @@ function MyComment({ climb, onChanged }: { climb: Climb; onChanged: () => void }
   if (mine === "error") {
     return <p className="text-center text-sm text-neutral-500">Couldn&apos;t check for your comment right now.</p>;
   }
-  if (mine === null) return <CommentForm climb={climb} onSaved={saved} />;
+  if (mine === null) return climb.status === "past" ? <CommentsClosed /> : <CommentForm climb={climb} onSaved={saved} />;
   if (editing) return <CommentForm climb={climb} initial={mine} onSaved={saved} onCancel={() => setEditing(false)} />;
 
   return (

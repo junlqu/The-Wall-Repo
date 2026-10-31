@@ -486,9 +486,23 @@ function useClimbs() {
       .catch(() => setClimbs(null));
   }, []);
 
+  // A route's combos change with it, so they're picked up too. If this fails, the
+  // route's own change still shows.
+  const reload = () => {
+    fetchClimbs()
+      .then(setClimbs)
+      .catch(() => {});
+  };
+
   const updates: ClimbListUpdates = {
-    update: (climb) => setClimbs((current) => current?.map((item) => (item.id === climb.id ? climb : item))),
-    remove: (id) => setClimbs((current) => current?.filter((item) => item.id !== id)),
+    update: (climb) => {
+      setClimbs((current) => current?.map((item) => (item.id === climb.id ? climb : item)));
+      if (climb.type === "route") reload();
+    },
+    remove: (id) => {
+      setClimbs((current) => current?.filter((item) => item.id !== id));
+      reload();
+    },
   };
 
   return {

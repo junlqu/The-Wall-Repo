@@ -33,11 +33,6 @@ function invalid(headers: Record<string, string>): HttpResponseInit {
   };
 }
 
-async function routeExists(routeID: string) {
-  const { resource } = await getContainer(ROUTE_CONTAINER).item(routeID, routeID).read<Route>();
-  return Boolean(resource);
-}
-
 // Their comment on the climb: the one-per-climb ID first (one point read),
 // then the newest they left, for comments seeded before that rule.
 async function findMyComment(routeID: string, userID: string): Promise<StoredComment | undefined> {
@@ -117,8 +112,8 @@ export async function getMyComment(request: HttpRequest, context: InvocationCont
 }
 
 // POST /routes/{routeID}/comments/mine - leaves the visitor's one comment on
-// the climb. Its ID is fixed by who and where, so even two at once can't
-// both be saved.
+// the climb, if it's up. Its ID is fixed by who and where, so even two at once
+// can't both be saved.
 export async function createMyComment(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
   const headers = corsHeaders(request);
   const alreadyCommented: HttpResponseInit = {
@@ -135,8 +130,12 @@ export async function createMyComment(request: HttpRequest, context: InvocationC
     if (!fields) return invalid(headers);
 
     const { routeID } = request.params;
-    if (!(await routeExists(routeID))) {
+    const { resource: route } = await getContainer(ROUTE_CONTAINER).item(routeID, routeID).read<Route>();
+    if (!route) {
       return { status: 404, headers, jsonBody: { error: "That climb doesn't exist any more." } };
+    }
+    if (route.removedAt !== 0) {
+      return { status: 403, headers, jsonBody: { error: "This climb has come down, so it isn't taking new comments." } };
     }
     if (await findMyComment(routeID, session.userID)) return alreadyCommented;
 

@@ -62,12 +62,12 @@ function announcementSource(now: string): UpdateSource {
   };
 }
 
-// What other people have said on the climbs they follow, as `read` picks them
-// out. Nothing to look through for someone who follows nothing.
+// What other people have said on the climbs they follow that are still up, as
+// `read` picks them out. Nothing to look through for someone who follows nothing.
 async function readFollowedComments(userID: string, read: (source: UpdateSource) => Promise<Comment[]>) {
   const { resources: routeIDs } = await getContainer(ROUTE_CONTAINER)
     .items.query<string>({
-      query: "SELECT VALUE c.routeID FROM c WHERE ARRAY_CONTAINS(c.follows, @userID)",
+      query: "SELECT VALUE c.routeID FROM c WHERE ARRAY_CONTAINS(c.follows, @userID) AND c.removedAt = 0",
       parameters: [{ name: "@userID", value: userID }],
     })
     .fetchAll();

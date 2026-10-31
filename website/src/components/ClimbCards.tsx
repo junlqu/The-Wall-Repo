@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { type ReactNode, useEffect, useId, useState } from "react";
-import ClimbColour from "@/components/ClimbColour";
+import ClimbColour, { Swatch } from "@/components/ClimbColour";
 import { Kicker } from "@/components/Masthead";
 import { formatShortDate } from "@/lib/announcements";
 import { avatarUrl } from "@/lib/avatar";
@@ -11,11 +11,13 @@ import {
   type ClimbActivity,
   type ClimbComment,
   type ClimbPerson,
+  type ComboHand,
   climbHref,
   climbSetters,
   commentSentAt,
   fetchClimbActivity,
   fetchClimbs,
+  firstAscentText,
   formatDate,
   MAX_STARS,
   ratingStars,
@@ -47,7 +49,10 @@ export function useActiveClimbs() {
       .catch(() => setError(true));
   }, []);
 
-  return { climbs, error };
+  // Puts a climb that's just been added in its place, without reloading them all.
+  const addClimb = (climb: Climb) => setClimbs((current) => current && [...current, climb].sort(byGrade));
+
+  return { climbs, error, addClimb };
 }
 
 // The blue a visitor's own send glows in.
@@ -232,6 +237,17 @@ function useDropdown() {
   };
 }
 
+// The route one hand of a combo takes - the same colour can be up on two lines
+// near each other, so it says which.
+export function ComboHandRoute({ hand }: { hand: ComboHand }) {
+  return (
+    <span className="flex flex-wrap items-center gap-x-1.5">
+      <Swatch colour={hand.colour} />
+      {hand.colour} · Line {hand.line} · {hand.grade || "—"}
+    </span>
+  );
+}
+
 export function Person({ person }: { person: ClimbPerson | null }) {
   return (
     <span className="flex min-w-0 items-center gap-1.5">
@@ -365,18 +381,47 @@ function ClimbActivityPanel({ climb }: { climb: Climb }) {
     <div className="flex flex-col gap-3 rounded-lg bg-neutral-50 p-3 text-xs text-neutral-600">
       <div className="flex items-start justify-between gap-3">
         <dl className="flex flex-wrap gap-x-8 gap-y-2">
-          <div className="flex flex-col gap-1">
-            <dt>
-              <Kicker className="text-neutral-400">Setter</Kicker>
-            </dt>
-            <dd className="font-semibold text-neutral-800">{setters.length > 0 ? setters.join(", ") : "Unknown"}</dd>
-          </div>
+          {climb.type === "combo" ? (
+            <div className="flex min-w-0 flex-col gap-1">
+              <dt>
+                <Kicker className="text-neutral-400">First ascent</Kicker>
+              </dt>
+              <dd className="font-semibold text-neutral-800">{firstAscentText(climb)}</dd>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-1">
+              <dt>
+                <Kicker className="text-neutral-400">Setter</Kicker>
+              </dt>
+              <dd className="font-semibold text-neutral-800">{setters.length > 0 ? setters.join(", ") : "Unknown"}</dd>
+            </div>
+          )}
           <div className="flex min-w-0 flex-col gap-1">
             <dt>
               <Kicker className="text-neutral-400">Most recent send</Kicker>
             </dt>
             <dd className="font-semibold text-neutral-800">{lastSend}</dd>
           </div>
+          {climb.hands && (
+            <>
+              <div className="flex min-w-0 flex-col gap-1">
+                <dt>
+                  <Kicker className="text-neutral-400">Left hand</Kicker>
+                </dt>
+                <dd className="font-semibold text-neutral-800">
+                  <ComboHandRoute hand={climb.hands.left} />
+                </dd>
+              </div>
+              <div className="flex min-w-0 flex-col gap-1">
+                <dt>
+                  <Kicker className="text-neutral-400">Right hand</Kicker>
+                </dt>
+                <dd className="font-semibold text-neutral-800">
+                  <ComboHandRoute hand={climb.hands.right} />
+                </dd>
+              </div>
+            </>
+          )}
         </dl>
         <Link
           href={climbHref(climb.id)}

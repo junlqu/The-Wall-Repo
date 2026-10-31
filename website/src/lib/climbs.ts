@@ -29,6 +29,9 @@ export type Climb = {
   setAt: string;
   // Past climbs only, and only when the removal date was recorded.
   removedAt?: string;
+  // Combos only: the routes each hand takes, as they were when it was added. Older
+  // combos, and any whose colours were edited since, don't have them.
+  hands?: { left: ComboHand; right: ComboHand };
   leadable: Leadable;
   sends: number;
   // Who sent it, in order - so a list can tell the visitor which they have.
@@ -40,6 +43,9 @@ export type Climb = {
   // How many ratings the average is of.
   ratings: number;
 };
+
+// Mirrors ComboHand in api/src/models/Route.ts.
+export type ComboHand = { routeID: string; line: number; colour: string; grade: string };
 
 // Comments rate a climb 0-10, shown as stars out of 5.
 const RATING_SCALE = 10;
@@ -162,6 +168,7 @@ export type ApiRoute = {
   leadable?: Leadable;
   ascents?: string[];
   follows?: string[];
+  hands?: Climb["hands"];
   comments?: number;
   rating?: { total: number; count: number };
 };
@@ -179,6 +186,7 @@ export function toClimb(route: ApiRoute): Climb {
     setter: route.setter ?? "",
     setAt: route.setAt,
     removedAt: typeof route.removedAt === "string" ? route.removedAt : undefined,
+    hands: route.hands,
     leadable: route.leadable ?? "?",
     sends: route.ascents?.length ?? 0,
     senderIDs: route.ascents ?? [],
@@ -225,9 +233,13 @@ function climbRequest(id: string, path: string, init: RequestInit) {
   return adminRequest(`/routes/${encodeURIComponent(id)}${path}`, init);
 }
 
-// Adds a climb that's up on the wall now.
-export async function createClimb(details: ClimbDetails): Promise<Climb> {
-  return toClimb(await adminRequest("/routes", { method: "POST", body: JSON.stringify(details) }));
+// Adds a climb that's up on the wall now. A combo also says which route each hand
+// takes, by ID, and can start with a rating, 0-10.
+export async function createClimb(
+  details: ClimbDetails,
+  combo?: { hands: { left: string; right: string }; initialRating?: number },
+): Promise<Climb> {
+  return toClimb(await adminRequest("/routes", { method: "POST", body: JSON.stringify({ ...details, ...combo }) }));
 }
 
 export async function updateClimb(id: string, details: ClimbDetails): Promise<Climb> {
@@ -244,9 +256,21 @@ export async function restoreClimb(id: string): Promise<Climb> {
   return toClimb(await climbRequest(id, "/restore", { method: "POST" }));
 }
 
+// What deleting a climb takes with it: the combos using it, and how many comments
+// there are on all of them, from how many people.
+export type ClimbDeletion = { combos: Climb[]; comments: number; people: number };
+
+export async function fetchClimbDeletion(id: string): Promise<ClimbDeletion> {
+  const { combos, comments, people } = await climbRequest(id, "/deletion", { method: "GET" });
+  return { combos: (combos as ApiRoute[]).map(toClimb), comments, people };
+}
+
 export async function deleteClimb(id: string): Promise<void> {
   await climbRequest(id, "", { method: "DELETE" });
 }
+
+// How far from its own line a combo's hands can reach.
+export const COMBO_LINE_REACH = 1;
 
 // A moment as the day it falls on in the visitor's own timezone, YYYY-MM-DD.
 export function localDate(date: Date) {
@@ -302,6 +326,12 @@ export function climbSetters(climb: Pick<Climb, "setter">) {
     .split("/")
     .map((name) => name.trim())
     .filter(Boolean);
+}
+
+// Who made a combo's first ascent and when, as written when it was added. Combos
+// aren't set, so these are kept in its setter and set date.
+export function firstAscentText(climb: Pick<Climb, "setter" | "setAt">) {
+  return [climb.setter, climb.setAt && formatDate(climb.setAt)].filter(Boolean).join(" · ") || "Not recorded";
 }
 
 // CSS backgrounds, so multi-coloured holds can be a gradient. Colours off the

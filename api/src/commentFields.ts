@@ -13,7 +13,7 @@ export type CommentFields = Pick<Comment, "comment" | "rating" | "grade" | "send
 
 // A YYYY-MM-DD that's a real day and not in the future. A day of slack, as
 // the date is the visitor's own and they may be ahead of UTC.
-function isSendDate(value: unknown): value is string {
+export function isSendDate(value: unknown): value is string {
   if (!isDate(value)) return false;
   const time = Date.parse(`${value}T00:00:00Z`);
   return !Number.isNaN(time) && new Date(time).toISOString().startsWith(value) && time <= Date.now() + ONE_DAY_MS;
