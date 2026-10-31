@@ -194,6 +194,13 @@ export async function fetchClimbs(): Promise<Climb[]> {
   return ((await res.json()) as ApiRoute[]).map(toClimb);
 }
 
+// The climbs that have come down that the logged-in visitor commented on.
+export async function fetchMyArchive(): Promise<Climb[]> {
+  const res = await fetch(apiUrl("/archives"), { credentials: "include" });
+  if (!res.ok) throw new Error(`Failed to load your archive (${res.status})`);
+  return ((await res.json()) as ApiRoute[]).map(toClimb);
+}
+
 // One climb, or null when there's no climb with that ID.
 export async function fetchClimb(id: string): Promise<Climb | null> {
   const res = await fetch(apiUrl(`/routes/${encodeURIComponent(id)}`));
