@@ -1,6 +1,8 @@
+import Link from "next/link";
 import { ArrowIcon, Grade, lineLabel } from "@/components/AnnouncementClimbPicker";
 import ClimbColour from "@/components/ClimbColour";
 import { type Announcement, COTW_SECTIONS, SET_KINDS } from "@/lib/announcements";
+import { climbHref } from "@/lib/climbs";
 
 const HEADING_CLASS = "text-xs font-semibold uppercase tracking-wide";
 const TEXT_CLASS = "whitespace-pre-line text-sm";
@@ -43,23 +45,38 @@ function ClimbList({ announcement, onDark }: { announcement: Announcement; onDar
   return (
     <div className="flex flex-col gap-1">
       <h4 className={tones(onDark).heading}>{setKind ? SET_KINDS[setKind].label : "Climbs"}</h4>
-      <ul className="flex flex-col divide-y divide-neutral-100 rounded-md border border-neutral-200 bg-white text-sm text-neutral-700">
+      <ul className="flex flex-col divide-y divide-neutral-100 overflow-hidden rounded-md border border-neutral-200 bg-white text-sm text-neutral-700">
         {climbs.map((climb) => (
-          <li key={climb.routeID} className="grid grid-cols-[1.5rem_4.5rem_minmax(0,1fr)_4rem] items-center gap-3 px-3 py-2">
-            {isReplaced ? (
-              <span
-                title={climb.change === "down" ? "Taken down" : "Put up"}
-                className={climb.change === "down" ? "text-red-600" : "text-green-600"}
-              >
-                <ArrowIcon direction={climb.change ?? "up"} />
-                <span className="sr-only">{climb.change === "down" ? "Taken down" : "Put up"}</span>
+          <li key={climb.routeID}>
+            <Link
+              href={climbHref(climb.routeID)}
+              className={`group grid items-center gap-2 px-3 py-2 transition-colors hover:bg-neutral-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-secondary sm:grid-cols-[1.5rem_4.5rem_minmax(0,1fr)_4rem] sm:gap-3 ${
+                isReplaced ? "grid-cols-[1rem_minmax(0,1fr)_4rem]" : "grid-cols-[minmax(0,1fr)_4rem]"
+              }`}
+            >
+              {isReplaced ? (
+                <span
+                  title={climb.change === "down" ? "Taken down" : "Put up"}
+                  className={climb.change === "down" ? "text-red-600" : "text-green-600"}
+                >
+                  <ArrowIcon direction={climb.change ?? "up"} />
+                  <span className="sr-only">{climb.change === "down" ? "Taken down" : "Put up"}</span>
+                </span>
+              ) : (
+                <span className="hidden sm:block" />
+              )}
+              {/* Stacked on a phone, where a row is too narrow for both. */}
+              <span className="flex min-w-0 flex-col gap-0.5 sm:contents">
+                <span className="text-xs text-neutral-500 sm:text-sm sm:text-neutral-700">{lineLabel(climb.line)}</span>
+                <ClimbColour climb={climb} />
               </span>
-            ) : (
-              <span />
-            )}
-            <span>{lineLabel(climb.line)}</span>
-            <ClimbColour climb={climb} />
-            <Grade grade={climb.grade} />
+              <span className="flex items-center justify-between gap-1">
+                <Grade grade={climb.grade} />
+                <span aria-hidden="true" className="text-neutral-400 transition-transform group-hover:translate-x-0.5">
+                  →
+                </span>
+              </span>
+            </Link>
           </li>
         ))}
       </ul>
