@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import AccessNotice from "@/components/AccessNotice";
 import AnnouncementDetails, { EyeIcon } from "@/components/AnnouncementDetails";
+import { LikeButton, useToggleLike } from "@/components/AnnouncementLike";
 import { GradeTag, Person, Placeholder } from "@/components/ClimbCards";
 import ClimbColour from "@/components/ClimbColour";
-import { formatShortDate } from "@/lib/announcements";
+import { type Announcement, formatShortDate } from "@/lib/announcements";
 import { type Climb, CLIMB_TYPES, climbHref, formatDate, ratingStars } from "@/lib/climbs";
 import {
   type Dashboard,
@@ -25,8 +26,35 @@ import { useSessionUser } from "@/lib/session";
 const PANEL_CLASS = "rounded-lg border border-neutral-200 bg-white p-6 shadow-sm";
 const PANEL_HEADING_CLASS = "text-sm font-semibold uppercase tracking-wide text-neutral-500";
 
-function updateClass(isNew: boolean) {
-  return `flex flex-col gap-2 rounded-lg border p-4 ${isNew ? "border-sky-300 ring-1 ring-sky-100" : "border-neutral-200"}`;
+// The coloured tab down the side of an update, saying what kind it is.
+const UPDATE_TABS = {
+  update: { colour: "bg-red-300", label: "Update" },
+  sets: { colour: "bg-green-300", label: "Route setting" },
+  cotw: { colour: "bg-sky-300", label: "Climber of the Week" },
+  followedClimb: { colour: "bg-purple-300", label: "Comment on a climb you follow" },
+  // Kept for updates from followed users, once people can follow each other.
+  followedUser: { colour: "bg-orange-300", label: "From someone you follow" },
+};
+
+function updateTab(update: DashboardUpdate) {
+  if (update.kind === "comment") return UPDATE_TABS.followedClimb;
+  const { type } = update.announcement;
+  return type === "sets" || type === "cotw" ? UPDATE_TABS[type] : UPDATE_TABS.update;
+}
+
+function UpdateCard({ update, children }: { update: DashboardUpdate; children: ReactNode }) {
+  const tab = updateTab(update);
+  return (
+    <article
+      className={`relative flex flex-col gap-2 overflow-hidden rounded-lg border py-4 pr-4 pl-5 ${
+        update.isNew ? "border-sky-300 ring-1 ring-sky-100" : "border-neutral-200"
+      }`}
+    >
+      <span aria-hidden="true" title={tab.label} className={`absolute inset-y-0 left-0 w-1.5 ${tab.colour}`} />
+      <span className="sr-only">{update.isNew ? `New: ${tab.label}` : tab.label}</span>
+      {children}
+    </article>
+  );
 }
 
 function PostedAt({ at }: { at: string }) {
@@ -53,36 +81,26 @@ function ClimbBox({ climb }: { climb: Climb }) {
   );
 }
 
-function UpdateItem({ update }: { update: DashboardUpdate }) {
-  const newLabel = update.isNew && <span className="sr-only">New: </span>;
-
+function UpdateItem({
+  update,
+  onToggleLike,
+}: {
+  update: DashboardUpdate;
+  onToggleLike: (announcement: Announcement) => void;
+}) {
   if (update.kind === "announcement") {
     const { announcement } = update;
     return (
-      <article className={updateClass(update.isNew)}>
+      <UpdateCard update={update}>
         <div className="flex items-start justify-between gap-4">
-          <h3 className="font-semibold text-neutral-900">
-            {newLabel}
-            {announcement.title}
-          </h3>
+          <h3 className="font-semibold text-neutral-900">{announcement.title}</h3>
           <PostedAt at={update.at} />
         </div>
         <AnnouncementDetails announcement={announcement} />
         <div className="flex items-center justify-between text-xs text-neutral-500">
           <span>Posted by @{announcement.author}</span>
           <span className="flex items-center gap-4 tabular-nums">
-            <span
-              title={announcement.liked ? "You liked this" : "Likes"}
-              className={`-mx-2 flex items-center gap-1 rounded-full px-2 py-0.5 ${
-                announcement.liked ? "bg-secondary/20 text-primary" : ""
-              }`}
-            >
-              <span aria-hidden="true" className={`text-sm leading-none ${announcement.liked ? "" : "opacity-70 grayscale"}`}>
-                👌
-              </span>
-              {announcement.likes}
-              <span className="sr-only">likes{announcement.liked && ", including yours"}</span>
-            </span>
+            <LikeButton announcement={announcement} canLike onToggle={onToggleLike} />
             <span className="flex items-center gap-1" title="Views">
               <EyeIcon />
               {announcement.views}
@@ -90,22 +108,19 @@ function UpdateItem({ update }: { update: DashboardUpdate }) {
             </span>
           </span>
         </div>
-      </article>
+      </UpdateCard>
     );
   }
 
   return (
-    <article className={updateClass(update.isNew)}>
+    <UpdateCard update={update}>
       <div className="flex items-center justify-between gap-4 text-xs">
-        <span className="min-w-0">
-          {newLabel}
-          <Person person={update.comment.author} />
-        </span>
+        <Person person={update.comment.author} />
         <PostedAt at={update.at} />
       </div>
       <p className="whitespace-pre-line break-words text-sm text-neutral-700">{update.comment.comment}</p>
       {update.climb && <ClimbBox climb={update.climb} />}
-    </article>
+    </UpdateCard>
   );
 }
 
@@ -114,6 +129,19 @@ function UpdatesList({ dashboard }: { dashboard: Dashboard }) {
   const [updates, setUpdates] = useState(dashboard.updates);
   const [hasMore, setHasMore] = useState(dashboard.hasMoreUpdates);
   const [status, setStatus] = useState<"idle" | "more" | "error">("idle");
+
+  const replaceAnnouncement = useCallback(
+    (updated: Announcement) =>
+      setUpdates((current) =>
+        current.map((update) =>
+          update.kind === "announcement" && update.announcement.id === updated.id
+            ? { ...update, announcement: updated }
+            : update,
+        ),
+      ),
+    [],
+  );
+  const toggleLike = useToggleLike(replaceAnnouncement);
 
   function loadMore() {
     setStatus("more");
@@ -131,7 +159,11 @@ function UpdatesList({ dashboard }: { dashboard: Dashboard }) {
   return (
     <div className="mt-4 flex flex-col gap-3">
       {updates.map((update) => (
-        <UpdateItem key={update.kind === "announcement" ? update.announcement.id : update.comment.commentID} update={update} />
+        <UpdateItem
+          key={update.kind === "announcement" ? update.announcement.id : update.comment.commentID}
+          update={update}
+          onToggleLike={toggleLike}
+        />
       ))}
       {status === "error" && <p className="text-center text-sm text-neutral-500">Couldn&apos;t load more updates right now.</p>}
       {hasMore && (
