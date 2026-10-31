@@ -198,6 +198,8 @@ export default function TwisterPage() {
   const [skipAnimation, setSkipAnimation] = useState(false);
   // How many holds have been rolled this round - a 4 limb start counts as four.
   const [holdsRolled, setHoldsRolled] = useState(0);
+  // What the last round ended on - null until one has.
+  const [previousHolds, setPreviousHolds] = useState<number | null>(null);
   // The wall's climbs - undefined while loading, null if they couldn't be loaded.
   const [climbs, setClimbs] = useState<Climb[] | null>();
   const now = useMemo(() => new Date(), []);
@@ -317,6 +319,8 @@ export default function TwisterPage() {
     setGameActive(false);
     setSpinning(false);
     setShowLockedPopup(false);
+    // Ending a round before anything was rolled doesn't lose the last real one.
+    if (holdsRolled > 0) setPreviousHolds(holdsRolled);
     setHoldsRolled(0);
     setHistory(EMPTY_HISTORY);
   }
@@ -472,9 +476,15 @@ export default function TwisterPage() {
                 </button>
               </div>
 
-              <p className="self-end text-xs text-neutral-500" aria-live="polite">
-                Holds rolled: <span className="font-bold text-primary tabular-nums">{holdsRolled}</span>
-              </p>
+              <div className="flex flex-col items-end gap-0.5 self-end text-xs text-neutral-500">
+                <p aria-live="polite">
+                  Holds rolled: <span className="font-bold text-primary tabular-nums">{holdsRolled}</span>
+                </p>
+                <p>
+                  Previous holds rolled:{" "}
+                  <span className="font-semibold text-neutral-600 tabular-nums">{previousHolds ?? "—"}</span>
+                </p>
+              </div>
             </div>
           </section>
 
