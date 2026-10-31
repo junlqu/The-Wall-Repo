@@ -21,8 +21,9 @@ export function Kicker({ children, className }: { children: ReactNode; className
   return <span className={`text-xs font-bold uppercase tracking-[0.2em] ${className}`}>{children}</span>;
 }
 
-// With `href`, the title links to a page with more of the section.
-export function SectionRule({ title, href }: { title: string; href?: string }) {
+// With `href`, the title links to a page with more of the section. `action` sits
+// at the far end of the rule.
+export function SectionRule({ title, href, action }: { title: string; href?: string; action?: ReactNode }) {
   return (
     <div className="flex items-center gap-4">
       <h2 className="shrink-0 font-serif text-2xl font-bold text-primary">
@@ -38,6 +39,7 @@ export function SectionRule({ title, href }: { title: string; href?: string }) {
         )}
       </h2>
       <span aria-hidden="true" className="h-px flex-1 bg-neutral-300" />
+      {action}
     </div>
   );
 }

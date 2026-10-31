@@ -1,14 +1,18 @@
 "use client";
 
 import { type FormEvent, type ReactNode, useEffect, useId, useRef, useState } from "react";
+import { ComboHandRoute } from "@/components/ClimbCards";
 import {
   archiveClimb,
   CLIMB_COLOURS,
   CLIMB_TYPES,
   type Climb,
+  type ClimbDeletion,
   type ClimbDetails,
   climbName,
+  COMBO_LINE_REACH,
   deleteClimb,
+  fetchClimbDeletion,
   LEADABLE,
   type Leadable,
   LINES,
@@ -26,7 +30,7 @@ import {
   ROUTE_GRADE_OPTIONS,
   useRequest,
 } from "@/components/ClimbForm";
-import { BOULDER_GRADES, NEW_GRADE } from "@/lib/grades";
+import { BOULDER_GRADES, NEW_GRADE, ROUTE_GRADES } from "@/lib/grades";
 
 // Rough height of the open menu, used to open it upwards near the bottom of
 // the screen instead of off the edge.
@@ -235,7 +239,15 @@ export function SidePanel({ title, busy = false, onClose, children }: ModalProps
 
 function EditDialog({ climb, onClose, onSaved }: { climb: Climb; onClose: () => void; onSaved: (climb: Climb) => void }) {
   // A climb's type is fixed once it's set, so it's shown but not editable.
-  const { type } = climb;
+  const { type, hands } = climb;
+  // A combo can only be on a line both its hands reach.
+  const lines = hands
+    ? LINES.filter(
+        (option) =>
+          option === climb.line ||
+          [hands.left, hands.right].every((hand) => Math.abs(hand.line - option) <= COMBO_LINE_REACH),
+      )
+    : LINES;
   const [line, setLine] = useState(climb.line ?? LINES[0]);
   const [grade, setGrade] = useState(climb.grade);
   const [colour, setColour] = useState(climb.colour);
@@ -278,7 +290,7 @@ function EditDialog({ climb, onClose, onSaved }: { climb: Climb; onClose: () => 
               <label className={LABEL_CLASS}>
                 Line
                 <select value={line} onChange={(event) => setLine(Number(event.target.value))} className={FIELD_CLASS}>
-                  {LINES.map((option) => (
+                  {lines.map((option) => (
                     <option key={option} value={option}>
                       Line {option}
                     </option>
@@ -307,7 +319,7 @@ function EditDialog({ climb, onClose, onSaved }: { climb: Climb; onClose: () => 
                 </>
               ) : (
                 <ListSelect
-                  options={ROUTE_GRADE_OPTIONS}
+                  options={type === "combo" ? ROUTE_GRADES : ROUTE_GRADE_OPTIONS}
                   required
                   value={grade}
                   onChange={setGrade}
@@ -315,15 +327,33 @@ function EditDialog({ climb, onClose, onSaved }: { climb: Climb; onClose: () => 
                 />
               )}
             </label>
-            <label className={LABEL_CLASS}>
-              Colour
-              <ListSelect options={CLIMB_COLOURS} required value={colour} onChange={setColour} emptyLabel="Choose a colour" />
-            </label>
-            {type === "combo" && (
-              <label className={LABEL_CLASS}>
-                Second colour
-                <ListSelect options={CLIMB_COLOURS} required value={secondary} onChange={setSecondary} emptyLabel="Choose a colour" />
-              </label>
+            {hands ? (
+              // A combo's colours come from its routes, so they're changed there.
+              <div className={`${LABEL_CLASS} sm:col-span-2`}>
+                Hands
+                <div className="flex flex-col gap-1 text-sm font-normal normal-case tracking-normal text-neutral-700">
+                  <span className="flex flex-wrap items-center gap-x-2">
+                    Left: <ComboHandRoute hand={hands.left} />
+                  </span>
+                  <span className="flex flex-wrap items-center gap-x-2">
+                    Right: <ComboHandRoute hand={hands.right} />
+                  </span>
+                  <span className="text-xs text-neutral-500">These follow their routes - edit a route to change them.</span>
+                </div>
+              </div>
+            ) : (
+              <>
+                <label className={LABEL_CLASS}>
+                  Colour
+                  <ListSelect options={CLIMB_COLOURS} required value={colour} onChange={setColour} emptyLabel="Choose a colour" />
+                </label>
+                {type === "combo" && (
+                  <label className={LABEL_CLASS}>
+                    Second colour
+                    <ListSelect options={CLIMB_COLOURS} required value={secondary} onChange={setSecondary} emptyLabel="Choose a colour" />
+                  </label>
+                )}
+              </>
             )}
             {type === "boulder" && (
               <label className={LABEL_CLASS}>
@@ -332,7 +362,7 @@ function EditDialog({ climb, onClose, onSaved }: { climb: Climb; onClose: () => 
               </label>
             )}
             <label className={LABEL_CLASS}>
-              Setter
+              {type === "combo" ? "First ascent" : "Setter"}
               <input
                 value={setter}
                 onChange={(event) => setSetter(event.target.value)}
@@ -341,7 +371,7 @@ function EditDialog({ climb, onClose, onSaved }: { climb: Climb; onClose: () => 
               />
             </label>
             <label className={LABEL_CLASS}>
-              Set date
+              {type === "combo" ? "First ascent date" : "Set date"}
               <input
                 type="date"
                 value={setAt}
@@ -405,7 +435,10 @@ function ArchivePanel({
     <SidePanel title={`Archive ${climbName(climb)}`} busy={busy} onClose={onClose}>
       <form onSubmit={submit} className="flex min-h-0 flex-1 flex-col">
         <div className="flex flex-1 flex-col gap-4 overflow-y-auto overscroll-contain p-6">
-          <p className="text-sm text-neutral-600">It moves to archived climbs, where its history is kept.</p>
+          <p className="text-sm text-neutral-600">
+            It moves to archived climbs, where its history is kept, and stops taking new comments.
+            {climb.type === "route" && " Any combos using it are archived with it."}
+          </p>
           <label className={LABEL_CLASS}>
             Retirement date (optional)
             <input
@@ -443,16 +476,58 @@ function ArchivePanel({
   );
 }
 
+function count(amount: number, noun: string) {
+  return `${amount} ${noun}${amount === 1 ? "" : "s"}`;
+}
+
+// Says exactly what would go before it can be deleted, so nothing goes unnoticed.
 function DeleteDialog({ climb, onClose, onDeleted }: { climb: Climb; onClose: () => void; onDeleted: () => void }) {
+  const [reach, setReach] = useState<ClimbDeletion | "error" | null>(null);
   const { busy, error, run } = useRequest();
+
+  useEffect(() => {
+    fetchClimbDeletion(climb.id)
+      .then(setReach)
+      .catch(() => setReach("error"));
+  }, [climb.id]);
 
   return (
     <Dialog title={`Delete ${climbName(climb)}?`} busy={busy} onClose={onClose}>
-      <p className="text-sm text-neutral-600">
-        {climb.status === "active"
-          ? "This removes the climb for good and can't be undone. To take it off the wall but keep its history, archive it instead."
-          : "This removes the climb and its history for good and can't be undone."}
-      </p>
+      {reach === null && <p className="text-sm text-neutral-600">Checking what this would remove…</p>}
+      {reach === "error" && (
+        <ErrorMessage message="Couldn't check what this would remove, so it can't be deleted right now. Try again." />
+      )}
+      {reach !== null && reach !== "error" && (
+        <div className="flex flex-col gap-3 text-sm text-neutral-600">
+          <p className="font-semibold text-neutral-800">This can&apos;t be undone. It permanently deletes:</p>
+          <ul className="flex list-disc flex-col gap-1 pl-5">
+            <li>This {CLIMB_TYPES[climb.type].toLowerCase()}</li>
+            {reach.combos.length > 0 && (
+              <li>
+                {count(reach.combos.length, "combo")} using it:
+                <ul className="mt-1 flex list-[circle] flex-col gap-0.5 pl-5">
+                  {reach.combos.map((combo) => (
+                    <li key={combo.id}>
+                      {climbName(combo)}
+                      {combo.status === "past" && " (archived)"}
+                    </li>
+                  ))}
+                </ul>
+              </li>
+            )}
+            {reach.comments > 0 && (
+              <li>
+                {count(reach.comments, "comment")} from {reach.people === 1 ? "1 person" : `${reach.people} people`}, with their
+                sends, grades and ratings
+              </li>
+            )}
+          </ul>
+          {reach.comments > 0 && (
+            <p>Their sends and comments come off those people&apos;s dashboard numbers, including their hardest send.</p>
+          )}
+          {climb.status === "active" && <p>To take it off the wall but keep its history, archive it instead.</p>}
+        </div>
+      )}
       <ErrorMessage message={error} />
       <div className="flex flex-wrap justify-end gap-2">
         <button type="button" disabled={busy} onClick={onClose} className={CANCEL_BUTTON_CLASS}>
@@ -460,7 +535,7 @@ function DeleteDialog({ climb, onClose, onDeleted }: { climb: Climb; onClose: ()
         </button>
         <button
           type="button"
-          disabled={busy}
+          disabled={busy || reach === null || reach === "error"}
           onClick={() =>
             run(async () => {
               await deleteClimb(climb.id);
@@ -492,6 +567,8 @@ function RestoreDialog({
       <p className="text-sm text-neutral-600">
         It moves back to active climbs
         {climb.removedAt ? ", and its retirement date is cleared" : ""}.
+        {climb.type === "route" && " Combos using it come back too, as long as their other route is up."}
+        {climb.type === "combo" && " Both of its routes need to be up."}
       </p>
       <ErrorMessage message={error} />
       <div className="flex flex-wrap justify-end gap-2">

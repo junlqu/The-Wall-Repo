@@ -1,7 +1,8 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import AnnouncementDetails from "@/components/AnnouncementDetails";
+import AnnouncementDetails, { EyeIcon } from "@/components/AnnouncementDetails";
+import { LikeButton, useToggleLike } from "@/components/AnnouncementLike";
 import Carousel from "@/components/Carousel";
 import { Kicker, Masthead, SectionRule } from "@/components/Masthead";
 import {
@@ -12,7 +13,6 @@ import {
   formatShortDate,
   formatTarget,
   localDate,
-  setAnnouncementLiked,
   upcomingFriday,
   viewAnnouncement,
 } from "@/lib/announcements";
@@ -94,19 +94,6 @@ function useCountView<T extends HTMLElement>(id: string | undefined) {
   return ref;
 }
 
-function EyeIcon() {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4">
-      <path d="M10 12.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z" />
-      <path
-        fillRule="evenodd"
-        d="M.66 10.59a1.65 1.65 0 0 1 0-1.19A10 10 0 0 1 10 3c4.26 0 7.9 2.67 9.34 6.41.15.38.15.8 0 1.19A10 10 0 0 1 10 17c-4.26 0-7.9-2.67-9.34-6.41zM14 10a4 4 0 1 1-8 0 4 4 0 0 1 8 0z"
-        clipRule="evenodd"
-      />
-    </svg>
-  );
-}
-
 function CalendarIcon() {
   return (
     <svg aria-hidden="true" viewBox="0 0 20 20" fill="currentColor" className="h-3.5 w-3.5">
@@ -119,33 +106,6 @@ function CalendarIcon() {
   );
 }
 
-// Members can like a post; guests just see the count.
-function LikeButton({ announcement, light }: { announcement: Announcement; light: boolean }) {
-  const { canLike, toggleLike } = useContext(PostContext);
-  const { liked } = announcement;
-  const likedClass = light ? "bg-white/20 text-white" : "bg-secondary/20 text-primary";
-  const hoverClass = light ? "hover:bg-white/10" : "hover:bg-neutral-100";
-
-  return (
-    <button
-      type="button"
-      onClick={() => toggleLike(announcement)}
-      disabled={!canLike}
-      aria-pressed={canLike ? liked : undefined}
-      title={canLike ? (liked ? "Take back your like" : "Like") : "Log in to like"}
-      className={`-mx-2 inline-flex items-center gap-1 rounded-full px-2 py-0.5 transition-colors disabled:cursor-default ${
-        liked ? likedClass : canLike ? hoverClass : ""
-      }`}
-    >
-      <span aria-hidden="true" className={`text-sm leading-none ${liked ? "" : "opacity-70 grayscale"}`}>
-        👌
-      </span>
-      {announcement.likes}
-      <span className="sr-only">likes</span>
-    </button>
-  );
-}
-
 function Counts({
   announcement,
   className = "",
@@ -155,9 +115,10 @@ function Counts({
   className?: string;
   light?: boolean;
 }) {
+  const { canLike, toggleLike } = useContext(PostContext);
   return (
     <span className={`flex items-center gap-4 text-xs tabular-nums ${className}`}>
-      <LikeButton announcement={announcement} light={light} />
+      <LikeButton announcement={announcement} canLike={canLike} onToggle={toggleLike} light={light} />
       <span className="flex items-center gap-1" title="Views">
         <EyeIcon />
         {announcement.views}
@@ -314,9 +275,8 @@ export default function UpdatesPage() {
   const [error, setError] = useState(false);
   const now = useMemo(() => new Date(), []);
   const user = useSessionUser();
-  // Posts already counted on this visit, and likes still being saved.
+  // Posts already counted on this visit.
   const counted = useRef(new Set<string>());
-  const liking = useRef(new Set<string>());
 
   useEffect(() => {
     fetchAnnouncements()
@@ -344,21 +304,7 @@ export default function UpdatesPage() {
     [replace],
   );
 
-  // Shows the change straight away and puts it back if it doesn't save. One
-  // at a time per post, so quick clicks can't arrive out of order.
-  const toggleLike = useCallback(
-    (announcement: Announcement) => {
-      if (liking.current.has(announcement.id)) return;
-      liking.current.add(announcement.id);
-      const liked = !announcement.liked;
-      replace({ ...announcement, liked, likes: announcement.likes + (liked ? 1 : -1) });
-      setAnnouncementLiked(announcement.id, liked)
-        .then(replace)
-        .catch(() => replace(announcement))
-        .finally(() => liking.current.delete(announcement.id));
-    },
-    [replace],
-  );
+  const toggleLike = useToggleLike(replace);
 
   const post = useMemo(() => ({ canLike: Boolean(user), countView, toggleLike }), [user, countView, toggleLike]);
 
@@ -367,7 +313,7 @@ export default function UpdatesPage() {
       <div className="min-h-[calc(100vh-4rem)] bg-neutral-50">
         <div className="mx-auto flex max-w-6xl flex-col gap-10 px-4 py-10 sm:px-6 lg:px-8">
           <Masthead
-            title="The Wall Updates"
+            title="Updates"
             tagline="Route setting, challenges, closures, and everything else happening on the wall."
             now={now}
           />

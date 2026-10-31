@@ -10,7 +10,7 @@ const MAX_LENGTH = 1000;
 
 // Half-star steps: each star is two buttons, so it picks a rating out of 10 -
 // the scale comments are rated on.
-function RatingPicker({ value, onChange }: { value: number | undefined; onChange: (value: number | undefined) => void }) {
+export function RatingPicker({ value, onChange }: { value: number | undefined; onChange: (value: number | undefined) => void }) {
   const [hover, setHover] = useState<number | null>(null);
   const shown = hover ?? value ?? 0;
 

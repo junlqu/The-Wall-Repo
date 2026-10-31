@@ -23,7 +23,7 @@ const DATA_BLOCKS = [
   },
   {
     title: "Archives",
-    description: "Every past route, colour, and grade on record.",
+    description: "The past climbs you've commented on.",
     href: "/climbs/archives",
   },
   {

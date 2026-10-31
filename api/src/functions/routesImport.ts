@@ -2,9 +2,11 @@ import { randomUUID } from "node:crypto";
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from "@azure/functions";
 import { BulkOperationType, JSONObject, OperationInput, PatchOperation } from "@azure/cosmos";
 import { corsHeaders, rejectUnlessAdmin } from "../authUtils";
+import { archiveCombosOn, canHaveCombos, handsAreUp, readClimbs, restoreCombosOn, spreadClimbChange } from "../climbLinks";
 import { getContainer } from "../cosmosClient";
 import { Route, ROUTE_CONTAINER } from "../models/Route";
 import { isDate, isFilledText, isText, readRouteFields } from "../routeFields";
+import { refreshSendersOf } from "../userMetrics";
 
 // Well past the wall's whole history in one spreadsheet, but still a bound on
 // what one request can write.
@@ -47,6 +49,7 @@ function toNewRoute(value: unknown): Route | null {
     removedAt: removedAtFor(status, removedAt),
     leadable: fields.type === "boulder" ? "No" : "?",
     ascents: [],
+    follows: [],
     comments: 0,
     rating: { total: 0, count: 0 },
   };
@@ -75,6 +78,49 @@ function toRoutePatch(value: unknown): { routeID: string; operations: PatchOpera
     operations.push({ op: "set", path: "/removedAt", value: removedAt });
   }
   return operations.length > 0 ? { routeID, operations } : null;
+}
+
+// Passes edited climbs' changes on to their combos and senders, the same as editing,
+// archiving or restoring them one at a time would. Routes go first, as a combo
+// brought back in the same import can only stay up if its routes ended up up.
+// Returns how many edits this undid or couldn't finish.
+async function spreadImportedEdits(before: Map<string, Route>, routeIDs: string[], context: InvocationContext) {
+  const after = await readClimbs(routeIDs);
+  const edited = routeIDs.flatMap((routeID) => {
+    const [was, now] = [before.get(routeID), after.get(routeID)];
+    return was && now ? [{ was, now }] : [];
+  });
+  let failed = 0;
+  const affected: string[] = [];
+
+  for (const { was, now } of edited.filter(({ now }) => canHaveCombos(now))) {
+    try {
+      affected.push(...(await spreadClimbChange(was, now)));
+      if (was.removedAt === 0 && now.removedAt !== 0) await archiveCombosOn(now.routeID, now.removedAt);
+      if (was.removedAt !== 0 && now.removedAt === 0) await restoreCombosOn(now.routeID);
+    } catch (error) {
+      failed++;
+      context.error("Failed to pass an imported change on to a route's combos", error);
+    }
+  }
+
+  for (const { was, now } of edited.filter(({ now }) => !canHaveCombos(now))) {
+    try {
+      affected.push(...(await spreadClimbChange(was, now)));
+      if (was.removedAt === 0 || now.removedAt !== 0 || (await handsAreUp(now))) continue;
+      await getContainer(ROUTE_CONTAINER)
+        .item(now.routeID, now.routeID)
+        .patch([{ op: "set", path: "/removedAt", value: was.removedAt }]);
+      failed++;
+      context.warn("An imported combo stayed down, as one of its routes is archived", now.routeID);
+    } catch (error) {
+      failed++;
+      context.error("Failed to check an imported combo's routes", error);
+    }
+  }
+
+  await refreshSendersOf(affected, context);
+  return failed;
 }
 
 // Admin-only. Every row is checked before anything is written, so a bad row
@@ -125,11 +171,14 @@ export async function importRoutes(request: HttpRequest, context: InvocationCont
         resourceBody: { operations: patch!.operations },
       })),
     ];
+    // The edited climbs as they were, to tell what changed once they're saved.
+    const before = patches.length > 0 ? await readClimbs(patches.map((patch) => patch!.routeID)) : new Map<string, Route>();
     const results = await getContainer(ROUTE_CONTAINER).items.executeBulkOperations(operations);
 
     let added = 0;
     let updated = 0;
     let failed = 0;
+    const editedIDs: string[] = [];
     results.forEach((result, index) => {
       const statusCode = result.response?.statusCode ?? 500;
       if (result.error || statusCode >= 400) {
@@ -139,10 +188,12 @@ export async function importRoutes(request: HttpRequest, context: InvocationCont
         added++;
       } else {
         updated++;
+        editedIDs.push(patches[index - routes.length]!.routeID);
       }
     });
 
-    return { status: 200, headers, jsonBody: { added, updated, failed } };
+    const undone = editedIDs.length > 0 ? await spreadImportedEdits(before, editedIDs, context) : 0;
+    return { status: 200, headers, jsonBody: { added, updated: updated - undone, failed: failed + undone } };
   } catch (error) {
     context.error("Failed to import routes", error);
     return { status: 500, headers, jsonBody: { error: "Failed to import climbs." } };
