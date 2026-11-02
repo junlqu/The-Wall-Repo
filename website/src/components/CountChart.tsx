@@ -155,23 +155,27 @@ export default function CountChart({
         </div>
       </div>
 
-      <table className="sr-only">
-        <caption>{caption}</caption>
-        <thead>
-          <tr>
-            <th scope="col">{categoryHeader}</th>
-            <th scope="col">{countHeader}</th>
-          </tr>
-        </thead>
-        <tbody>
-          {counts.map(({ label, count }) => (
-            <tr key={label}>
-              <td>{label}</td>
-              <td>{formatCount(count)}</td>
+      {/* A table won't shrink below its content, so sr-only goes around it: these
+          long headers would otherwise widen the page on a phone. */}
+      <div className="sr-only">
+        <table>
+          <caption>{caption}</caption>
+          <thead>
+            <tr>
+              <th scope="col">{categoryHeader}</th>
+              <th scope="col">{countHeader}</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {counts.map(({ label, count }) => (
+              <tr key={label}>
+                <td>{label}</td>
+                <td>{formatCount(count)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </figure>
   );
 }

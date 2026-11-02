@@ -5,27 +5,35 @@ import { useRouter } from "next/navigation";
 import { Fragment, type ReactNode, useCallback, useEffect, useState } from "react";
 import { EditNotesDialog, GenerateMonthDialog, type SheetLookup } from "@/components/AdminAttendanceGenerate";
 import {
+  AttendanceRingChart,
+  type AttendanceTable,
+  climberSlices,
   DailyAttendanceChart,
+  earningSlices,
   HourlyAttendanceChart,
-  type Scale,
+  tableOfDay,
+  tablesOfSheet,
   WEEKDAY_OPENING,
   WEEKDAY_SCHEDULES,
 } from "@/components/AttendanceCharts";
 import { ActionsMenu, DANGER_BUTTON_CLASS, Dialog } from "@/components/ClimbActions";
 import { CANCEL_BUTTON_CLASS, ErrorMessage, useRequest } from "@/components/ClimbForm";
+import { ChangeMark, ColumnCompare, ComparedCell, HiddenWhileComparing } from "@/components/ColumnCompare";
 import CountChart from "@/components/CountChart";
 import GroupedCountChart from "@/components/GroupedCountChart";
+import RingChart from "@/components/RingChart";
 import SlidingTabs from "@/components/SlidingTabs";
 import ToggleSwitch from "@/components/ToggleSwitch";
 import { type AdminSection, adminSubpageHref } from "@/lib/adminSections";
 import {
-  type AttendanceBlock,
+  addDays,
   type AttendanceDay,
   type AttendanceMonth,
   type AttendanceWeek,
   blockWeekDay,
   countClimbers,
   countLessons,
+  countStudents,
   deleteAttendance,
   fetchAttendanceMonthsOf,
   fetchAttendanceWeeksOverlapping,
@@ -39,17 +47,20 @@ import {
   hoursOf,
   measure,
   measureBlock,
+  measureDay,
   measureDays,
   measureMonth,
   type Metric,
   MONTH_NAMES,
   monthId,
+  monthRange,
   monthsBefore,
   priorWeekEnding,
+  separatesNonMembers,
   weekId,
   type YearCount,
 } from "@/lib/attendance";
-import { type AttendanceColumnKey, formatForMonth } from "@/lib/attendanceFormats";
+import { formatForMonth } from "@/lib/attendanceFormats";
 import { formatDate, parseDate, todayDate } from "@/lib/climbs";
 
 // Slugs of the attendance subpages that get a button on the main page.
@@ -67,20 +78,30 @@ const WIDGET_CLASS = "flex flex-col rounded-lg bg-neutral-50 p-4";
 export const FORM_HREF = "/admin/attendance/new";
 
 // A year's weeks and months, newest first, plus the message to show in place of
-// them while loading or after a failed load (null once they've loaded).
+// them while loading or after a failed load (null once they've loaded). The year
+// before's weeks are only there to compare with, so losing them loses just that.
 function useAttendance(year: string) {
   // undefined while loading, null if the API couldn't be reached.
-  const [attendance, setAttendance] = useState<{ weeks: AttendanceWeek[]; months: AttendanceMonth[] } | null>();
+  const [attendance, setAttendance] = useState<{
+    weeks: AttendanceWeek[];
+    months: AttendanceMonth[];
+    earlierWeeks: AttendanceWeek[] | null;
+  } | null>();
 
   useEffect(() => {
-    Promise.all([fetchAttendanceWeeksOverlapping(year), fetchAttendanceMonthsOf(year)])
-      .then(([weeks, months]) => setAttendance({ weeks, months }))
+    Promise.all([
+      fetchAttendanceWeeksOverlapping(year),
+      fetchAttendanceMonthsOf(year),
+      fetchAttendanceWeeksOverlapping(String(Number(year) - 1)).catch(() => null),
+    ])
+      .then(([weeks, months, earlierWeeks]) => setAttendance({ weeks, months, earlierWeeks }))
       .catch(() => setAttendance(null));
   }, [year]);
 
   return {
     weeks: attendance?.weeks ?? [],
     months: attendance?.months ?? [],
+    earlierWeeks: attendance?.earlierWeeks ?? null,
     loadingText:
       attendance === undefined
         ? "Loading attendance…"
@@ -104,48 +125,112 @@ function lastSaved({ updatedAt, updatedBy }: { updatedAt?: string; updatedBy?: s
   return `${date}${updatedBy ? ` by ${updatedBy}` : ""}`;
 }
 
+// What a total is measured against, and what to call that.
+type ComparedTotal = { days: AttendanceDay[]; label: string };
+
 function Total({
   title,
   period,
   days,
   metric,
   note,
+  compared,
 }: {
   title: string;
   period: string;
   days: AttendanceDay[];
   metric: Metric;
   note?: string;
+  // Null when there's nothing to compare with.
+  compared: ComparedTotal | null;
 }) {
+  const total = measureDays(days, metric);
   return (
-    <div className={`${WIDGET_CLASS} gap-1`}>
+    <div className={`${WIDGET_CLASS} flex-1 justify-center gap-1`}>
       <div className="flex items-baseline justify-between gap-2">
         <h3 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">{title}</h3>
         <span className="text-xs text-neutral-500">{period}</span>
       </div>
-      <p className="text-3xl font-bold text-primary">{formatMetric(measureDays(days, metric), metric)}</p>
-      <p className="text-xs text-neutral-500">{note ?? plural(measureDays(days, "numbers"), "climber")}</p>
+      <div className="flex flex-wrap items-baseline gap-x-2">
+        <p className="text-3xl font-bold text-primary">{formatMetric(total, metric)}</p>
+        {compared && <ChangeMark change={total - measureDays(compared.days, metric)} format={(value) => formatMetric(value, metric)} />}
+      </div>
+      <p className="text-xs text-neutral-500">
+        {note ?? plural(measureDays(days, "numbers"), "climber")}
+        {compared && ` · vs ${compared.label}`}
+      </p>
     </div>
   );
 }
 
-// Totals for the week ending `anchor` and the month and year it ended in,
-// then both charts counting from it. The dashboard anchors on last week; each
-// week's panel on the weeks list anchors on that week.
+function shortDate(date: string) {
+  return `${MONTH_NAMES[Number(date.slice(5, 7)) - 1].slice(0, 3)} ${Number(date.slice(8))}`;
+}
+
+// What the week, month and year totals each compare with. A month or year still
+// under way goes against the same stretch of the one before, since against all of
+// it nearly every total would be down until the last day.
+function comparedTotals(anchor: string, weeks: AttendanceWeek[], earlierWeeks: AttendanceWeek[] | null) {
+  const allWeeks = [...weeks, ...(earlierWeeks ?? [])];
+  // A week crossing New Year comes back with both years.
+  const allDays = [...new Map(allWeeks.flatMap((week) => week.days).map((day) => [day.date, day])).values()];
+  // A week saved partway through has its later days blank, and those don't count.
+  const latestOf = (period: string) =>
+    allDays.reduce(
+      (latest, day) => (day.date.startsWith(period) && day.date > latest && measureDay(day, "numbers") > 0 ? day.date : latest),
+      "",
+    );
+  const compared = (period: string, through: string, label: string): ComparedTotal | null => {
+    const days = allDays.filter(({ date }) => date.startsWith(period) && date <= through);
+    return days.length > 0 ? { days, label } : null;
+  };
+
+  const anchorWeek = weeks.find((week) => week.weekEnding === anchor);
+  const priorWeek = allWeeks.find((week) => week.weekEnding === addDays(anchor, -7));
+
+  const { startDay, endDay } = monthRange(anchor);
+  const priorMonthEnd = addDays(startDay, -1);
+  const priorMonth = priorMonthEnd.slice(0, 7);
+  const priorMonthName = MONTH_NAMES[Number(priorMonth.slice(5)) - 1];
+  const monthThrough = latestOf(anchor.slice(0, 7));
+  // Past the prior month's last day just means all of it: Oct 31 against September.
+  const priorMonthThrough = monthThrough === endDay ? priorMonthEnd : `${priorMonth}-${monthThrough.slice(8)}`;
+  const monthKnown = monthThrough !== "" && (earlierWeeks !== null || priorMonth.slice(0, 4) === anchor.slice(0, 4));
+
+  const priorYear = String(Number(anchor.slice(0, 4)) - 1);
+  const yearThrough = latestOf(anchor.slice(0, 4));
+  const wholeYear = yearThrough.slice(5) === "12-31";
+
+  return {
+    week: anchorWeek && priorWeek ? { days: priorWeek.days, label: "the week before" } : null,
+    month: monthKnown
+      ? compared(
+          priorMonth,
+          priorMonthThrough,
+          priorMonthThrough >= priorMonthEnd ? priorMonthName : `${priorMonthName} 1–${Number(monthThrough.slice(8))}`,
+        )
+      : null,
+    year:
+      yearThrough !== "" && earlierWeeks !== null
+        ? compared(priorYear, `${priorYear}${yearThrough.slice(4)}`, wholeYear ? priorYear : `${priorYear} to ${shortDate(yearThrough)}`)
+        : null,
+  };
+}
+
+// Totals for the week ending `anchor` and the month and year it ended in, each
+// against the one before, the ring beside them, then both charts counting from it.
 function AttendanceSummary({
   weeks,
+  earlierWeeks,
   months,
   anchor,
-  weekTitle,
-  defaultScale,
   metric,
   loadingText,
 }: {
   weeks: AttendanceWeek[];
-  months?: AttendanceMonth[];
+  earlierWeeks: AttendanceWeek[] | null;
+  months: AttendanceMonth[];
   anchor: string;
-  weekTitle: string;
-  defaultScale?: Scale;
   metric: Metric;
   loadingText?: string | null;
 }) {
@@ -154,30 +239,37 @@ function AttendanceSummary({
   const allDays = weeks.flatMap((week) => week.days);
   const inYear = allDays.filter((day) => parseDate(day.date).getFullYear() === anchorDate.getFullYear());
   const inMonth = inYear.filter((day) => parseDate(day.date).getMonth() === anchorDate.getMonth());
-  const chartProps = { weeks, months, anchor, defaultScale, metric, loadingText, className: WIDGET_CLASS };
+  const chartProps = { weeks, months, anchor, metric, loadingText, className: WIDGET_CLASS };
+  const compared = comparedTotals(anchor, weeks, earlierWeeks);
+
 
   return (
     <>
-      {loadingText ? (
-        <p className="flex h-28 items-center justify-center text-sm text-neutral-500">{loadingText}</p>
-      ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <Total
-            title={weekTitle}
-            period={`Ending ${formatDate(anchor)}`}
-            days={anchorWeek?.days ?? []}
-            metric={metric}
-            note={anchorWeek ? undefined : "Not filled in yet"}
-          />
-          <Total
-            title="Month"
-            period={anchorDate.toLocaleDateString(undefined, { month: "long" })}
-            days={inMonth}
-            metric={metric}
-          />
-          <Total title="Year" period={String(anchorDate.getFullYear())} days={inYear} metric={metric} />
-        </div>
-      )}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
+        {loadingText ? (
+          <p className="flex h-28 items-center justify-center text-sm text-neutral-500">{loadingText}</p>
+        ) : (
+          <div className="flex flex-col gap-4">
+            <Total
+              title="Last week"
+              period={`Ending ${formatDate(anchor)}`}
+              days={anchorWeek?.days ?? []}
+              metric={metric}
+              note={anchorWeek ? undefined : "Not filled in yet"}
+              compared={compared.week}
+            />
+            <Total
+              title="Month"
+              period={anchorDate.toLocaleDateString(undefined, { month: "long" })}
+              days={inMonth}
+              metric={metric}
+              compared={compared.month}
+            />
+            <Total title="Year" period={String(anchorDate.getFullYear())} days={inYear} metric={metric} compared={compared.year} />
+          </div>
+        )}
+        <AttendanceRingChart {...chartProps} />
+      </div>
       <DailyAttendanceChart {...chartProps} />
       <HourlyAttendanceChart {...chartProps} />
     </>
@@ -201,7 +293,7 @@ function MetricSwitch({ metric, onChange }: { metric: Metric; onChange: (metric:
 export default function AdminAttendance({ section }: { section: AdminSection }) {
   const [metric, setMetric] = useState<Metric>("numbers");
   const anchor = priorWeekEnding(todayDate());
-  const { weeks, months, loadingText } = useAttendance(anchor.slice(0, 4));
+  const { weeks, earlierWeeks, months, loadingText } = useAttendance(anchor.slice(0, 4));
   const subpageHref = (slug: string) => {
     const subpage = section.subpages.find((item) => item.slug === slug);
     return subpage ? adminSubpageHref(section, subpage) : `/admin/${section.slug}`;
@@ -239,9 +331,9 @@ export default function AdminAttendance({ section }: { section: AdminSection }) 
             takes over once one of its Fridays has passed. */}
         <AttendanceSummary
           weeks={weeks}
+          earlierWeeks={earlierWeeks}
           months={months}
           anchor={anchor}
-          weekTitle="Last week"
           metric={metric}
           loadingText={loadingText}
         />
@@ -250,17 +342,24 @@ export default function AdminAttendance({ section }: { section: AdminSection }) 
   );
 }
 
-// The dashboard for one week, opened from its row on the weeks list. The
-// charts start on the week itself.
-function WeekPanel({ weeks, week }: { weeks: AttendanceWeek[]; week: AttendanceWeek }) {
+// One week, opened from its row on the weeks list: its totals and graphs, and
+// nothing from around it.
+function WeekPanel({ week }: { week: AttendanceWeek }) {
   const [metric, setMetric] = useState<Metric>("numbers");
+  const chartProps = { weeks: [week], anchor: week.weekEnding, weekOnly: true, metric, className: WIDGET_CLASS };
   return (
     <div className="flex flex-col gap-4 p-4 sm:p-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h3 className="font-bold text-primary">{formatWeekRange(week.weekEnding)}</h3>
         <MetricSwitch metric={metric} onChange={setMetric} />
       </div>
-      <AttendanceSummary weeks={weeks} anchor={week.weekEnding} weekTitle="Week" defaultScale="week" metric={metric} />
+      <div className="grid grid-cols-2 gap-4">
+        <MonthTotal title="Climbers">{measureDays(week.days, "numbers").toLocaleString()}</MonthTotal>
+        <MonthTotal title="Earnings">{formatMoney(measureDays(week.days, "earnings"))}</MonthTotal>
+      </div>
+      <AttendanceRings tables={week.days.map(tableOfDay)} period={formatWeekRange(week.weekEnding)} />
+      <DailyAttendanceChart {...chartProps} />
+      <HourlyAttendanceChart {...chartProps} />
     </div>
   );
 }
@@ -364,9 +463,13 @@ const NAME_TITLE_CLASS = "py-3 pl-[2.875rem] pr-2 lg:pl-[3.875rem] lg:pr-4";
 // removed, so the rows' colSpans still add up.
 const WIDE_SCREEN_CLASS = "max-lg:invisible max-lg:w-0 max-lg:overflow-hidden max-lg:p-0";
 const WIDEST_SCREEN_CLASS = "max-xl:invisible max-xl:w-0 max-xl:overflow-hidden max-xl:p-0";
-const CLIMBERS_TITLE_CLASS = "w-[5.5rem] px-2 py-3 text-right lg:w-28 lg:px-4";
-const CLIMBERS_CELL_CLASS = "px-2 py-3 text-right align-top lg:px-4 lg:align-middle";
+// The last column of numbers before the row's menu keeps room to its right for the
+// differences a mouse can bring up: climbers below lg, earnings until Last saved shows.
+const COMPARE_ROOM_CLASS = "max-lg:pointer-fine:w-[6.25rem] max-lg:pointer-fine:pr-5";
+const CLIMBERS_TITLE_CLASS = `w-[5.5rem] px-2 py-3 text-right lg:w-28 lg:px-4 ${COMPARE_ROOM_CLASS}`;
+const CLIMBERS_CELL_CLASS = `px-2 py-3 text-right align-top lg:px-4 lg:align-middle ${COMPARE_ROOM_CLASS}`;
 const WIDE_CELL_CLASS = `px-4 py-3 text-right ${WIDE_SCREEN_CLASS}`;
+const EARNINGS_CELL_CLASS = `${WIDE_CELL_CLASS} lg:pr-9 xl:pr-4`;
 const ACTIONS_TITLE_CLASS = "w-10 px-1 py-3 lg:w-12 lg:px-2";
 const ACTIONS_CELL_CLASS = "px-1 py-1 text-right align-top lg:px-2 lg:align-middle";
 
@@ -524,104 +627,129 @@ function WeekToWeek() {
         // within the table.
         <div className="relative">
           {/* Fixed columns, so they stay put whichever years are open. */}
-          <table className="w-full table-fixed text-left text-sm">
-            <thead className="bg-neutral-50 text-xs font-semibold uppercase tracking-wide text-neutral-500">
-              <tr>
-                <th scope="col" className={`xl:w-[17rem] ${NAME_TITLE_CLASS}`}>Week</th>
-                <th scope="col" className={`w-28 ${WIDE_CELL_CLASS}`}>Days open</th>
-                <th scope="col" className={CLIMBERS_TITLE_CLASS}>Climbers</th>
-                <th scope="col" className={`w-24 ${WIDE_CELL_CLASS}`}>Lessons</th>
-                <th scope="col" className={`w-32 ${WIDE_CELL_CLASS}`}>Turned away</th>
-                <th scope="col" className={`w-28 ${WIDE_CELL_CLASS}`}>Earnings</th>
-                <th scope="col" className={`px-4 py-3 ${WIDEST_SCREEN_CLASS}`}>Last saved</th>
-                <th scope="col" className={ACTIONS_TITLE_CLASS}>
-                  <span className="sr-only">Actions</span>
-                </th>
-              </tr>
-            </thead>
-            <YearGroups
-              yearly={yearly}
-              columns={8}
-              noun="week"
-              // A week crossing New Year is filed under the year it ends in.
-              filedIn={(week, year) => week.weekEnding.startsWith(year)}
-              renderRow={(week, yearWeeks) => {
-                const isOpen = open === week.weekEnding;
-                const panelId = `week-${week.weekEnding}`;
-                return (
-                  <Fragment key={week.weekEnding}>
-                    <tr className={isOpen ? "bg-secondary/5" : "hover:bg-secondary/5"}>
-                      <td className={ROW_NAME_CELL_CLASS}>
-                        <button
-                          type="button"
-                          aria-expanded={isOpen}
-                          aria-controls={panelId}
-                          onClick={() => setOpen(isOpen ? null : week.weekEnding)}
-                          className="group flex items-center gap-1.5 text-left font-semibold text-primary transition-colors hover:text-secondary"
-                        >
-                          <ChevronIcon open={isOpen} />
-                          {formatWeekRange(week.weekEnding)}
-                        </button>
-                        <RowDetails
-                          stats={[
-                            plural(week.days.length, "day"),
-                            plural(countLessons(week.days), "lesson"),
-                            `${turnedAway(week.days)} turned away`,
-                            formatMoney(measureDays(week.days, "earnings")),
-                          ]}
-                          saved={lastSaved(week)}
-                        />
-                      </td>
-                      <td className={WIDE_CELL_CLASS}>{week.days.length}</td>
-                      <td className={CLIMBERS_CELL_CLASS}>{measureDays(week.days, "numbers").toLocaleString()}</td>
-                      <td className={WIDE_CELL_CLASS}>{countLessons(week.days).toLocaleString()}</td>
-                      <td className={WIDE_CELL_CLASS}>{turnedAway(week.days)}</td>
-                      <td className={WIDE_CELL_CLASS}>{formatMoney(measureDays(week.days, "earnings"))}</td>
-                      <td title={lastSaved(week)} className={`truncate px-4 py-3 text-xs text-neutral-500 ${WIDEST_SCREEN_CLASS}`}>
-                        {lastSaved(week)}
-                      </td>
-                      <td className={ACTIONS_CELL_CLASS}>
-                        <WeekActions
-                          week={week}
-                          onDeleted={(weekEnding) =>
-                            remove(weekEnding.slice(0, 4), (other) => other.weekEnding === weekEnding)
-                          }
-                        />
-                      </td>
-                    </tr>
-                    {isOpen && (
-                      <tr id={panelId}>
-                        <td colSpan={8} className="border-l-4 border-secondary bg-white p-0">
-                          {/* Zero width, stretched to the cell's, so the charts
-                              fit the table instead of widening it. */}
-                          <div className="w-0 min-w-full">
-                            <WeekPanel weeks={yearWeeks} week={week} />
-                          </div>
+          <ColumnCompare>
+            <table className="w-full table-fixed text-left text-sm">
+              <thead className="bg-neutral-50 text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                <tr>
+                  <th scope="col" className={`xl:w-[17rem] ${NAME_TITLE_CLASS}`}>Week</th>
+                  <th scope="col" className={`w-28 ${WIDE_CELL_CLASS}`}>Days open</th>
+                  <th scope="col" className={CLIMBERS_TITLE_CLASS}>Climbers</th>
+                  <th scope="col" className={`w-24 ${WIDE_CELL_CLASS}`}>Lessons</th>
+                  <th scope="col" className={`w-32 ${WIDE_CELL_CLASS}`}>Turned away</th>
+                  <th scope="col" className={`w-28 lg:w-[8.25rem] xl:w-28 ${EARNINGS_CELL_CLASS}`}>Earnings</th>
+                  <th scope="col" className={`px-4 py-3 ${WIDEST_SCREEN_CLASS}`}>Last saved</th>
+                  <th scope="col" className={ACTIONS_TITLE_CLASS}>
+                    <span className="sr-only">Actions</span>
+                  </th>
+                </tr>
+              </thead>
+              <YearGroups
+                yearly={yearly}
+                columns={8}
+                noun="week"
+                // A week crossing New Year is filed under the year it ends in.
+                filedIn={(week, year) => week.weekEnding.startsWith(year)}
+                renderRow={(week) => {
+                  const isOpen = open === week.weekEnding;
+                  const panelId = `week-${week.weekEnding}`;
+                  return (
+                    <Fragment key={week.weekEnding}>
+                      <tr className={isOpen ? "bg-secondary/5" : "hover:bg-secondary/5"}>
+                        <td className={ROW_NAME_CELL_CLASS}>
+                          <button
+                            type="button"
+                            aria-expanded={isOpen}
+                            aria-controls={panelId}
+                            onClick={() => setOpen(isOpen ? null : week.weekEnding)}
+                            className="group flex items-center gap-1.5 text-left font-semibold text-primary transition-colors hover:text-secondary"
+                          >
+                            <ChevronIcon open={isOpen} />
+                            {formatWeekRange(week.weekEnding)}
+                          </button>
+                          <RowDetails
+                            stats={[
+                              plural(week.days.length, "day"),
+                              plural(countLessons(week.days), "lesson"),
+                              `${turnedAway(week.days)} turned away`,
+                              formatMoney(measureDays(week.days, "earnings")),
+                            ]}
+                            saved={lastSaved(week)}
+                          />
+                        </td>
+                        <ComparedCell column="days" value={week.days.length} className={WIDE_CELL_CLASS} />
+                        <ComparedCell column="climbers" value={measureDays(week.days, "numbers")} className={CLIMBERS_CELL_CLASS} />
+                        <ComparedCell column="lessons" value={countLessons(week.days)} className={WIDE_CELL_CLASS} />
+                        <ComparedCell column="turnedAway" value={turnedAway(week.days)} className={WIDE_CELL_CLASS} />
+                        <ComparedCell column="earnings" value={measureDays(week.days, "earnings")} format={formatMoney} className={EARNINGS_CELL_CLASS} />
+                        <td title={lastSaved(week)} className={`truncate px-4 py-3 text-xs text-neutral-500 ${WIDEST_SCREEN_CLASS}`}>
+                          <HiddenWhileComparing column="earnings">{lastSaved(week)}</HiddenWhileComparing>
+                        </td>
+                        <td className={ACTIONS_CELL_CLASS}>
+                          <WeekActions
+                            week={week}
+                            onDeleted={(weekEnding) =>
+                              remove(weekEnding.slice(0, 4), (other) => other.weekEnding === weekEnding)
+                            }
+                          />
                         </td>
                       </tr>
-                    )}
-                  </Fragment>
-                );
-              }}
-            />
-          </table>
+                      {isOpen && (
+                        <tr id={panelId}>
+                          <td colSpan={8} className="border-l-4 border-secondary bg-white p-0">
+                            {/* Zero width, stretched to the cell's, so the charts
+                                fit the table instead of widening it. */}
+                            <div className="w-0 min-w-full">
+                              <WeekPanel week={week} />
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                }}
+              />
+            </table>
+          </ColumnCompare>
         </div>
       )}
     </div>
   );
 }
 
-const STUDENT_KEYS: AttendanceColumnKey[] = ["utscLearnToClimb", "utscDropInGear", "utscDropInNoGear"];
+// Who climbed and which days earned what, for a week, month or year's panel.
+function AttendanceRings({ tables, period }: { tables: AttendanceTable[]; period: string }) {
+  const unsplit = tables.some(({ format }) => !separatesNonMembers(format));
 
-function countStudents(blocks: AttendanceBlock[]) {
-  return blocks.reduce(
-    (total, block) =>
-      total +
-      Object.values(block.hours).reduce(
-        (blockTotal, counts) => blockTotal + STUDENT_KEYS.reduce((sum, key) => sum + (counts[key] ?? 0), 0),
-        0,
-      ),
-    0,
+  return (
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <section aria-label="Climbers split by group" className={WIDGET_CLASS}>
+        <h4 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">Climbers split by group</h4>
+        <div className="mt-3">
+          <RingChart
+            slices={climberSlices(tables)}
+            formatValue={(value) => value.toLocaleString()}
+            caption={`Climbers by group, ${period}`}
+            emptyText="No climbers recorded"
+          />
+        </div>
+        {unsplit && (
+          <p className="mt-2 text-xs text-neutral-500">
+            Sheets before May 2018 don&apos;t separate non-members, so they count as TPASC &amp; members.
+          </p>
+        )}
+      </section>
+      <section aria-label="Earnings split by day" className={WIDGET_CLASS}>
+        <h4 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">Earnings split by day</h4>
+        <div className="mt-3">
+          <RingChart
+            slices={earningSlices(tables)}
+            formatValue={formatMoney}
+            caption={`Earnings by day of the week, ${period}`}
+            emptyText="No earnings recorded"
+          />
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -659,6 +787,8 @@ function MonthPanel({ month }: { month: AttendanceMonth }) {
         <MonthTotal title="Earnings">{formatMoney(measureMonth(month, "earnings"))}</MonthTotal>
         <MonthTotal title="Turned away">{turnedAway(month.blocks)}</MonthTotal>
       </div>
+
+      <AttendanceRings tables={tablesOfSheet(month)} period={formatMonth(month.startDay)} />
 
       <section aria-label={`${what} by day`} className={WIDGET_CLASS}>
         <h4 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">{what} by day</h4>
@@ -782,93 +912,95 @@ function MonthToMonth({
       ) : (
         <div className="relative">
           {/* Fixed columns, so they stay put whichever years are open. */}
-          <table className="w-full table-fixed text-left text-sm">
-            <thead className="bg-neutral-50 text-xs font-semibold uppercase tracking-wide text-neutral-500">
-              <tr>
-                <th scope="col" className={`xl:w-48 ${NAME_TITLE_CLASS}`}>Month</th>
-                <th scope="col" className={CLIMBERS_TITLE_CLASS}>Climbers</th>
-                <th scope="col" className={`w-[6.5rem] ${WIDE_CELL_CLASS}`}>Students</th>
-                <th scope="col" className={`w-36 ${WIDE_CELL_CLASS}`}>TPASC &amp; other</th>
-                <th scope="col" className={`w-24 ${WIDE_CELL_CLASS}`}>Lessons</th>
-                <th scope="col" className={`w-32 ${WIDE_CELL_CLASS}`}>Turned away</th>
-                <th scope="col" className={`w-[6.5rem] ${WIDE_CELL_CLASS}`}>Earnings</th>
-                <th scope="col" className={`px-4 py-3 ${WIDEST_SCREEN_CLASS}`}>Last saved</th>
-                <th scope="col" className={ACTIONS_TITLE_CLASS}>
-                  <span className="sr-only">Actions</span>
-                </th>
-              </tr>
-            </thead>
-            <YearGroups
-              yearly={yearly}
-              columns={9}
-              noun="month"
-              filedIn={(month, year) => month.startDay.startsWith(year)}
-              renderRow={(month) => {
-                const id = monthId(month);
-                const isOpen = open === id;
-                const panelId = `month-${id}`;
-                const climbers = measureMonth(month, "numbers");
-                const students = countStudents(month.blocks);
-                return (
-                  <Fragment key={id}>
-                    <tr className={isOpen ? "bg-secondary/5" : "hover:bg-secondary/5"}>
-                      <td className={ROW_NAME_CELL_CLASS}>
-                        <button
-                          type="button"
-                          aria-expanded={isOpen}
-                          aria-controls={panelId}
-                          onClick={() => setOpen(isOpen ? null : id)}
-                          className="group flex items-center gap-1.5 text-left font-semibold text-primary transition-colors hover:text-secondary"
-                        >
-                          <ChevronIcon open={isOpen} />
-                          {formatMonth(month.startDay)}
-                        </button>
-                        <RowDetails
-                          stats={[
-                            `${students.toLocaleString()} students`,
-                            `${(climbers - students).toLocaleString()} TPASC & other`,
-                            plural(countLessons(month.blocks), "lesson"),
-                            `${turnedAway(month.blocks)} turned away`,
-                            formatMoney(measureMonth(month, "earnings")),
-                          ]}
-                          saved={lastSaved(month)}
-                        />
-                      </td>
-                      <td className={CLIMBERS_CELL_CLASS}>{climbers.toLocaleString()}</td>
-                      <td className={WIDE_CELL_CLASS}>{students.toLocaleString()}</td>
-                      <td className={WIDE_CELL_CLASS}>{(climbers - students).toLocaleString()}</td>
-                      <td className={WIDE_CELL_CLASS}>{countLessons(month.blocks).toLocaleString()}</td>
-                      <td className={WIDE_CELL_CLASS}>{turnedAway(month.blocks)}</td>
-                      <td className={WIDE_CELL_CLASS}>{formatMoney(measureMonth(month, "earnings"))}</td>
-                      <td title={lastSaved(month)} className={`truncate px-4 py-3 text-xs text-neutral-500 ${WIDEST_SCREEN_CLASS}`}>
-                        {lastSaved(month)}
-                      </td>
-                      <td className={ACTIONS_CELL_CLASS}>
-                        <MonthActions
-                          month={month}
-                          onCompare={() => onCompare(month.startDay)}
-                          onNotesSaved={() => yearly.reload(month.startDay.slice(0, 4))}
-                          onDeleted={(gone) => {
-                            remove(month.startDay.slice(0, 4), (other) => monthId(other) === gone);
-                            onDeleted();
-                          }}
-                        />
-                      </td>
-                    </tr>
-                    {isOpen && (
-                      <tr id={panelId}>
-                        <td colSpan={9} className="border-l-4 border-secondary bg-white p-0">
-                          <div className="w-0 min-w-full">
-                            <MonthPanel month={month} />
-                          </div>
+          <ColumnCompare>
+            <table className="w-full table-fixed text-left text-sm">
+              <thead className="bg-neutral-50 text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                <tr>
+                  <th scope="col" className={`xl:w-48 ${NAME_TITLE_CLASS}`}>Month</th>
+                  <th scope="col" className={CLIMBERS_TITLE_CLASS}>Climbers</th>
+                  <th scope="col" className={`w-[6.5rem] ${WIDE_CELL_CLASS}`}>Students</th>
+                  <th scope="col" className={`w-[8.5rem] ${WIDE_CELL_CLASS}`}>TPASC &amp; other</th>
+                  <th scope="col" className={`w-24 ${WIDE_CELL_CLASS}`}>Lessons</th>
+                  <th scope="col" className={`w-32 ${WIDE_CELL_CLASS}`}>Turned away</th>
+                  <th scope="col" className={`w-28 lg:w-[8.25rem] xl:w-28 ${EARNINGS_CELL_CLASS}`}>Earnings</th>
+                  <th scope="col" className={`px-4 py-3 ${WIDEST_SCREEN_CLASS}`}>Last saved</th>
+                  <th scope="col" className={ACTIONS_TITLE_CLASS}>
+                    <span className="sr-only">Actions</span>
+                  </th>
+                </tr>
+              </thead>
+              <YearGroups
+                yearly={yearly}
+                columns={9}
+                noun="month"
+                filedIn={(month, year) => month.startDay.startsWith(year)}
+                renderRow={(month) => {
+                  const id = monthId(month);
+                  const isOpen = open === id;
+                  const panelId = `month-${id}`;
+                  const climbers = measureMonth(month, "numbers");
+                  const students = countStudents(month.blocks);
+                  return (
+                    <Fragment key={id}>
+                      <tr className={isOpen ? "bg-secondary/5" : "hover:bg-secondary/5"}>
+                        <td className={ROW_NAME_CELL_CLASS}>
+                          <button
+                            type="button"
+                            aria-expanded={isOpen}
+                            aria-controls={panelId}
+                            onClick={() => setOpen(isOpen ? null : id)}
+                            className="group flex items-center gap-1.5 text-left font-semibold text-primary transition-colors hover:text-secondary"
+                          >
+                            <ChevronIcon open={isOpen} />
+                            {formatMonth(month.startDay)}
+                          </button>
+                          <RowDetails
+                            stats={[
+                              `${students.toLocaleString()} students`,
+                              `${(climbers - students).toLocaleString()} TPASC & other`,
+                              plural(countLessons(month.blocks), "lesson"),
+                              `${turnedAway(month.blocks)} turned away`,
+                              formatMoney(measureMonth(month, "earnings")),
+                            ]}
+                            saved={lastSaved(month)}
+                          />
+                        </td>
+                        <ComparedCell column="climbers" value={climbers} className={CLIMBERS_CELL_CLASS} />
+                        <ComparedCell column="students" value={students} className={WIDE_CELL_CLASS} />
+                        <ComparedCell column="others" value={climbers - students} className={WIDE_CELL_CLASS} />
+                        <ComparedCell column="lessons" value={countLessons(month.blocks)} className={WIDE_CELL_CLASS} />
+                        <ComparedCell column="turnedAway" value={turnedAway(month.blocks)} className={WIDE_CELL_CLASS} />
+                        <ComparedCell column="earnings" value={measureMonth(month, "earnings")} format={formatMoney} className={EARNINGS_CELL_CLASS} />
+                        <td title={lastSaved(month)} className={`truncate px-4 py-3 text-xs text-neutral-500 ${WIDEST_SCREEN_CLASS}`}>
+                          <HiddenWhileComparing column="earnings">{lastSaved(month)}</HiddenWhileComparing>
+                        </td>
+                        <td className={ACTIONS_CELL_CLASS}>
+                          <MonthActions
+                            month={month}
+                            onCompare={() => onCompare(month.startDay)}
+                            onNotesSaved={() => yearly.reload(month.startDay.slice(0, 4))}
+                            onDeleted={(gone) => {
+                              remove(month.startDay.slice(0, 4), (other) => monthId(other) === gone);
+                              onDeleted();
+                            }}
+                          />
                         </td>
                       </tr>
-                    )}
-                  </Fragment>
-                );
-              }}
-            />
-          </table>
+                      {isOpen && (
+                        <tr id={panelId}>
+                          <td colSpan={9} className="border-l-4 border-secondary bg-white p-0">
+                            <div className="w-0 min-w-full">
+                              <MonthPanel month={month} />
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                }}
+              />
+            </table>
+          </ColumnCompare>
         </div>
       )}
     </div>
@@ -973,6 +1105,8 @@ function YearPanel({ year, months }: { year: string; months: AttendanceMonth[] }
         <MonthTotal title="Turned away">{turnedAway(blocks).toLocaleString()}</MonthTotal>
         <MonthTotal title="Earnings">{formatMoney(earnings)}</MonthTotal>
       </div>
+
+      <AttendanceRings tables={months.flatMap(tablesOfSheet)} period={year} />
 
       <YearChart title={`${what} by month`}>
         <h4 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">{what} by month</h4>

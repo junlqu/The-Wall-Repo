@@ -43,9 +43,10 @@ export default function GroupedCountChart({
   // The counts can change under a tapped bar, and that bar can go with them.
   const selected = tapped !== null && ids.includes(tapped) ? tapped : null;
   // A category's counts run outwards from its bars in the middle, so it needs room
-  // for one each way.
+  // for one each way. This widens the chart as a whole, so the bars and their names
+  // keep sharing it evenly.
   const texts = counts.flatMap(({ values }) => values.flatMap((value) => (value === null ? [] : [formatCount(value)])));
-  const minWidth = showAll ? countWidth(texts) * series.length + 10 : undefined;
+  const minWidth = showAll ? (countWidth(texts) * series.length + 10) * counts.length : undefined;
 
   return (
     <figure>
@@ -62,50 +63,52 @@ export default function GroupedCountChart({
       </div>
 
       <div className="overflow-x-auto">
-        <div className="flex h-44 w-full min-w-max border-b border-neutral-300 pt-6">
-          {counts.map(({ label, values }, category) => (
-            <div key={label} style={{ minWidth }} className={`flex flex-1 ${barClassName}`}>
-              {series.map(({ name, colorClassName }, index) => {
-                const value = values[index];
-                if (value === null) return <span key={name} aria-hidden="true" className="flex-1" />;
-                const id = barId(label, name);
-                // Side by side at the middle of the category, a 2px gap between.
-                const place = series.length === 1 ? "justify-center" : index === 0 ? "justify-end pr-px" : "justify-start pl-px";
-                return (
-                  <ChartBar
-                    key={name}
-                    edge={
-                      showAll && series.length > 1
-                        ? index === 0
-                          ? "end"
-                          : "start"
-                        : !showAll && category === 0
-                          ? "start"
-                          : !showAll && category === counts.length - 1
+        <div style={{ minWidth }}>
+          <div className="flex h-44 w-full min-w-max border-b border-neutral-300 pt-6">
+            {counts.map(({ label, values }, category) => (
+              <div key={label} className={`flex flex-1 ${barClassName}`}>
+                {series.map(({ name, colorClassName }, index) => {
+                  const value = values[index];
+                  if (value === null) return <span key={name} aria-hidden="true" className="flex-1" />;
+                  const id = barId(label, name);
+                  // Side by side at the middle of the category, a 2px gap between.
+                  const place = series.length === 1 ? "justify-center" : index === 0 ? "justify-end pr-px" : "justify-start pl-px";
+                  return (
+                    <ChartBar
+                      key={name}
+                      edge={
+                        showAll && series.length > 1
+                          ? index === 0
                             ? "end"
-                            : undefined
-                    }
-                    name={`${label}, ${name}: ${noun(value)}`}
-                    height={`${(value / max) * 100}%`}
-                    text={formatCount(value)}
-                    labelled={showAll || (selected === null ? value === max : selected === id)}
-                    dimmed={selected !== null && selected !== id}
-                    onToggle={() => setTapped(selected === id ? null : id)}
-                    barClassName={colorClassName}
-                    widthClassName="w-5"
-                    className={place}
-                  />
-                );
-              })}
-            </div>
-          ))}
-        </div>
-        <div aria-hidden="true" className="flex w-full min-w-max pt-1.5">
-          {counts.map(({ label }) => (
-            <span key={label} style={{ minWidth }} className={`flex-1 text-center text-[11px] text-neutral-500 ${barClassName}`}>
-              {label}
-            </span>
-          ))}
+                            : "start"
+                          : !showAll && category === 0
+                            ? "start"
+                            : !showAll && category === counts.length - 1
+                              ? "end"
+                              : undefined
+                      }
+                      name={`${label}, ${name}: ${noun(value)}`}
+                      height={`${(value / max) * 100}%`}
+                      text={formatCount(value)}
+                      labelled={showAll || (selected === null ? value === max : selected === id)}
+                      dimmed={selected !== null && selected !== id}
+                      onToggle={() => setTapped(selected === id ? null : id)}
+                      barClassName={colorClassName}
+                      widthClassName="w-5"
+                      className={place}
+                    />
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+          <div aria-hidden="true" className="flex w-full min-w-max pt-1.5">
+            {counts.map(({ label }) => (
+              <span key={label} className={`flex-1 text-center text-[11px] text-neutral-500 ${barClassName}`}>
+                {label}
+              </span>
+            ))}
+          </div>
         </div>
       </div>
 

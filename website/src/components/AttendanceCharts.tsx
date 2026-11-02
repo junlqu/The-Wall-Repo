@@ -3,6 +3,7 @@
 import { type ReactNode, useState } from "react";
 import CountChart from "@/components/CountChart";
 import GroupedCountChart from "@/components/GroupedCountChart";
+import RingChart from "@/components/RingChart";
 import SlidingTabs from "@/components/SlidingTabs";
 import ToggleSwitch from "@/components/ToggleSwitch";
 import {
@@ -11,6 +12,9 @@ import {
   type AttendanceMonth,
   type AttendanceWeek,
   blockWeekDay,
+  countClimbers,
+  countNonMembers,
+  countStudents,
   formatHourRange,
   formatMoney,
   measure,
@@ -22,7 +26,7 @@ import {
   weekDayOf,
   weekEndingFor,
 } from "@/lib/attendance";
-import { formatForDate, formatForMonth } from "@/lib/attendanceFormats";
+import { type AttendanceFormat, formatForDate, formatForMonth } from "@/lib/attendanceFormats";
 import { formatDate } from "@/lib/climbs";
 
 const MONTHS = [
@@ -42,7 +46,7 @@ const MONTHS = [
 
 // How much a chart covers, keyed "2026-10-30" (the week's Friday), "2026-10"
 // or "2026". A week is shown whole, even when it runs into the next month.
-export type Scale = "week" | "month" | "year";
+type Scale = "week" | "month" | "year";
 type Period = { scale: Scale; key: string };
 
 const SCALES: { id: Scale; label: string }[] = [
@@ -143,15 +147,13 @@ function talliesOfSheet(month: AttendanceMonth, weeks: AttendanceWeek[], metric:
 // sheets, except any month without one yet, which adds up the days its weekly
 // sheets show someone came, until there is; `fromWeeks` names those months.
 // Without `months` at all, everything adds up the weekly sheets.
-function tallyPeriod(
+function sourcesOfPeriod(
   weeks: AttendanceWeek[],
   months: AttendanceMonth[] | undefined,
   { scale, key }: Period,
-  metric: Metric,
-): { tallies: DayTally[]; fromWeeks: string[] } {
+): { sheets: AttendanceMonth[]; days: AttendanceDay[]; fromWeeks: string[] } {
   if (scale === "week") {
-    const days = weeks.find((week) => week.weekEnding === key)?.days ?? [];
-    return { tallies: days.map((day) => tallyOfDay(day, metric)), fromWeeks: [] };
+    return { sheets: [], days: weeks.find((week) => week.weekEnding === key)?.days ?? [], fromWeeks: [] };
   }
   const sheets = (months ?? []).filter((month) => month.startDay.startsWith(key));
   const covered = sheets.map((month) => month.startDay.slice(0, 7));
@@ -159,9 +161,19 @@ function tallyPeriod(
     .flatMap((week) => week.days)
     .filter((day) => day.date.startsWith(key) && !covered.includes(day.date.slice(0, 7)) && measureDay(day, "numbers") > 0);
   const uncovered = [...new Set(days.map((day) => Number(day.date.slice(5, 7))))].sort((a, b) => a - b);
+  return { sheets, days, fromWeeks: months ? uncovered.map((month) => MONTHS[month - 1]) : [] };
+}
+
+function tallyPeriod(
+  weeks: AttendanceWeek[],
+  months: AttendanceMonth[] | undefined,
+  period: Period,
+  metric: Metric,
+): { tallies: DayTally[]; fromWeeks: string[] } {
+  const { sheets, days, fromWeeks } = sourcesOfPeriod(weeks, months, period);
   return {
     tallies: [...sheets.flatMap((sheet) => talliesOfSheet(sheet, weeks, metric)), ...days.map((day) => tallyOfDay(day, metric))],
-    fromWeeks: months ? uncovered.map((month) => MONTHS[month - 1]) : [],
+    fromWeeks,
   };
 }
 
@@ -193,6 +205,125 @@ function plural(count: number, word: string) {
   return `${count} ${word}${count === 1 ? "" : "s"}`;
 }
 
+// A table of tallies from either kind of sheet: a date on a weekly sheet, or a
+// day's table on a monthly one.
+export type AttendanceTable = {
+  day: WeekDay | null;
+  hours: AttendanceDay["hours"];
+  format: AttendanceFormat;
+};
+
+export function tableOfDay(day: AttendanceDay): AttendanceTable {
+  return { day: weekDayOf(day.date), hours: day.hours, format: formatForDate(day.date) };
+}
+
+export function tablesOfSheet(month: AttendanceMonth): AttendanceTable[] {
+  const format = formatForMonth(month.startDay);
+  return month.blocks.map((block) => ({ day: blockWeekDay(block.label), hours: block.hours, format }));
+}
+
+// Each kept by its slice whichever others are showing. A day's colour goes by how
+// far into the week it is, Saturday first, and the order keeps close colours from
+// meeting on the days the wall is usually open.
+const PRIMARY_COLOR = "var(--color-primary)";
+const SECONDARY_COLOR = "var(--color-secondary)";
+const ORANGE = "#eb6834";
+const DAY_COLORS = [PRIMARY_COLOR, SECONDARY_COLOR, ORANGE, "#1baf7a", "#6250d6", "#eda100", "#e87ba4"];
+
+export function climberSlices(tables: AttendanceTable[]) {
+  const climbers = tables.reduce(
+    (total, table) => total + Object.values(table.hours).reduce((sum, counts) => sum + countClimbers(counts), 0),
+    0,
+  );
+  const students = countStudents(tables);
+  const nonMembers = countNonMembers(tables);
+  return [
+    { name: "UTSC students", value: students, color: PRIMARY_COLOR },
+    { name: "TPASC & members", value: climbers - students - nonMembers, color: SECONDARY_COLOR },
+    { name: "Non-members", value: nonMembers, color: ORANGE },
+  ];
+}
+
+export function earningSlices(tables: AttendanceTable[]) {
+  const days = new Map<number, { day: WeekDay; cents: number }>();
+  for (const { day, hours, format } of tables) {
+    if (!day) continue;
+    const cents = Object.values(hours).reduce((sum, counts) => sum + measure(counts, "earnings", format), 0);
+    if (cents > 0) days.set(day.offset, { day, cents: (days.get(day.offset)?.cents ?? 0) + cents });
+  }
+  return [...days.values()]
+    .sort((a, b) => a.day.offset - b.day.offset)
+    .map(({ day, cents }) => ({ name: day.name, value: cents, color: DAY_COLORS[day.offset] }));
+}
+
+const RINGS: Record<Metric, {
+  title: string;
+  slicesOf: (tables: AttendanceTable[]) => { name: string; value: number; color: string }[];
+  formatValue: (value: number) => string;
+  what: string;
+  totalOf: (total: number) => string;
+  emptyText: string;
+}> = {
+  numbers: {
+    title: "Climbers split by group",
+    slicesOf: climberSlices,
+    formatValue: (count: number) => count.toLocaleString(),
+    what: "Climbers by group",
+    totalOf: (count: number) => plural(count, "climber"),
+    emptyText: "No climbers recorded for this period",
+  },
+  earnings: {
+    title: "Earnings split by day",
+    slicesOf: earningSlices,
+    formatValue: formatMoney,
+    what: "Earnings by day of the week",
+    totalOf: formatMoney,
+    emptyText: "No earnings recorded for this period",
+  },
+};
+
+// The metric's split as a ring, for the week, month or year `anchor` falls in.
+// Changing metric keeps the period.
+export function AttendanceRingChart({
+  metric,
+  weeks,
+  months,
+  anchor,
+  loadingText,
+  className,
+}: {
+  metric: Metric;
+  weeks: AttendanceWeek[];
+  months: AttendanceMonth[];
+  anchor: string;
+  loadingText?: string | null;
+  className: string;
+}) {
+  const { title, slicesOf, formatValue, what, totalOf, emptyText } = RINGS[metric];
+  const [scale, setScale] = useState<Scale>("year");
+  const period = periodOf(scale, anchor);
+  const { sheets, days, fromWeeks } = sourcesOfPeriod(weeks, months, period);
+  const slices = slicesOf([...sheets.flatMap(tablesOfSheet), ...days.map(tableOfDay)]);
+  const total = slices.reduce((sum, slice) => sum + slice.value, 0);
+
+  return (
+    <ChartCard
+      title={title}
+      subtitle={`${describePeriod(period)} · ${totalOf(total)}${describeSource(fromWeeks)}`}
+      loadingText={loadingText}
+      className={className}
+      controls={<ScaleSlider scale={scale} onChange={setScale} />}
+    >
+      <RingChart
+        slices={slices}
+        formatValue={formatValue}
+        caption={`${what}, ${describePeriod(period)}`}
+        emptyText={emptyText}
+      />
+    </ChartCard>
+  );
+}
+
 function ChartCard({
   title,
   subtitle,
@@ -217,7 +348,7 @@ function ChartCard({
         </div>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">{controls}</div>
       </div>
-      <div className="mt-3">
+      <div className="mt-3 flex flex-1 flex-col justify-center">
         {loadingText ? (
           <p className="flex h-44 items-center justify-center text-sm text-neutral-500">{loadingText}</p>
         ) : (
@@ -234,7 +365,7 @@ export function DailyAttendanceChart({
   weeks,
   months,
   anchor,
-  defaultScale = "year",
+  weekOnly = false,
   metric,
   loadingText,
   className,
@@ -245,13 +376,14 @@ export function DailyAttendanceChart({
   // The Friday of the week the chart counts from - the slider shows that
   // week, or the month or year it ended in.
   anchor: string;
-  defaultScale?: Scale;
+  // Just that week, with no slider.
+  weekOnly?: boolean;
   metric: Metric;
   loadingText?: string | null;
   className: string;
 }) {
-  const [scale, setScale] = useState<Scale>(defaultScale);
-  const period = periodOf(scale, anchor);
+  const [scale, setScale] = useState<Scale>("year");
+  const period = periodOf(weekOnly ? "week" : scale, anchor);
   const [average, setAverage] = useState(false);
   const { tallies, fromWeeks } = tallyPeriod(weeks, months, period, metric);
   const format = formatter(metric, average);
@@ -275,7 +407,7 @@ export function DailyAttendanceChart({
       controls={
         <>
           <ToggleSwitch off="Total" on="Avg per hour" checked={average} onChange={setAverage} label="Show average per hour" />
-          <ScaleSlider scale={scale} onChange={setScale} />
+          {!weekOnly && <ScaleSlider scale={scale} onChange={setScale} />}
         </>
       }
     >
@@ -302,7 +434,7 @@ export function HourlyAttendanceChart({
   weeks,
   months,
   anchor,
-  defaultScale = "year",
+  weekOnly = false,
   metric,
   loadingText,
   className,
@@ -313,13 +445,14 @@ export function HourlyAttendanceChart({
   // The Friday of the week the chart counts from - the slider shows that
   // week, or the month or year it ended in.
   anchor: string;
-  defaultScale?: Scale;
+  // Just that week, with no slider.
+  weekOnly?: boolean;
   metric: Metric;
   loadingText?: string | null;
   className: string;
 }) {
-  const [scale, setScale] = useState<Scale>(defaultScale);
-  const period = periodOf(scale, anchor);
+  const [scale, setScale] = useState<Scale>("year");
+  const period = periodOf(weekOnly ? "week" : scale, anchor);
   const [weekdays, setWeekdays] = useState(false);
   const { tallies: allTallies, fromWeeks } = tallyPeriod(weeks, months, period, metric);
   const tallies = allTallies.filter((tally) => tally.day.weekend === !weekdays);
@@ -359,7 +492,7 @@ export function HourlyAttendanceChart({
       controls={
         <>
           <ToggleSwitch off="Weekends" on="Weekdays" checked={weekdays} onChange={setWeekdays} label="Show weekdays" />
-          <ScaleSlider scale={scale} onChange={setScale} />
+          {!weekOnly && <ScaleSlider scale={scale} onChange={setScale} />}
         </>
       }
     >

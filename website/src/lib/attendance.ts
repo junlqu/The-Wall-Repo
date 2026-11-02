@@ -89,6 +89,47 @@ export function countLessons(days: Pick<AttendanceDay, "hours">[]) {
   );
 }
 
+const STUDENT_KEYS: AttendanceColumnKey[] = ["utscLearnToClimb", "utscDropInGear", "utscDropInNoGear"];
+
+// Who the site's price list charges non-TPASC rates: the belay prices by age and
+// gear at the higher price, plus the reopening sheets' own column. TPASC members
+// have the free drop-ins, and lessons cost everyone the same, so the sheets' other
+// columns all count as "TPASC & other members", as their headings have it.
+const NON_MEMBER_KEYS: AttendanceColumnKey[] = [
+  "belay5to12",
+  "belay13to21",
+  "belay22plus",
+  "noBelay22plus",
+  "wallPass",
+  "nonMemberGear",
+  "nonMemberNoGear",
+];
+
+function countColumns(tables: Pick<AttendanceDay, "hours">[], keys: AttendanceColumnKey[]) {
+  return tables.reduce(
+    (total, table) =>
+      total +
+      Object.values(table.hours).reduce(
+        (tableTotal, counts) => tableTotal + keys.reduce((sum, key) => sum + (counts[key] ?? 0), 0),
+        0,
+      ),
+    0,
+  );
+}
+
+export function countStudents(tables: Pick<AttendanceDay, "hours">[]) {
+  return countColumns(tables, STUDENT_KEYS);
+}
+
+export function countNonMembers(tables: Pick<AttendanceDay, "hours">[]) {
+  return countColumns(tables, NON_MEMBER_KEYS);
+}
+
+// The oldest sheets have no column that tells non-members apart.
+export function separatesNonMembers(format: AttendanceFormat) {
+  return format.columns.some((column) => NON_MEMBER_KEYS.includes(column.key));
+}
+
 export function measure(counts: AttendanceCounts, metric: Metric, format: AttendanceFormat) {
   return metric === "numbers" ? countClimbers(counts) : countCents(counts, format);
 }
