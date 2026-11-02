@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Fragment, type ReactNode, useEffect, useState } from "react";
-import { GenerateMonthDialog, type SheetLookup } from "@/components/AdminAttendanceGenerate";
+import { EditNotesDialog, GenerateMonthDialog, type SheetLookup } from "@/components/AdminAttendanceGenerate";
 import { DailyAttendanceChart, HourlyAttendanceChart, type Scale } from "@/components/AttendanceCharts";
 import { ActionsMenu, DANGER_BUTTON_CLASS, Dialog } from "@/components/ClimbActions";
 import { CANCEL_BUTTON_CLASS, ErrorMessage, useRequest } from "@/components/ClimbForm";
@@ -695,8 +695,8 @@ function MonthPanel({ month }: { month: AttendanceMonth }) {
         <section aria-label="Notes" className={WIDGET_CLASS}>
           <h4 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">Notes</h4>
           <ul className="mt-2 flex flex-col gap-1 text-sm text-neutral-700">
-            {month.notes.map((note) => (
-              <li key={note}>{note}</li>
+            {month.notes.map((note, index) => (
+              <li key={index}>{note}</li>
             ))}
           </ul>
         </section>
@@ -708,13 +708,16 @@ function MonthPanel({ month }: { month: AttendanceMonth }) {
 function MonthActions({
   month,
   onCompare,
+  onNotesSaved,
   onDeleted,
 }: {
   month: AttendanceMonth;
   onCompare: () => void;
+  onNotesSaved: () => void;
   onDeleted: (id: string) => void;
 }) {
   const [deleting, setDeleting] = useState(false);
+  const [editingNotes, setEditingNotes] = useState(false);
   const name = formatMonth(month.startDay);
 
   return (
@@ -722,10 +725,21 @@ function MonthActions({
       <ActionsMenu
         label={`Actions for ${name}`}
         items={[
+          { label: "Edit notes", onSelect: () => setEditingNotes(true) },
           { label: "Compare with weeks", onSelect: onCompare },
           { label: "Delete", onSelect: () => setDeleting(true), danger: true },
         ]}
       />
+      {editingNotes && (
+        <EditNotesDialog
+          month={month}
+          onClose={() => setEditingNotes(false)}
+          onSaved={() => {
+            setEditingNotes(false);
+            onNotesSaved();
+          }}
+        />
+      )}
       {deleting && (
         <DeleteRecordDialog
           id={monthId(month)}
@@ -827,6 +841,7 @@ function MonthToMonth({
                         <MonthActions
                           month={month}
                           onCompare={() => onCompare(month.startDay)}
+                          onNotesSaved={() => yearly.reload(month.startDay.slice(0, 4))}
                           onDeleted={(gone) => remove(month.startDay.slice(0, 4), (other) => monthId(other) === gone)}
                         />
                       </td>

@@ -420,6 +420,25 @@ export async function saveAttendanceMonth(month: AttendanceMonth): Promise<SaveR
   return (await attendanceRequest("", { method: "PUT", body: JSON.stringify(body) })) as SaveResult;
 }
 
+// Mirrors the limits in api/src/attendanceFields.ts.
+const MAX_NOTES = 20;
+const MAX_NOTE_LENGTH = 2000;
+
+// Notes as they're typed, one per line, without the empty lines.
+export function notesFromText(text: string) {
+  return text
+    .split(/\r?\n/)
+    .map((note) => note.trim())
+    .filter(Boolean);
+}
+
+// Why the API would turn these notes down, if it would.
+export function notesProblem(notes: string[]) {
+  if (notes.length > MAX_NOTES) return `A sheet can have at most ${MAX_NOTES} notes.`;
+  if (notes.some((note) => note.length > MAX_NOTE_LENGTH)) return `A note can be at most ${MAX_NOTE_LENGTH.toLocaleString()} characters.`;
+  return null;
+}
+
 // Removes a week's or month's record for good, by its id.
 export async function deleteAttendance(id: string): Promise<void> {
   await attendanceRequest(`/${encodeURIComponent(id)}`, { method: "DELETE" });

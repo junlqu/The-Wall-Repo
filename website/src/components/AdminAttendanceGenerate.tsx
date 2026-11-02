@@ -19,6 +19,8 @@ import {
   formatWeekRange,
   measureMonth,
   monthRange,
+  notesFromText,
+  notesProblem,
   saveAttendanceMonth,
   unrecordedWeeks,
 } from "@/lib/attendance";
@@ -40,6 +42,108 @@ function Stat({ title, children }: { title: string; children: string }) {
 
 function plural(count: number, word: string) {
   return `${count} ${word}${count === 1 ? "" : "s"}`;
+}
+
+function NotesField({ value, disabled, onChange }: { value: string; disabled: boolean; onChange: (value: string) => void }) {
+  return (
+    <label className={LABEL_CLASS}>
+      Notes
+      <textarea
+        rows={5}
+        value={value}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value)}
+        className={FIELD_CLASS}
+      />
+      <span className="font-normal normal-case tracking-normal text-neutral-500">One note per line.</span>
+    </label>
+  );
+}
+
+// Edits the notes of a sheet on record. Its numbers are saved back as they were.
+export function EditNotesDialog({
+  month,
+  onClose,
+  onSaved,
+}: {
+  month: AttendanceMonth;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [text, setText] = useState(month.notes.join("\n"));
+  const { busy, error, run } = useRequest();
+  const name = formatMonth(month.startDay);
+  const notes = notesFromText(text);
+  const problem = notesProblem(notes);
+  const unchanged = notes.join("\n") === notesFromText(month.notes.join("\n")).join("\n");
+
+  return (
+    <Dialog title={`Notes for ${name}`} busy={busy} onClose={onClose}>
+      <NotesField value={text} disabled={busy} onChange={setText} />
+      <ErrorMessage message={problem ?? error} />
+      <div className="flex flex-wrap justify-end gap-2">
+        <button type="button" disabled={busy} onClick={onClose} className={CANCEL_BUTTON_CLASS}>
+          Cancel
+        </button>
+        <button
+          type="button"
+          disabled={busy || unchanged || !!problem}
+          onClick={() =>
+            run(async () => {
+              const { failed } = await saveAttendanceMonth({ ...month, notes });
+              if (failed > 0) throw new Error(`Couldn't save ${name}'s notes. Try again.`);
+              onSaved();
+            })
+          }
+          className={PRIMARY_BUTTON_CLASS}
+        >
+          {busy ? "Saving…" : "Save notes"}
+        </button>
+      </div>
+    </Dialog>
+  );
+}
+
+// A month with no sheet yet: what its weekly sheets add up to, and its notes,
+// which start from what the weeks can say and are the user's to change.
+function NewSheet({
+  generated,
+  busy,
+  onCancel,
+  onSave,
+}: {
+  generated: AttendanceMonth;
+  busy: boolean;
+  onCancel: () => void;
+  onSave: (month: AttendanceMonth) => void;
+}) {
+  const [text, setText] = useState(generated.notes.join("\n"));
+  const notes = notesFromText(text);
+  const problem = notesProblem(notes);
+
+  return (
+    <>
+      <dl className="grid grid-cols-2 gap-2">
+        <Stat title="Climbers">{measureMonth(generated, "numbers").toLocaleString()}</Stat>
+        <Stat title="Earnings">{formatMoney(measureMonth(generated, "earnings"))}</Stat>
+      </dl>
+      <NotesField value={text} disabled={busy} onChange={setText} />
+      <ErrorMessage message={problem ?? undefined} />
+      <div className="flex flex-wrap justify-end gap-2">
+        <button type="button" disabled={busy} onClick={onCancel} className={CANCEL_BUTTON_CLASS}>
+          Cancel
+        </button>
+        <button
+          type="button"
+          disabled={busy || !!problem}
+          onClick={() => onSave({ ...generated, notes })}
+          className={PRIMARY_BUTTON_CLASS}
+        >
+          {busy ? "Saving…" : "Generate"}
+        </button>
+      </div>
+    </>
+  );
 }
 
 const CHOICE_CLASS = "flex items-center gap-1.5 text-sm tabular-nums text-neutral-800";
@@ -298,19 +402,6 @@ export function GenerateMonthDialog({
 
       {ready && (
         <>
-          {!existing && (
-            <>
-              <dl className="grid grid-cols-2 gap-2">
-                <Stat title="Climbers">{measureMonth(generated, "numbers").toLocaleString()}</Stat>
-                <Stat title="Earnings">{formatMoney(measureMonth(generated, "earnings"))}</Stat>
-              </dl>
-              {generated.notes.map((note) => (
-                <p key={note} className="text-sm text-neutral-600">
-                  {note}
-                </p>
-              ))}
-            </>
-          )}
           {(asOf || unrecordedWeeks(weeks, startDay, endDay).length > 0) && (
             <ul className="flex flex-col gap-1 rounded-md border-l-4 border-amber-400 bg-amber-50 px-3 py-2 text-sm text-amber-900">
               {asOf && <li>{name} isn&apos;t over yet, so this only counts what&apos;s been entered so far.</li>}
@@ -323,20 +414,17 @@ export function GenerateMonthDialog({
       )}
 
       <ErrorMessage message={error} />
-      {ready && existing ? (
+      {ready && existing && (
         <CompareSheets key={startDay} original={existing} generated={generated} busy={busy} onCancel={onClose} onSave={save} />
-      ) : (
+      )}
+      {ready && !existing && <NewSheet key={startDay} generated={generated} busy={busy} onCancel={onClose} onSave={save} />}
+      {!ready && (
         <div className="flex flex-wrap justify-end gap-2">
           <button type="button" disabled={busy} onClick={onClose} className={CANCEL_BUTTON_CLASS}>
             Cancel
           </button>
-          <button
-            type="button"
-            disabled={busy || !ready}
-            onClick={() => save(generated)}
-            className={PRIMARY_BUTTON_CLASS}
-          >
-            {busy ? "Saving…" : "Generate"}
+          <button type="button" disabled className={PRIMARY_BUTTON_CLASS}>
+            Generate
           </button>
         </div>
       )}
