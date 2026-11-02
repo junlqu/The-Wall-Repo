@@ -14,9 +14,10 @@ import {
   measureDay,
   type Metric,
   OPEN_DAYS,
-  openDayOf,
+  weekDayOf,
   weekEndingFor,
 } from "@/lib/attendance";
+import { formatForDate } from "@/lib/attendanceFormats";
 import { formatDate } from "@/lib/climbs";
 
 const MONTHS = [
@@ -135,8 +136,10 @@ export function DailyAttendanceChart({
   const days = daysInPeriod(weeks, period);
   const format = formatter(metric, average);
 
-  const counts = OPEN_DAYS.map((openDay) => {
-    const ofDay = days.filter((day) => openDayOf(day.date)?.offset === openDay.offset);
+  // The open days, plus any others the wall opened on in this period.
+  const weekDays = [...new Map([...OPEN_DAYS, ...days.map((day) => weekDayOf(day.date))].map((day) => [day.offset, day])).values()];
+  const counts = weekDays.sort((a, b) => a.offset - b.offset).map((openDay) => {
+    const ofDay = days.filter((day) => weekDayOf(day.date).offset === openDay.offset);
     const total = ofDay.reduce((sum, day) => sum + measureDay(day, metric), 0);
     const hours = ofDay.reduce((sum, day) => sum + hoursOf(day).length, 0);
     return { label: openDay.short, count: average ? (hours === 0 ? 0 : total / hours) : total };
@@ -192,7 +195,7 @@ export function HourlyAttendanceChart({
   const [scale, setScale] = useState<Scale>(defaultScale);
   const period = periodOf(scale, anchor);
   const [weekdays, setWeekdays] = useState(false);
-  const days = daysInPeriod(weeks, period).filter((day) => openDayOf(day.date)?.weekend === !weekdays);
+  const days = daysInPeriod(weeks, period).filter((day) => weekDayOf(day.date).weekend === !weekdays);
   const format = formatter(metric, true);
 
   // The schedule's hours, plus any others a day was recorded with.
@@ -204,8 +207,8 @@ export function HourlyAttendanceChart({
   ].sort((a, b) => a - b);
   const counts = hours.map((hour) => {
     // Only days that were open that hour count towards its average.
-    const open = days.flatMap((day) => day.hours[String(hour)] ?? []);
-    const total = open.reduce((sum, counts) => sum + measure(counts, metric), 0);
+    const open = days.filter((day) => day.hours[String(hour)]);
+    const total = open.reduce((sum, day) => sum + measure(day.hours[String(hour)], metric, formatForDate(day.date)), 0);
     return { label: formatHourRange(hour), count: open.length === 0 ? 0 : total / open.length };
   });
 

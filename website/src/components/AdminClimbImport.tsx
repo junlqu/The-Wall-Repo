@@ -33,7 +33,7 @@ function plural(count: number, word: string) {
   return `${count} ${word}${count === 1 ? "" : "s"}`;
 }
 
-function FilePicker({ error, onFile }: { error?: string; onFile: (file: File) => void }) {
+export function FilePicker({ error, hint, onFile }: { error?: string; hint: string; onFile: (file: File) => void }) {
   const [dragging, setDragging] = useState(false);
 
   return (
@@ -67,10 +67,7 @@ function FilePicker({ error, onFile }: { error?: string; onFile: (file: File) =>
         />
         <span className={PRIMARY_BUTTON_CLASS}>Choose an .xlsx file</span>
         <span className="text-sm text-neutral-500">or drop it here</span>
-        <span className="max-w-md text-xs text-neutral-400">
-          Expects the layout of the TPASC Climbing Wall Routes sheet - the route table, Boulder Problems beside it,
-          and Defunct Routes below. Nothing is saved until you choose what to add.
-        </span>
+        <span className="max-w-md text-xs text-neutral-400">{hint}</span>
       </label>
       {error && (
         <p role="alert" className="rounded-md border-l-4 border-red-500 bg-red-50 px-3 py-2 text-sm text-red-900">
@@ -350,7 +347,13 @@ export default function AdminClimbImport() {
   };
 
   if (stage.name === "choose") {
-    return <FilePicker error={stage.error} onFile={readFile} />;
+    return (
+      <FilePicker
+        error={stage.error}
+        hint="Expects the layout of the TPASC Climbing Wall Routes sheet - the route table, Boulder Problems beside it, and Defunct Routes below. Nothing is saved until you choose what to add."
+        onFile={readFile}
+      />
+    );
   }
 
   if (stage.name === "reading") {

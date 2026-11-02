@@ -1,81 +1,17 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from "@azure/functions";
 import { BulkOperationType, JSONObject, OperationInput } from "@azure/cosmos";
+import { attendanceQuery, attendanceYearsQuery, readAttendanceRecord } from "../attendanceFields";
 import { corsHeaders, readSessionUser, rejectUnlessAdmin } from "../authUtils";
 import { getContainer } from "../cosmosClient";
-import {
-  ATTENDANCE_COLUMN_KEYS,
-  ATTENDANCE_CONTAINER,
-  AttendanceColumnKey,
-  AttendanceCounts,
-  AttendanceDay,
-  AttendanceWeek,
-} from "../models/Attendance";
-import { isDate } from "../routeFields";
+import { ATTENDANCE_CONTAINER, ATTENDANCE_TYPES, AttendanceRecord, AttendanceType } from "../models/Attendance";
 
 const FORBIDDEN = "Only staff and admins can see and change attendance.";
-// Ten years of weeks in one import, and still a bound on one request.
-const MAX_WEEKS = 520;
-// Far more than fit on the wall in an hour - anything bigger is a typo.
-const MAX_COUNT = 999;
-const ONE_DAY_MS = 24 * 60 * 60 * 1000;
-const FRIDAY = 5;
+// Ten years of weeks in one request, and still a bound on it.
+const MAX_RECORDS = 520;
 
-function isCount(value: unknown): value is number {
-  return Number.isInteger(value) && (value as number) >= 0 && (value as number) <= MAX_COUNT;
-}
-
-function utcDay(date: string) {
-  return Date.parse(`${date}T00:00:00Z`);
-}
-
-function readCounts(value: unknown): AttendanceCounts | null {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
-  const counts: AttendanceCounts = {};
-  for (const [key, count] of Object.entries(value)) {
-    if (!ATTENDANCE_COLUMN_KEYS.includes(key as AttendanceColumnKey) || !isCount(count)) return null;
-    if (count > 0) counts[key as AttendanceColumnKey] = count;
-  }
-  return counts;
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function readDay(value: unknown): AttendanceDay | null {
-  if (!isObject(value)) return null;
-  const { hours, turnedAway } = value;
-  if (!isCount(turnedAway) || !isObject(hours)) return null;
-
-  const readHours: AttendanceDay["hours"] = {};
-  for (const [hour, counts] of Object.entries(hours)) {
-    const start = Number(hour);
-    const read = readCounts(counts);
-    if (!/^\d{1,2}$/.test(hour) || start > 23 || !read) return null;
-    readHours[String(start)] = read;
-  }
-  return { hours: readHours, turnedAway };
-}
-
-// A week runs Saturday to Friday, and every day in its attendance must fall
-// inside it.
-function readWeek(value: unknown, updatedBy: string, updatedAt: string): AttendanceWeek | null {
-  if (!isObject(value)) return null;
-  const { startDay, endDay, attendance } = value;
-  if (!isDate(endDay) || new Date(utcDay(endDay)).getUTCDay() !== FRIDAY) return null;
-  if (!isDate(startDay) || utcDay(endDay) - utcDay(startDay) !== 6 * ONE_DAY_MS) return null;
-  if (!isObject(attendance)) return null;
-
-  const days: AttendanceWeek["attendance"] = {};
-  for (const date of Object.keys(attendance).sort()) {
-    const day = readDay(attendance[date]);
-    if (!isDate(date) || date < startDay || date > endDay || !day) return null;
-    days[date] = day;
-  }
-  return { id: endDay, attendanceID: endDay, startDay, endDay, attendance: days, updatedAt, updatedBy };
-}
-
-// GET /attendance - every recorded week. Admin-only, since it includes earnings.
+// GET /attendance?type=weekly&year=2026 - the recorded weeks or months
+// overlapping a year, or all of them without a year. Both live in one container,
+// told apart by `type`. Admin-only, since it includes earnings.
 export async function getAttendance(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
   const headers = corsHeaders(request);
 
@@ -83,7 +19,19 @@ export async function getAttendance(request: HttpRequest, context: InvocationCon
     const rejection = await rejectUnlessAdmin(request, headers, FORBIDDEN);
     if (rejection) return rejection;
 
-    const { resources } = await getContainer(ATTENDANCE_CONTAINER).items.query("SELECT * FROM c").fetchAll();
+    const type = request.query.get("type");
+    if (!ATTENDANCE_TYPES.includes(type as AttendanceType)) {
+      return { status: 400, headers, jsonBody: { error: "Ask for weekly or monthly attendance." } };
+    }
+
+    const year = request.query.get("year") ?? undefined;
+    if (year !== undefined && !/^\d{4}$/.test(year)) {
+      return { status: 400, headers, jsonBody: { error: "That isn't a year." } };
+    }
+
+    const { resources } = await getContainer(ATTENDANCE_CONTAINER)
+      .items.query(attendanceQuery(type as AttendanceType, year))
+      .fetchAll();
     return { status: 200, headers, jsonBody: resources };
   } catch (error) {
     context.error("Failed to fetch attendance", error);
@@ -91,9 +39,33 @@ export async function getAttendance(request: HttpRequest, context: InvocationCon
   }
 }
 
-// PUT /attendance - saves whole weeks, replacing what was recorded for them.
-// Used by both the weekly form (one week) and the import (many). Admin-only.
-// Every week is checked before anything is written.
+// GET /attendance/years?type=weekly - which years have records, and how many.
+// Admin-only.
+export async function getAttendanceYears(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
+  const headers = corsHeaders(request);
+
+  try {
+    const rejection = await rejectUnlessAdmin(request, headers, FORBIDDEN);
+    if (rejection) return rejection;
+
+    const type = request.query.get("type");
+    if (!ATTENDANCE_TYPES.includes(type as AttendanceType)) {
+      return { status: 400, headers, jsonBody: { error: "Ask for weekly or monthly attendance." } };
+    }
+
+    const { resources } = await getContainer(ATTENDANCE_CONTAINER)
+      .items.query(attendanceYearsQuery(type as AttendanceType))
+      .fetchAll();
+    return { status: 200, headers, jsonBody: resources };
+  } catch (error) {
+    context.error("Failed to fetch attendance years", error);
+    return { status: 500, headers, jsonBody: { error: "Failed to load attendance." } };
+  }
+}
+
+// PUT /attendance - saves whole weeks or months, replacing what was recorded
+// for them. Used by both the weekly form (one week) and the import. Admin-only.
+// Every record is checked before anything is written.
 export async function saveAttendance(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
   const headers = corsHeaders(request);
 
@@ -101,26 +73,26 @@ export async function saveAttendance(request: HttpRequest, context: InvocationCo
     const rejection = await rejectUnlessAdmin(request, headers, FORBIDDEN);
     if (rejection) return rejection;
 
-    const { weeks } = (await request.json()) as { weeks?: unknown };
-    if (!Array.isArray(weeks) || weeks.length === 0) {
+    const { records } = (await request.json()) as { records?: unknown };
+    if (!Array.isArray(records) || records.length === 0) {
       return { status: 400, headers, jsonBody: { error: "There's no attendance to save." } };
     }
-    if (weeks.length > MAX_WEEKS) {
-      return { status: 413, headers, jsonBody: { error: `At most ${MAX_WEEKS} weeks can be saved at once.` } };
+    if (records.length > MAX_RECORDS) {
+      return { status: 413, headers, jsonBody: { error: `At most ${MAX_RECORDS} records can be saved at once.` } };
     }
 
     const updatedBy = readSessionUser(request)!.username;
     const updatedAt = new Date().toISOString();
-    const read = weeks.map((week) => readWeek(week, updatedBy, updatedAt));
-    const invalid = read.findIndex((week) => week === null);
+    const read = records.map((record) => readAttendanceRecord(record, updatedBy, updatedAt));
+    const invalid = read.findIndex((record) => record === null);
     if (invalid !== -1) {
-      return { status: 400, headers, jsonBody: { error: `Week ${invalid + 1} is missing or has invalid details.` } };
+      return { status: 400, headers, jsonBody: { error: `Record ${invalid + 1} is missing or has invalid details.` } };
     }
 
-    const operations: OperationInput[] = (read as AttendanceWeek[]).map((week) => ({
+    const operations: OperationInput[] = (read as AttendanceRecord[]).map((record) => ({
       operationType: BulkOperationType.Upsert,
-      partitionKey: week.attendanceID,
-      resourceBody: week as unknown as JSONObject,
+      partitionKey: record.attendanceID,
+      resourceBody: record as unknown as JSONObject,
     }));
     const results = await getContainer(ATTENDANCE_CONTAINER).items.executeBulkOperations(operations);
 
@@ -140,7 +112,7 @@ export async function saveAttendance(request: HttpRequest, context: InvocationCo
   }
 }
 
-// DELETE /attendance/{attendanceID} - removes one week. Admin-only.
+// DELETE /attendance/{attendanceID} - removes one week or month. Admin-only.
 export async function deleteAttendance(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
   const headers = corsHeaders(request);
 
@@ -153,10 +125,10 @@ export async function deleteAttendance(request: HttpRequest, context: Invocation
     return { status: 204, headers };
   } catch (error) {
     if ((error as { code?: number }).code === 404) {
-      return { status: 404, headers, jsonBody: { error: "That week doesn't exist any more." } };
+      return { status: 404, headers, jsonBody: { error: "That attendance doesn't exist any more." } };
     }
     context.error("Failed to delete attendance", error);
-    return { status: 500, headers, jsonBody: { error: "Failed to delete the week." } };
+    return { status: 500, headers, jsonBody: { error: "Failed to delete the attendance." } };
   }
 }
 
@@ -169,6 +141,18 @@ app.http("attendance", {
       return { status: 204, headers: corsHeaders(request) };
     }
     return request.method === "PUT" ? saveAttendance(request, context) : getAttendance(request, context);
+  },
+});
+
+app.http("attendanceYears", {
+  methods: ["GET", "OPTIONS"],
+  authLevel: "anonymous",
+  route: "attendance/years",
+  handler: async (request, context) => {
+    if (request.method === "OPTIONS") {
+      return { status: 204, headers: corsHeaders(request) };
+    }
+    return getAttendanceYears(request, context);
   },
 });
 

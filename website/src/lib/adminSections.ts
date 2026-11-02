@@ -64,6 +64,7 @@ export const ADMIN_SECTIONS: AdminSection[] = [
       { slug: "all", label: "See all attendance" },
       { slug: "new", label: "Fill in attendance" },
       { slug: "import", label: "Import attendance" },
+      { slug: "export", label: "Export attendance" },
     ],
   },
   {

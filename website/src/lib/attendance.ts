@@ -6,93 +6,13 @@
 
 import { apiUrl } from "@/lib/api";
 import { parseDate } from "@/lib/climbs";
+import {
+  type AttendanceColumnKey,
+  type AttendanceFormat,
+  formatForDate,
+  formatForMonth,
+} from "@/lib/attendanceFormats";
 import { parseTimeString, WEEKLY_HOURS } from "@/lib/schedule";
-
-// One tally column. `cents` is what each person in it paid - 0 for the free
-// ones, null for the columns that count people who didn't climb (waiting at
-// capacity, no-shows), which stay out of the climber totals.
-export type AttendanceColumn = {
-  key: AttendanceColumnKey;
-  label: string;
-  cents: number | null;
-};
-
-export type AttendanceColumnGroup = {
-  label: string;
-  children: AttendanceColumnNode[];
-};
-
-export type AttendanceColumnNode = AttendanceColumn | AttendanceColumnGroup;
-
-// Mirrors ATTENDANCE_COLUMN_KEYS in api/src/models/Attendance.ts.
-export type AttendanceColumnKey =
-  | "utscLearnToClimb"
-  | "utscDropInGear"
-  | "utscDropInNoGear"
-  | "lessons"
-  | "belayTpasc"
-  | "belay5to12"
-  | "belay13to21"
-  | "belay22plus"
-  | "equipmentRental"
-  | "wallPass"
-  | "free5to12"
-  | "free13to21"
-  | "free22plus"
-  | "waiting"
-  | "noShows";
-
-// The sheet's columns as its header lays them out, left to right. Prices
-// are today's - a past week's earnings are worked out with these too.
-export const ATTENDANCE_COLUMN_GROUPS: AttendanceColumnNode[] = [
-  {
-    label: "UTSC",
-    children: [
-      { key: "utscLearnToClimb", label: "Learn to Climb", cents: 500 },
-      { key: "utscDropInGear", label: "Drop-ins (Gear)", cents: 500 },
-      { key: "utscDropInNoGear", label: "Drop-ins (No Gear)", cents: 0 },
-    ],
-  },
-  {
-    label: "TPASC & Other members",
-    children: [
-      { key: "lessons", label: "Lessons (13+)", cents: 3000 },
-      {
-        label: "Drop-ins (equipment + belay)",
-        children: [
-          { key: "belayTpasc", label: "TPASC", cents: 1200 },
-          { key: "belay5to12", label: "5–12", cents: 1800 },
-          { key: "belay13to21", label: "13–21", cents: 2040 },
-          { key: "belay22plus", label: "22+", cents: 2400 },
-        ],
-      },
-      { key: "equipmentRental", label: "Equipment Rental", cents: 600 },
-      { key: "wallPass", label: "Wall pass", cents: 1200 },
-    ],
-  },
-  {
-    label: "Drop-ins Free",
-    children: [
-      { key: "free5to12", label: "5–12", cents: 0 },
-      { key: "free13to21", label: "13–21", cents: 0 },
-      { key: "free22plus", label: "22+", cents: 0 },
-    ],
-  },
-  { key: "waiting", label: "Waiting (at capacity)", cents: null },
-  { key: "noShows", label: "No shows", cents: null },
-];
-
-export function isColumnGroup(node: AttendanceColumnNode): node is AttendanceColumnGroup {
-  return "children" in node;
-}
-
-function leavesOf(node: AttendanceColumnNode): AttendanceColumn[] {
-  return isColumnGroup(node) ? node.children.flatMap(leavesOf) : [node];
-}
-
-// Every tally column, left to right.
-export const ATTENDANCE_COLUMNS = ATTENDANCE_COLUMN_GROUPS.flatMap(leavesOf);
-const CLIMBER_COLUMNS = ATTENDANCE_COLUMNS.filter((column) => column.cents !== null);
 
 // Tallies for one hour. Columns nobody was counted in are left out.
 export type AttendanceCounts = Partial<Record<AttendanceColumnKey, number>>;
@@ -115,22 +35,49 @@ export type AttendanceWeek = {
   updatedBy?: string;
 };
 
+// One table on a monthly sheet: every Saturday of the month added up, say. Its
+// label is the sheet's - "Saturdays", "Sundays (excl. 1)".
+export type AttendanceBlock = {
+  label: string;
+  hours: Record<string, AttendanceCounts>;
+  turnedAway: number;
+  // The "*" or "**" the sheet puts before an hour, pointing at a note.
+  hourMarks?: Record<string, string>;
+};
+
+export type AttendanceMonth = {
+  // The month's first and last days, YYYY-MM-DD.
+  startDay: string;
+  endDay: string;
+  // In the order the week runs, Saturday first.
+  blocks: AttendanceBlock[];
+  notes: string[];
+  updatedAt?: string;
+  updatedBy?: string;
+};
+
 // What the totals and charts can show.
 export type Metric = "numbers" | "earnings";
 
+// The columns that count people who didn't climb, in every format.
+const NOT_CLIMBERS: AttendanceColumnKey[] = ["waiting", "noShows"];
+
 export function countClimbers(counts: AttendanceCounts) {
-  return CLIMBER_COLUMNS.reduce((total, column) => total + (counts[column.key] ?? 0), 0);
+  return Object.entries(counts).reduce(
+    (total, [key, count]) => (NOT_CLIMBERS.includes(key as AttendanceColumnKey) ? total : total + (count ?? 0)),
+    0,
+  );
 }
 
-export function countCents(counts: AttendanceCounts) {
-  return CLIMBER_COLUMNS.reduce((total, column) => total + (counts[column.key] ?? 0) * column.cents!, 0);
+// At the prices of the format the tallies were counted in.
+export function countCents(counts: AttendanceCounts, format: AttendanceFormat) {
+  return format.columns.reduce((total, column) => total + (counts[column.key] ?? 0) * (column.cents ?? 0), 0);
 }
 
-// The climbers who came for a lesson - UTSC's Learn to Climb and TPASC's
-// Lessons (13+). They're counted among the climbers too.
-const LESSON_KEYS: AttendanceColumnKey[] = ["utscLearnToClimb", "lessons"];
+// The climbers who came for a lesson. They're counted among the climbers too.
+const LESSON_KEYS: AttendanceColumnKey[] = ["utscLearnToClimb", "lessons", "lessons13to20", "lessonsOver20"];
 
-export function countLessons(days: AttendanceDay[]) {
+export function countLessons(days: Pick<AttendanceDay, "hours">[]) {
   return days.reduce(
     (total, day) =>
       total +
@@ -142,16 +89,26 @@ export function countLessons(days: AttendanceDay[]) {
   );
 }
 
-export function measure(counts: AttendanceCounts, metric: Metric) {
-  return metric === "numbers" ? countClimbers(counts) : countCents(counts);
+export function measure(counts: AttendanceCounts, metric: Metric, format: AttendanceFormat) {
+  return metric === "numbers" ? countClimbers(counts) : countCents(counts, format);
 }
 
 export function measureDay(day: AttendanceDay, metric: Metric) {
-  return Object.values(day.hours).reduce((total, counts) => total + measure(counts, metric), 0);
+  const format = formatForDate(day.date);
+  return Object.values(day.hours).reduce((total, counts) => total + measure(counts, metric, format), 0);
 }
 
 export function measureDays(days: AttendanceDay[], metric: Metric) {
   return days.reduce((total, day) => total + measureDay(day, metric), 0);
+}
+
+export function measureBlock(block: AttendanceBlock, metric: Metric, format: AttendanceFormat) {
+  return Object.values(block.hours).reduce((total, counts) => total + measure(counts, metric, format), 0);
+}
+
+export function measureMonth(month: AttendanceMonth, metric: Metric) {
+  const format = formatForMonth(month.startDay);
+  return month.blocks.reduce((total, block) => total + measureBlock(block, metric, format), 0);
 }
 
 // "$5", "$20.40", "$1,234". Fractions of a cent (from averages) are rounded.
@@ -265,10 +222,14 @@ export const OPEN_DAYS: WeekDay[] = SATURDAY_FIRST.flatMap((weekday, offset) => 
   return [{ offset, short: NAMES[weekday].slice(0, 3), name: NAMES[weekday], weekend: weekday >= 5, hours }];
 });
 
-// Which of the open days a date is, if any.
-export function openDayOf(date: string) {
+// Which of the week's days a date is. Older weeks have days the wall doesn't
+// open any more, like the Tuesdays of a holiday, which have no schedule.
+export function weekDayOf(date: string): WeekDay {
   const offset = daysBetween(addDays(weekEndingFor(date), -6), date);
-  return OPEN_DAYS.find((day) => day.offset === offset);
+  const open = OPEN_DAYS.find((day) => day.offset === offset);
+  if (open) return open;
+  const weekday = SATURDAY_FIRST[offset];
+  return { offset, short: NAMES[weekday].slice(0, 3), name: NAMES[weekday], weekend: weekday >= 5, hours: [] };
 }
 
 // The dates of the open days in the week ending on `weekEnding`.
@@ -276,15 +237,63 @@ export function openDatesOf(weekEnding: string) {
   return OPEN_DAYS.map((day) => ({ day, date: addDays(weekEnding, day.offset - 6) }));
 }
 
-// A week as it's stored: a start and end day, and the week's attendance
-// JSON keyed by date. Mirrors AttendanceWeek in api/src/models/Attendance.ts.
+// The months as a monthly sheet's title writes them.
+export const MONTH_NAMES = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
+
+// "September 2026".
+export function formatMonth(startDay: string) {
+  return `${MONTH_NAMES[Number(startDay.slice(5, 7)) - 1]} ${startDay.slice(0, 4)}`;
+}
+
+// The first and last days of the month `date` falls in.
+export function monthRange(date: string) {
+  const [year, month] = date.split("-").map(Number);
+  return { startDay: `${date.slice(0, 7)}-01`, endDay: dateKey(new Date(year, month, 0)) };
+}
+
+const BLOCK_ORDER = ["sat", "sun", "mon", "tue", "wed", "thu", "fri"];
+
+function blockRank(label: string) {
+  const index = BLOCK_ORDER.indexOf(label.slice(0, 3).toLowerCase());
+  return index === -1 ? BLOCK_ORDER.length : index;
+}
+
+function compact(date: string) {
+  return date.replaceAll("-", "");
+}
+
+// How weeks and months are stored, told apart by `type`, with ids like
+// W-20261024-20261030. Mirrors AttendanceRecord in api/src/models/Attendance.ts.
 export type AttendanceRecord = {
+  type: "weekly" | "monthly";
   startDay: string;
   endDay: string;
   attendance: Record<string, Omit<AttendanceDay, "date">>;
+  notes?: string[];
   updatedAt?: string;
   updatedBy?: string;
 };
+
+export function weekId(weekEnding: string) {
+  return `W-${compact(addDays(weekEnding, -6))}-${compact(weekEnding)}`;
+}
+
+export function monthId(month: Pick<AttendanceMonth, "startDay" | "endDay">) {
+  return `M-${compact(month.startDay)}-${compact(month.endDay)}`;
+}
 
 export function weekFromRecord({ endDay, attendance, updatedAt, updatedBy }: AttendanceRecord): AttendanceWeek {
   const days = Object.entries(attendance)
@@ -295,9 +304,27 @@ export function weekFromRecord({ endDay, attendance, updatedAt, updatedBy }: Att
 
 export function recordFromWeek({ weekEnding, days }: AttendanceWeek): AttendanceRecord {
   return {
+    type: "weekly",
     startDay: addDays(weekEnding, -6),
     endDay: weekEnding,
     attendance: Object.fromEntries(days.map(({ date, hours, turnedAway }) => [date, { hours, turnedAway }])),
+  };
+}
+
+export function monthFromRecord({ startDay, endDay, attendance, notes, updatedAt, updatedBy }: AttendanceRecord): AttendanceMonth {
+  const blocks = Object.entries(attendance)
+    .map(([label, block]) => ({ label, ...block }))
+    .sort((a, b) => blockRank(a.label) - blockRank(b.label));
+  return { startDay, endDay, blocks, notes: notes ?? [], updatedAt, updatedBy };
+}
+
+export function recordFromMonth({ startDay, endDay, blocks, notes }: AttendanceMonth): AttendanceRecord {
+  return {
+    type: "monthly",
+    startDay,
+    endDay,
+    attendance: Object.fromEntries(blocks.map(({ label, ...block }) => [label, block])),
+    notes,
   };
 }
 
@@ -316,21 +343,55 @@ async function attendanceRequest(path = "", init: RequestInit = {}) {
   return body;
 }
 
+export type YearCount = { year: string; count: number };
+
+// Which years have weeks or months on record and how many, newest first. A week
+// crossing New Year is filed under the year it ends in.
+export async function fetchAttendanceYears(type: AttendanceRecord["type"]): Promise<YearCount[]> {
+  const years = (await attendanceRequest(`/years?type=${type}`)) as YearCount[];
+  return years.sort((a, b) => b.year.localeCompare(a.year));
+}
+
+// The weeks overlapping a year, newest first. That can include the week filed
+// under the next year, which holds the last days of this one.
+export async function fetchAttendanceWeeksOverlapping(year: string): Promise<AttendanceWeek[]> {
+  const records = (await attendanceRequest(`?type=weekly&year=${year}`)) as AttendanceRecord[];
+  return records.map(weekFromRecord).sort((a, b) => b.weekEnding.localeCompare(a.weekEnding));
+}
+
+// A year's months, newest first.
+export async function fetchAttendanceMonthsOf(year: string): Promise<AttendanceMonth[]> {
+  const records = (await attendanceRequest(`?type=monthly&year=${year}`)) as AttendanceRecord[];
+  return records.map(monthFromRecord).sort((a, b) => b.startDay.localeCompare(a.startDay));
+}
+
 // Every recorded week, newest first.
 export async function fetchAttendance(): Promise<AttendanceWeek[]> {
-  const records = (await attendanceRequest()) as AttendanceRecord[];
+  const records = (await attendanceRequest("?type=weekly")) as AttendanceRecord[];
   return records.map(weekFromRecord).sort((a, b) => b.weekEnding.localeCompare(a.weekEnding));
+}
+
+// Every recorded month, newest first.
+export async function fetchAttendanceMonths(): Promise<AttendanceMonth[]> {
+  const records = (await attendanceRequest("?type=monthly")) as AttendanceRecord[];
+  return records.map(monthFromRecord).sort((a, b) => b.startDay.localeCompare(a.startDay));
 }
 
 export type SaveResult = { saved: number; failed: number };
 
 // Replaces whatever was recorded for each of these weeks.
 export async function saveAttendance(weeks: AttendanceWeek[]): Promise<SaveResult> {
-  const body = weeks.map(recordFromWeek);
-  return (await attendanceRequest("", { method: "PUT", body: JSON.stringify({ weeks: body }) })) as SaveResult;
+  const body = { records: weeks.map(recordFromWeek) };
+  return (await attendanceRequest("", { method: "PUT", body: JSON.stringify(body) })) as SaveResult;
 }
 
-// Removes a week's record for good. A week is stored under its Friday.
-export async function deleteAttendance(weekEnding: string): Promise<void> {
-  await attendanceRequest(`/${encodeURIComponent(weekEnding)}`, { method: "DELETE" });
+// Replaces whatever was recorded for this month.
+export async function saveAttendanceMonth(month: AttendanceMonth): Promise<SaveResult> {
+  const body = { records: [recordFromMonth(month)] };
+  return (await attendanceRequest("", { method: "PUT", body: JSON.stringify(body) })) as SaveResult;
+}
+
+// Removes a week's or month's record for good, by its id.
+export async function deleteAttendance(id: string): Promise<void> {
+  await attendanceRequest(`/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
