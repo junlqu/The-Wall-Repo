@@ -2,10 +2,10 @@
 
 import { useState } from "react";
 
-// About how wide a bar's count is, to leave room for all of them at once. Generous,
-// since one that's too wide only widens the chart, which scrolls.
+// About how wide a bar's count is, to leave room for all of them at once: the
+// longest count at 6px a character. Any wider and a chart that would fit scrolls.
 export function countWidth(texts: string[]) {
-  return Math.max(0, ...texts.map((text) => text.length)) * 7;
+  return Math.max(0, ...texts.map((text) => text.length)) * 6;
 }
 
 // Off by default: the tallest bar is labelled and the rest wait to be asked.
@@ -32,7 +32,6 @@ export function ChartBar({
   dimmed,
   onToggle,
   edge,
-  minWidth,
   barClassName,
   widthClassName,
   className,
@@ -50,8 +49,6 @@ export function ChartBar({
   // On the chart's first or last bar, a long count runs inwards so it isn't cut
   // off by the chart's edge.
   edge?: "start" | "end";
-  // The slot's minimum width in pixels, when it has to fit its count.
-  minWidth?: number;
   barClassName: string;
   // The bar's width, and where it sits in its slot.
   widthClassName: string;
@@ -62,7 +59,6 @@ export function ChartBar({
       type="button"
       aria-label={name}
       onClick={onToggle}
-      style={{ minWidth }}
       className={`group flex flex-1 items-end outline-none ${className}`}
     >
       <span style={{ height }} className={`relative block transition-[height] duration-300 ${widthClassName}`}>
@@ -121,8 +117,9 @@ export default function CountChart({
 
   // The counts can change under a tapped bar, and that bar can go with them.
   const selected = counts.some((entry) => entry.label === tapped) ? tapped : null;
-  // Each count fits over its own bar, however wide that makes the chart.
-  const minWidth = showAll ? countWidth(counts.map(({ count }) => formatCount(count))) + 8 : undefined;
+  // Each count fits over its own bar, however wide that makes the chart. It widens
+  // the chart as a whole, so the bars and their names keep sharing it evenly.
+  const minWidth = showAll ? (countWidth(counts.map(({ count }) => formatCount(count))) + 8) * counts.length : undefined;
 
   return (
     <figure>
@@ -130,30 +127,31 @@ export default function CountChart({
         <AllNumbersButton showing={showAll} onChange={setShowAll} />
       </div>
       <div className="overflow-x-auto">
-        <div className="flex h-44 w-full min-w-max border-b border-neutral-300 pt-6">
-          {counts.map(({ label, count }, index) => (
-            <ChartBar
-              key={label}
-              edge={showAll ? undefined : index === 0 ? "start" : index === counts.length - 1 ? "end" : undefined}
-              minWidth={minWidth}
-              name={`${label}: ${noun(count)}`}
-              height={`${(count / max) * 100}%`}
-              text={formatCount(count)}
-              labelled={showAll || (selected === null ? count === max : selected === label)}
-              dimmed={selected !== null && selected !== label}
-              onToggle={() => setTapped(selected === label ? null : label)}
-              barClassName="bg-primary"
-              widthClassName="w-6"
-              className={`justify-center ${barClassName}`}
-            />
-          ))}
-        </div>
-        <div aria-hidden="true" className="flex w-full min-w-max pt-1.5">
-          {counts.map(({ label }) => (
-            <span key={label} style={{ minWidth }} className={`flex-1 text-center text-[11px] text-neutral-500 ${barClassName}`}>
-              {label}
-            </span>
-          ))}
+        <div style={{ minWidth }}>
+          <div className="flex h-44 w-full min-w-max border-b border-neutral-300 pt-6">
+            {counts.map(({ label, count }, index) => (
+              <ChartBar
+                key={label}
+                edge={showAll ? undefined : index === 0 ? "start" : index === counts.length - 1 ? "end" : undefined}
+                name={`${label}: ${noun(count)}`}
+                height={`${(count / max) * 100}%`}
+                text={formatCount(count)}
+                labelled={showAll || (selected === null ? count === max : selected === label)}
+                dimmed={selected !== null && selected !== label}
+                onToggle={() => setTapped(selected === label ? null : label)}
+                barClassName="bg-primary"
+                widthClassName="w-6"
+                className={`justify-center ${barClassName}`}
+              />
+            ))}
+          </div>
+          <div aria-hidden="true" className="flex w-full min-w-max pt-1.5">
+            {counts.map(({ label }) => (
+              <span key={label} className={`flex-1 text-center text-[11px] text-neutral-500 ${barClassName}`}>
+                {label}
+              </span>
+            ))}
+          </div>
         </div>
       </div>
 
