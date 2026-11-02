@@ -674,6 +674,22 @@ export function formatForDate(date: string): AttendanceFormat {
   return found;
 }
 
+function namesIn(nodes: AttendanceColumnNode[], path: string[] = []): [AttendanceColumnKey, string][] {
+  return nodes.flatMap((node) =>
+    isColumnGroup(node) ? namesIn(node.children, [...path, node.label]) : [[node.key, [...path, node.label].join(", ")]],
+  );
+}
+
+// "UTSC, Drop-ins (Gear)". A column that isn't in this format is named by the
+// newest format that had it.
+export function columnName(format: AttendanceFormat, key: AttendanceColumnKey) {
+  for (const candidate of [format, ...[...ATTENDANCE_FORMATS].reverse()]) {
+    const found = namesIn(candidate.groups).find(([name]) => name === key);
+    if (found) return found[1];
+  }
+  return key;
+}
+
 // The format a monthly sheet used for this month. Takes any date in it.
 export function formatForMonth(date: string): AttendanceFormat {
   const month = date.slice(0, 7);

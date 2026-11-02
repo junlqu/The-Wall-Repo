@@ -12,6 +12,7 @@ import {
   type AttendanceWeek,
   formatMonth,
   hoursOf,
+  measureDay,
   MONTH_NAMES,
   weekDayOf,
 } from "@/lib/attendance";
@@ -23,7 +24,7 @@ import {
   formatForMonth,
   sheetColumns,
 } from "@/lib/attendanceFormats";
-import { formatDate, parseDate } from "@/lib/climbs";
+import { formatDate, parseDate, todayDate } from "@/lib/climbs";
 
 const WEEK_TITLE = "TPASC Climbing Wall Usage Report";
 const FILE_PREFIX = "TPASC Climbing Wall Usage";
@@ -541,9 +542,41 @@ function splitByFormat(days: AttendanceDay[], formatOf: (date: string) => Attend
   return groups;
 }
 
+const COUNT_WORDS = ["zero", "one", "two", "three", "four", "five"];
+const MONDAY_FIRST = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+
+function listWords(words: string[], lastJoin: string) {
+  return words.length < 2 ? words.join("") : `${words.slice(0, -1).join(", ")}${lastJoin}${words[words.length - 1]}`;
+}
+
+// "Notes: The climbing wall was open for three Mondays, and four Sundays and
+// Fridays.", worded as the monthly sheets have it.
+function openDaysNote(days: AttendanceDay[]) {
+  const counts = new Map<string, number>();
+  for (const day of days) counts.set(weekDayOf(day.date).name, (counts.get(weekDayOf(day.date).name) ?? 0) + 1);
+  const groups = [...new Set(counts.values())].sort((a, b) => a - b).map((count) => {
+    const names = MONDAY_FIRST.filter((name) => counts.get(name) === count).map((name) => (count === 1 ? name : `${name}s`));
+    return `${COUNT_WORDS[count]} ${listWords(names, " and ")}`;
+  });
+  return `Notes: The climbing wall was open for ${listWords(groups, ", and ")}.`;
+}
+
+// A month's sheet built up from its days. A day nobody came to was a closure,
+// which a monthly sheet doesn't count. A month still going says how far it's got,
+// as a sheet filled in partway does: "As of October 30".
+export function monthFromDays(days: AttendanceDay[], startDay: string, endDay: string): AttendanceMonth {
+  const open = days.filter((day) => measureDay(day, "numbers") > 0).sort((a, b) => a.date.localeCompare(b.date));
+  const blocks = tablesFromDays(open, formatForMonth(startDay)).map((table) => blockFromTable(table));
+  if (open.length === 0) return { startDay, endDay, blocks, notes: [] };
+
+  const last = parseDate(open[open.length - 1].date);
+  const asOf = todayDate() <= endDay ? [`As of ${MONTH_NAMES[last.getMonth()]} ${last.getDate()}`] : [];
+  return { startDay, endDay, blocks, notes: [...asOf, openDaysNote(open)] };
+}
+
 // A month with no monthly sheet on record, built up from its days.
 export async function buildMonthFromDays(days: AttendanceDay[], startDay: string, endDay: string) {
-  return buildMonthWorkbook({ startDay, endDay, blocks: tablesFromDays(days, formatForMonth(startDay)).map((table) => blockFromTable(table)), notes: [] });
+  return buildMonthWorkbook(monthFromDays(days, startDay, endDay));
 }
 
 function blockFromTable(table: Table) {

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Fragment, type ReactNode, useEffect, useState } from "react";
+import { GenerateMonthDialog, type SheetLookup } from "@/components/AdminAttendanceGenerate";
 import { DailyAttendanceChart, HourlyAttendanceChart, type Scale } from "@/components/AttendanceCharts";
 import { ActionsMenu, DANGER_BUTTON_CLASS, Dialog } from "@/components/ClimbActions";
 import { CANCEL_BUTTON_CLASS, ErrorMessage, useRequest } from "@/components/ClimbForm";
@@ -17,7 +18,6 @@ import {
   type AttendanceWeek,
   countLessons,
   deleteAttendance,
-  fetchAttendance,
   fetchAttendanceMonthsOf,
   fetchAttendanceWeeksOverlapping,
   fetchAttendanceYears,
@@ -33,6 +33,7 @@ import {
   measureMonth,
   type Metric,
   monthId,
+  monthsBefore,
   priorWeekEnding,
   weekId,
   type YearCount,
@@ -54,27 +55,25 @@ const ACTIONS = [
 const WIDGET_CLASS = "flex flex-col rounded-lg bg-neutral-50 p-4";
 export const FORM_HREF = "/admin/attendance/new";
 
-// Every recorded week, newest first, plus the message to show in place of
-// them while loading or after a failed load (null once they've loaded), and
-// a way to drop a week that's been deleted.
-function useAttendance() {
+// A year's weeks and months, newest first, plus the message to show in place of
+// them while loading or after a failed load (null once they've loaded).
+function useAttendance(year: string) {
   // undefined while loading, null if the API couldn't be reached.
-  const [weeks, setWeeks] = useState<AttendanceWeek[] | null>();
+  const [attendance, setAttendance] = useState<{ weeks: AttendanceWeek[]; months: AttendanceMonth[] } | null>();
 
   useEffect(() => {
-    fetchAttendance()
-      .then(setWeeks)
-      .catch(() => setWeeks(null));
-  }, []);
+    Promise.all([fetchAttendanceWeeksOverlapping(year), fetchAttendanceMonthsOf(year)])
+      .then(([weeks, months]) => setAttendance({ weeks, months }))
+      .catch(() => setAttendance(null));
+  }, [year]);
 
   return {
-    weeks: weeks ?? [],
-    remove: (weekEnding: string) =>
-      setWeeks((current) => current?.filter((week) => week.weekEnding !== weekEnding)),
+    weeks: attendance?.weeks ?? [],
+    months: attendance?.months ?? [],
     loadingText:
-      weeks === undefined
+      attendance === undefined
         ? "Loading attendance…"
-        : weeks === null
+        : attendance === null
           ? "Couldn't load attendance. Refresh to try again."
           : null,
   };
@@ -124,6 +123,7 @@ function Total({
 // week's panel on the weeks list anchors on that week.
 function AttendanceSummary({
   weeks,
+  months,
   anchor,
   weekTitle,
   defaultScale,
@@ -131,6 +131,7 @@ function AttendanceSummary({
   loadingText,
 }: {
   weeks: AttendanceWeek[];
+  months?: AttendanceMonth[];
   anchor: string;
   weekTitle: string;
   defaultScale?: Scale;
@@ -142,7 +143,7 @@ function AttendanceSummary({
   const allDays = weeks.flatMap((week) => week.days);
   const inYear = allDays.filter((day) => parseDate(day.date).getFullYear() === anchorDate.getFullYear());
   const inMonth = inYear.filter((day) => parseDate(day.date).getMonth() === anchorDate.getMonth());
-  const chartProps = { weeks, anchor, defaultScale, metric, loadingText, className: WIDGET_CLASS };
+  const chartProps = { weeks, months, anchor, defaultScale, metric, loadingText, className: WIDGET_CLASS };
 
   return (
     <>
@@ -188,7 +189,8 @@ function MetricSwitch({ metric, onChange }: { metric: Metric; onChange: (metric:
 // latest week's, month's and year's totals and charts.
 export default function AdminAttendance({ section }: { section: AdminSection }) {
   const [metric, setMetric] = useState<Metric>("numbers");
-  const { weeks, loadingText } = useAttendance();
+  const anchor = priorWeekEnding(todayDate());
+  const { weeks, months, loadingText } = useAttendance(anchor.slice(0, 4));
   const subpageHref = (slug: string) => {
     const subpage = section.subpages.find((item) => item.slug === slug);
     return subpage ? adminSubpageHref(section, subpage) : `/admin/${section.slug}`;
@@ -226,7 +228,8 @@ export default function AdminAttendance({ section }: { section: AdminSection }) 
             takes over once one of its Fridays has passed. */}
         <AttendanceSummary
           weeks={weeks}
-          anchor={priorWeekEnding(todayDate())}
+          months={months}
+          anchor={anchor}
           weekTitle="Last week"
           metric={metric}
           loadingText={loadingText}
@@ -412,6 +415,14 @@ function useYearlyRecords<T>(type: "weekly" | "monthly", fetchYear: (year: strin
         return next;
       });
       if (opening && !(year in records)) load(year);
+    },
+    // Fetches a year again after a record was saved to it, and opens it to show that.
+    reload: (year: string) => {
+      fetchAttendanceYears(type)
+        .then(setYears)
+        .catch(() => setYears(null));
+      setOpenYears((current) => new Set(current).add(year));
+      load(year);
     },
     // Takes a deleted record out of its year's count and of every year holding it.
     remove: (year: string, isGone: (row: T) => boolean) => {
@@ -694,7 +705,15 @@ function MonthPanel({ month }: { month: AttendanceMonth }) {
   );
 }
 
-function MonthActions({ month, onDeleted }: { month: AttendanceMonth; onDeleted: (id: string) => void }) {
+function MonthActions({
+  month,
+  onCompare,
+  onDeleted,
+}: {
+  month: AttendanceMonth;
+  onCompare: () => void;
+  onDeleted: (id: string) => void;
+}) {
   const [deleting, setDeleting] = useState(false);
   const name = formatMonth(month.startDay);
 
@@ -702,7 +721,10 @@ function MonthActions({ month, onDeleted }: { month: AttendanceMonth; onDeleted:
     <>
       <ActionsMenu
         label={`Actions for ${name}`}
-        items={[{ label: "Delete", onSelect: () => setDeleting(true), danger: true }]}
+        items={[
+          { label: "Compare with weeks", onSelect: onCompare },
+          { label: "Delete", onSelect: () => setDeleting(true), danger: true },
+        ]}
       />
       {deleting && (
         <DeleteRecordDialog
@@ -723,8 +745,13 @@ function MonthActions({ month, onDeleted }: { month: AttendanceMonth; onDeleted:
 // Every recorded monthly sheet, by year, newest first. Months add their weekdays
 // up, so each row splits students from everyone else, and clicking one opens
 // its tables and notes.
-function MonthToMonth() {
-  const yearly = useYearlyRecords<AttendanceMonth>("monthly", fetchAttendanceMonthsOf);
+function MonthToMonth({
+  yearly,
+  onCompare,
+}: {
+  yearly: ReturnType<typeof useYearlyRecords<AttendanceMonth>>;
+  onCompare: (startDay: string) => void;
+}) {
   const { years, loadingText, remove } = yearly;
   const [open, setOpen] = useState<string | null>(null);
 
@@ -799,6 +826,7 @@ function MonthToMonth() {
                       <td className={ACTIONS_CELL_CLASS}>
                         <MonthActions
                           month={month}
+                          onCompare={() => onCompare(month.startDay)}
                           onDeleted={(gone) => remove(month.startDay.slice(0, 4), (other) => monthId(other) === gone)}
                         />
                       </td>
@@ -830,32 +858,88 @@ const VIEWS: { id: AttendanceView; label: string }[] = [
   { id: "month", label: "Month-to-month" },
 ];
 
-// /admin/attendance/all: the recorded weeks or monthly sheets, by a slider.
+// How far back the reminder looks for a month with no monthly sheet.
+const MONTHS_TO_CHECK = 6;
+
+// /admin/attendance/all: the recorded weeks or monthly sheets, by a slider. Both
+// views stay mounted, so flipping the slider doesn't fetch anything again. Months
+// load from the start, since the reminder above both views needs them.
 export function AdminAttendanceAll() {
   const [view, setView] = useState<AttendanceView>("week");
-  // Months load the first time they're asked for. Both views then stay mounted,
-  // so flipping the slider doesn't fetch anything again.
-  const [monthsOpened, setMonthsOpened] = useState(false);
+  // The month the generate dialog opened on, while it's open.
+  const [generating, setGenerating] = useState<string | null>(null);
+  const months = useYearlyRecords<AttendanceMonth>("monthly", fetchAttendanceMonthsOf);
+  const today = todayDate();
+  const thisMonth = `${today.slice(0, 7)}-01`;
+  const recent = monthsBefore(today, MONTHS_TO_CHECK);
+
+  const sheetOn: SheetLookup = (startDay) => {
+    if (months.loadingText) return undefined;
+    const year = startDay.slice(0, 4);
+    if (!months.years.some((entry) => entry.year === year)) return null;
+    const rows = months.records[year];
+    if (!rows) return undefined;
+    return rows.find((month) => month.startDay === startDay) ?? null;
+  };
+  // A month still going isn't due yet, so these start from last month.
+  const missing = recent.filter((startDay) => sheetOn(startDay) === null);
+  const defaultMonth = missing[0] ?? recent[0];
+
+  // Those months can reach back into a year nobody has opened.
+  const yearsToCheck = [...new Set([thisMonth, ...recent].map((startDay) => startDay.slice(0, 4)))].join();
+  useEffect(() => {
+    for (const year of yearsToCheck.split(",")) {
+      if (months.years.some((entry) => entry.year === year) && !(year in months.records)) months.load(year);
+    }
+    // `load` is remade on every render; what matters is what's known so far.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [yearsToCheck, months.years, months.records]);
 
   return (
     <div className="flex flex-col gap-4">
-      <SlidingTabs
-        label="Attendance view"
-        tabs={VIEWS}
-        active={view}
-        onChange={(next) => {
-          setView(next);
-          if (next === "month") setMonthsOpened(true);
-        }}
-        className="w-full max-w-72"
-      />
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center justify-between gap-2">
+          <SlidingTabs
+            label="Attendance view"
+            tabs={VIEWS}
+            active={view}
+            onChange={setView}
+            className="w-full min-w-0 max-w-72"
+          />
+          {view === "month" && (
+            <button
+              type="button"
+              onClick={() => setGenerating(defaultMonth)}
+              className="inline-flex shrink-0 items-center justify-center rounded-full bg-secondary px-4 py-1.5 text-xs font-semibold text-primary shadow-sm transition-colors hover:bg-secondary/80"
+            >
+              Generate
+            </button>
+          )}
+        </div>
+        {missing.length > 0 && (
+          <p className="w-fit rounded-md border-l-4 border-amber-400 bg-amber-50 px-3 py-1.5 text-xs text-amber-900">
+            No monthly sheet yet for {[...missing].reverse().map(formatMonth).join(", ")}.
+          </p>
+        )}
+      </div>
       <div hidden={view !== "week"}>
         <WeekToWeek />
       </div>
-      {monthsOpened && (
-        <div hidden={view !== "month"}>
-          <MonthToMonth />
-        </div>
+      <div hidden={view !== "month"}>
+        <MonthToMonth yearly={months} onCompare={setGenerating} />
+      </div>
+      {generating && (
+        <GenerateMonthDialog
+          // An older month opened from its row joins the usual ones, in order.
+          choices={[...new Set([thisMonth, ...recent, generating])].sort().reverse()}
+          initial={generating}
+          sheetOn={sheetOn}
+          onClose={() => setGenerating(null)}
+          onGenerated={(year) => {
+            setGenerating(null);
+            months.reload(year);
+          }}
+        />
       )}
     </div>
   );

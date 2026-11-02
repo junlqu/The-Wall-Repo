@@ -133,10 +133,10 @@ function hourParts(hour: number) {
   return { number: hour % 12 === 0 ? 12 : hour % 12, period: hour < 12 ? "AM" : "PM" };
 }
 
-// "4–5 PM", "11 AM–12 PM".
-export function formatHourRange(hour: number) {
+// "4–5 PM", "11 AM–12 PM" - or, from a first to a last hour slot, "2–9 PM".
+export function formatHourRange(hour: number, lastHour = hour) {
   const start = hourParts(hour);
-  const end = hourParts((hour + 1) % 24);
+  const end = hourParts((lastHour + 1) % 24);
   return start.period === end.period
     ? `${start.number}–${end.number} ${end.period}`
     : `${start.number} ${start.period}–${end.number} ${end.period}`;
@@ -222,14 +222,18 @@ export const OPEN_DAYS: WeekDay[] = SATURDAY_FIRST.flatMap((weekday, offset) => 
   return [{ offset, short: NAMES[weekday].slice(0, 3), name: NAMES[weekday], weekend: weekday >= 5, hours }];
 });
 
-// Which of the week's days a date is. Older weeks have days the wall doesn't
-// open any more, like the Tuesdays of a holiday, which have no schedule.
-export function weekDayOf(date: string): WeekDay {
-  const offset = daysBetween(addDays(weekEndingFor(date), -6), date);
+// Older weeks have days the wall doesn't open any more, like the Tuesdays of a
+// holiday, which have no schedule.
+function weekDayAt(offset: number): WeekDay {
   const open = OPEN_DAYS.find((day) => day.offset === offset);
   if (open) return open;
   const weekday = SATURDAY_FIRST[offset];
   return { offset, short: NAMES[weekday].slice(0, 3), name: NAMES[weekday], weekend: weekday >= 5, hours: [] };
+}
+
+// Which of the week's days a date is.
+export function weekDayOf(date: string): WeekDay {
+  return weekDayAt(daysBetween(addDays(weekEndingFor(date), -6), date));
 }
 
 // The dates of the open days in the week ending on `weekEnding`.
@@ -264,11 +268,36 @@ export function monthRange(date: string) {
   return { startDay: `${date.slice(0, 7)}-01`, endDay: dateKey(new Date(year, month, 0)) };
 }
 
+// The first days of the `count` months before the one `today` is in, newest first.
+export function monthsBefore(today: string, count: number) {
+  const [year, month] = today.split("-").map(Number);
+  return Array.from({ length: count }, (_, index) => dateKey(new Date(year, month - 2 - index, 1)));
+}
+
+// The Fridays of weeks that have reached a month but have no weekly sheet on
+// record, oldest first. They could be weeks not entered yet, or weeks the wall
+// was closed.
+export function unrecordedWeeks(weeks: AttendanceWeek[], startDay: string, endDay: string, today = dateKey(new Date())) {
+  const missing: string[] = [];
+  for (let friday = weekEndingFor(startDay); addDays(friday, -6) <= endDay; friday = addDays(friday, 7)) {
+    const started = addDays(friday, -6) <= today && startDay <= today;
+    if (started && !weeks.some((week) => week.weekEnding === friday)) missing.push(friday);
+  }
+  return missing;
+}
+
 const BLOCK_ORDER = ["sat", "sun", "mon", "tue", "wed", "thu", "fri"];
 
 function blockRank(label: string) {
   const index = BLOCK_ORDER.indexOf(label.slice(0, 3).toLowerCase());
   return index === -1 ? BLOCK_ORDER.length : index;
+}
+
+// Which of the week's days a table on a monthly sheet adds up, going by its
+// label - "Saturdays", "Sat., Dec. 24 & 31". Null if the label doesn't say.
+export function blockWeekDay(label: string): WeekDay | null {
+  const offset = blockRank(label);
+  return offset < BLOCK_ORDER.length ? weekDayAt(offset) : null;
 }
 
 function compact(date: string) {
