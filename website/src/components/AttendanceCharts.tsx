@@ -70,8 +70,8 @@ type DayTally = {
 
 // Weekday drop-ins open earlier in the summer: 2-9 PM rather than the schedule's
 // 4-10 PM. Those are the two sets of bars on the weekday chart.
-const WEEKDAY_OPENING = Math.min(...OPEN_DAYS.filter((day) => !day.weekend).flatMap((day) => day.hours));
-const WEEKDAY_SCHEDULES = [
+export const WEEKDAY_OPENING = Math.min(...OPEN_DAYS.filter((day) => !day.weekend).flatMap((day) => day.hours));
+export const WEEKDAY_SCHEDULES = [
   { summer: false, name: "Regular hours", colorClassName: "bg-primary" },
   { summer: true, name: "Summer hours", colorClassName: "bg-secondary" },
 ];

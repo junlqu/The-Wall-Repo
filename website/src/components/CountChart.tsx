@@ -2,6 +2,26 @@
 
 import { useState } from "react";
 
+// About how wide a bar's count is, to leave room for all of them at once. Generous,
+// since one that's too wide only widens the chart, which scrolls.
+export function countWidth(texts: string[]) {
+  return Math.max(0, ...texts.map((text) => text.length)) * 7;
+}
+
+// Off by default: the tallest bar is labelled and the rest wait to be asked.
+export function AllNumbersButton({ showing, onChange }: { showing: boolean; onChange: (showing: boolean) => void }) {
+  return (
+    <button
+      type="button"
+      aria-pressed={showing}
+      onClick={() => onChange(!showing)}
+      className="shrink-0 text-xs font-semibold text-neutral-500 underline-offset-2 transition-colors hover:text-primary hover:underline"
+    >
+      {showing ? "Hide numbers" : "Show all numbers"}
+    </button>
+  );
+}
+
 // One bar with its count on its cap, in a button filling its slot of the chart.
 // Touch screens have no hover, so tapping the slot is what shows the count there.
 export function ChartBar({
@@ -12,6 +32,7 @@ export function ChartBar({
   dimmed,
   onToggle,
   edge,
+  minWidth,
   barClassName,
   widthClassName,
   className,
@@ -29,6 +50,8 @@ export function ChartBar({
   // On the chart's first or last bar, a long count runs inwards so it isn't cut
   // off by the chart's edge.
   edge?: "start" | "end";
+  // The slot's minimum width in pixels, when it has to fit its count.
+  minWidth?: number;
   barClassName: string;
   // The bar's width, and where it sits in its slot.
   widthClassName: string;
@@ -39,6 +62,7 @@ export function ChartBar({
       type="button"
       aria-label={name}
       onClick={onToggle}
+      style={{ minWidth }}
       className={`group flex flex-1 items-end outline-none ${className}`}
     >
       <span style={{ height }} className={`relative block transition-[height] duration-300 ${widthClassName}`}>
@@ -62,9 +86,9 @@ export function ChartBar({
 
 // Single-series column chart: one bar per category, including categories with
 // nothing in them so gaps are visible. The tallest bar is labelled on its cap
-// and any bar shows its count when tapped, hovered or focused; a screen-reader
-// table carries the same numbers. Bars grow or shrink into place when the counts
-// change.
+// and any bar shows its count when tapped, hovered or focused, or all of them at
+// once by choice; a screen-reader table carries the same numbers. Bars grow or
+// shrink into place when the counts change.
 export default function CountChart({
   counts,
   noun,
@@ -88,6 +112,7 @@ export default function CountChart({
   countHeader?: string;
 }) {
   const [tapped, setTapped] = useState<string | null>(null);
+  const [showAll, setShowAll] = useState(false);
   const max = Math.max(0, ...counts.map((entry) => entry.count));
 
   if (max === 0) {
@@ -96,19 +121,25 @@ export default function CountChart({
 
   // The counts can change under a tapped bar, and that bar can go with them.
   const selected = counts.some((entry) => entry.label === tapped) ? tapped : null;
+  // Each count fits over its own bar, however wide that makes the chart.
+  const minWidth = showAll ? countWidth(counts.map(({ count }) => formatCount(count))) + 8 : undefined;
 
   return (
     <figure>
+      <div className="mb-1 flex justify-end">
+        <AllNumbersButton showing={showAll} onChange={setShowAll} />
+      </div>
       <div className="overflow-x-auto">
         <div className="flex h-44 w-full min-w-max border-b border-neutral-300 pt-6">
           {counts.map(({ label, count }, index) => (
             <ChartBar
               key={label}
-              edge={index === 0 ? "start" : index === counts.length - 1 ? "end" : undefined}
+              edge={showAll ? undefined : index === 0 ? "start" : index === counts.length - 1 ? "end" : undefined}
+              minWidth={minWidth}
               name={`${label}: ${noun(count)}`}
               height={`${(count / max) * 100}%`}
               text={formatCount(count)}
-              labelled={selected === null ? count === max : selected === label}
+              labelled={showAll || (selected === null ? count === max : selected === label)}
               dimmed={selected !== null && selected !== label}
               onToggle={() => setTapped(selected === label ? null : label)}
               barClassName="bg-primary"
@@ -119,7 +150,7 @@ export default function CountChart({
         </div>
         <div aria-hidden="true" className="flex w-full min-w-max pt-1.5">
           {counts.map(({ label }) => (
-            <span key={label} className={`flex-1 text-center text-[11px] text-neutral-500 ${barClassName}`}>
+            <span key={label} style={{ minWidth }} className={`flex-1 text-center text-[11px] text-neutral-500 ${barClassName}`}>
               {label}
             </span>
           ))}

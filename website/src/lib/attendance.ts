@@ -381,6 +381,12 @@ export async function fetchAttendanceYears(type: AttendanceRecord["type"]): Prom
   return years.sort((a, b) => b.year.localeCompare(a.year));
 }
 
+// Which months from a date on have a monthly sheet, by their first days, without
+// loading any of them.
+export async function fetchMonthlySheetStarts(from: string): Promise<string[]> {
+  return (await attendanceRequest(`/starts?type=monthly&from=${from}`)) as string[];
+}
+
 // The weeks overlapping a year, newest first. That can include the week filed
 // under the next year, which holds the last days of this one.
 export async function fetchAttendanceWeeksOverlapping(year: string): Promise<AttendanceWeek[]> {

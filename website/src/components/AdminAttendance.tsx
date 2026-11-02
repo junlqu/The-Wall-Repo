@@ -2,12 +2,19 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Fragment, type ReactNode, useEffect, useState } from "react";
+import { Fragment, type ReactNode, useCallback, useEffect, useState } from "react";
 import { EditNotesDialog, GenerateMonthDialog, type SheetLookup } from "@/components/AdminAttendanceGenerate";
-import { DailyAttendanceChart, HourlyAttendanceChart, type Scale } from "@/components/AttendanceCharts";
+import {
+  DailyAttendanceChart,
+  HourlyAttendanceChart,
+  type Scale,
+  WEEKDAY_OPENING,
+  WEEKDAY_SCHEDULES,
+} from "@/components/AttendanceCharts";
 import { ActionsMenu, DANGER_BUTTON_CLASS, Dialog } from "@/components/ClimbActions";
 import { CANCEL_BUTTON_CLASS, ErrorMessage, useRequest } from "@/components/ClimbForm";
 import CountChart from "@/components/CountChart";
+import GroupedCountChart from "@/components/GroupedCountChart";
 import SlidingTabs from "@/components/SlidingTabs";
 import ToggleSwitch from "@/components/ToggleSwitch";
 import { type AdminSection, adminSubpageHref } from "@/lib/adminSections";
@@ -16,11 +23,14 @@ import {
   type AttendanceDay,
   type AttendanceMonth,
   type AttendanceWeek,
+  blockWeekDay,
+  countClimbers,
   countLessons,
   deleteAttendance,
   fetchAttendanceMonthsOf,
   fetchAttendanceWeeksOverlapping,
   fetchAttendanceYears,
+  fetchMonthlySheetStarts,
   formatHourRange,
   formatMetric,
   formatMoney,
@@ -32,6 +42,7 @@ import {
   measureDays,
   measureMonth,
   type Metric,
+  MONTH_NAMES,
   monthId,
   monthsBefore,
   priorWeekEnding,
@@ -371,9 +382,9 @@ function RowDetails({ stats, saved }: { stats: string[]; saved: string }) {
 }
 
 // The years with records on file, and each year's records once it's been opened.
-// Only the year list and the newest year load at first; the rest load the first
-// time they're opened and are kept from then on.
-function useYearlyRecords<T>(type: "weekly" | "monthly", fetchYear: (year: string) => Promise<T[]>) {
+// Only the year list loads at first, once `enabled`; a year's records load the
+// first time it's opened and are kept from then on.
+function useYearlyRecords<T>(type: "weekly" | "monthly", fetchYear: (year: string) => Promise<T[]>, enabled = true) {
   // undefined while loading, null if the API couldn't be reached.
   const [years, setYears] = useState<YearCount[] | null>();
   const [openYears, setOpenYears] = useState<Set<string>>(() => new Set());
@@ -388,18 +399,11 @@ function useYearlyRecords<T>(type: "weekly" | "monthly", fetchYear: (year: strin
   };
 
   useEffect(() => {
+    if (!enabled) return;
     fetchAttendanceYears(type)
-      .then((found) => {
-        setYears(found);
-        if (found[0]) {
-          setOpenYears(new Set([found[0].year]));
-          load(found[0].year);
-        }
-      })
+      .then(setYears)
       .catch(() => setYears(null));
-    // Only on mount.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [type, enabled]);
 
   return {
     years: years ?? [],
@@ -445,8 +449,8 @@ function useYearlyRecords<T>(type: "weekly" | "monthly", fetchYear: (year: strin
   };
 }
 
-// A table's rows split into years, newest first. Each year is a drop-down, with
-// the newest starting open.
+// A table's rows split into years, newest first. Each year is a drop-down, all
+// starting closed.
 function YearGroups<T>({
   yearly,
   columns,
@@ -762,9 +766,11 @@ function MonthActions({
 function MonthToMonth({
   yearly,
   onCompare,
+  onDeleted,
 }: {
   yearly: ReturnType<typeof useYearlyRecords<AttendanceMonth>>;
   onCompare: (startDay: string) => void;
+  onDeleted: () => void;
 }) {
   const { years, loadingText, remove } = yearly;
   const [open, setOpen] = useState<string | null>(null);
@@ -842,7 +848,10 @@ function MonthToMonth({
                           month={month}
                           onCompare={() => onCompare(month.startDay)}
                           onNotesSaved={() => yearly.reload(month.startDay.slice(0, 4))}
-                          onDeleted={(gone) => remove(month.startDay.slice(0, 4), (other) => monthId(other) === gone)}
+                          onDeleted={(gone) => {
+                            remove(month.startDay.slice(0, 4), (other) => monthId(other) === gone);
+                            onDeleted();
+                          }}
                         />
                       </td>
                     </tr>
@@ -866,27 +875,286 @@ function MonthToMonth({
   );
 }
 
-type AttendanceView = "week" | "month";
+// A monthly sheet can't say which days of a month opened early, but the share of
+// its weekday climbers before the regular opening gives it away: at least 11% in
+// every summer month since 2017, and under 10% in every other since 2021, when a
+// holiday or two can open a regular month early.
+const SUMMER_EARLY_SHARE = 0.1;
 
-const VIEWS: { id: AttendanceView; label: string }[] = [
-  { id: "week", label: "Week-to-week" },
-  { id: "month", label: "Month-to-month" },
+function isSummerSheet(month: AttendanceMonth) {
+  let early = 0;
+  let total = 0;
+  for (const block of month.blocks) {
+    if (blockWeekDay(block.label)?.weekend !== false) continue;
+    for (const [hour, counts] of Object.entries(block.hours)) {
+      total += countClimbers(counts);
+      if (Number(hour) < WEEKDAY_OPENING) early += countClimbers(counts);
+    }
+  }
+  return total > 0 && early / total >= SUMMER_EARLY_SHARE;
+}
+
+function YearChart({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section aria-label={title} className={WIDGET_CLASS}>
+      {children}
+    </section>
+  );
+}
+
+// A year's totals and graphs, all added up from its monthly sheets. Those don't
+// say how many days a month was open, so every graph shows totals rather than
+// averages.
+function YearPanel({ year, months }: { year: string; months: AttendanceMonth[] }) {
+  const [metric, setMetric] = useState<Metric>("numbers");
+  const [weekdays, setWeekdays] = useState(false);
+  const inOrder = [...months].sort((a, b) => a.startDay.localeCompare(b.startDay));
+  const summerMonths = inOrder.filter(isSummerSheet);
+  const climbers = months.reduce((total, month) => total + measureMonth(month, "numbers"), 0);
+  const earnings = months.reduce((total, month) => total + measureMonth(month, "earnings"), 0);
+  const blocks = months.flatMap((month) => month.blocks);
+  const students = countStudents(blocks);
+
+  const formatCount = (count: number) => formatMetric(count, metric);
+  const noun = (count: number) => (metric === "numbers" ? `${formatCount(count)} climbers` : formatCount(count));
+  const what = metric === "numbers" ? "Climbers" : "Earnings";
+
+  // Every hour of every table, in what it comes to.
+  const slots = months.flatMap((month) => {
+    const format = formatForMonth(month.startDay);
+    const summer = isSummerSheet(month);
+    return month.blocks.flatMap((block) => {
+      const day = blockWeekDay(block.label);
+      if (!day) return [];
+      return Object.entries(block.hours).map(([hour, counts]) => ({
+        day,
+        hour: Number(hour),
+        summer,
+        count: measure(counts, metric, format),
+      }));
+    });
+  });
+  const addUp = (list: typeof slots) => list.reduce((total, slot) => total + slot.count, 0);
+
+  const days = [...new Map(slots.map((slot) => [slot.day.offset, slot.day])).values()].sort((a, b) => a.offset - b.offset);
+  const ofGroup = slots.filter((slot) => slot.day.weekend === !weekdays);
+  const hours = [...new Set(ofGroup.map((slot) => slot.hour))].sort((a, b) => a - b);
+
+  // As on the dashboard, a weekday hour before the regular opening can only have
+  // been on summer hours, even in a month that mostly wasn't. A year with no summer
+  // month has no summer hours to speak of.
+  const onSummerHours = (slot: (typeof slots)[number]) =>
+    summerMonths.length > 0 && (slot.summer || slot.hour < WEEKDAY_OPENING);
+  const schedules = WEEKDAY_SCHEDULES.flatMap(({ summer, name, colorClassName }) => {
+    const slotsOf = (hour: number) => ofGroup.filter((slot) => slot.hour === hour && onSummerHours(slot) === summer);
+    const open = hours.filter((hour) => slotsOf(hour).length > 0);
+    if (open.length === 0) return [];
+    return [{ name: `${name}, ${formatHourRange(open[0], open[open.length - 1])}`, colorClassName, slotsOf }];
+  });
+  const summerNames = summerMonths.map((month) => MONTH_NAMES[Number(month.startDay.slice(5, 7)) - 1]);
+
+  return (
+    <div className="flex flex-col gap-4 p-4 sm:p-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h3 className="font-bold text-primary">{year}</h3>
+          <p className="text-xs text-neutral-500">
+            From {plural(months.length, "monthly sheet")}
+          </p>
+        </div>
+        <MetricSwitch metric={metric} onChange={setMetric} />
+      </div>
+
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
+        <MonthTotal title="Climbers">{climbers.toLocaleString()}</MonthTotal>
+        <MonthTotal title="Students">{students.toLocaleString()}</MonthTotal>
+        <MonthTotal title="TPASC & other">{(climbers - students).toLocaleString()}</MonthTotal>
+        <MonthTotal title="Lessons">{countLessons(blocks).toLocaleString()}</MonthTotal>
+        <MonthTotal title="Turned away">{turnedAway(blocks).toLocaleString()}</MonthTotal>
+        <MonthTotal title="Earnings">{formatMoney(earnings)}</MonthTotal>
+      </div>
+
+      <YearChart title={`${what} by month`}>
+        <h4 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">{what} by month</h4>
+        <div className="mt-3">
+          <CountChart
+            counts={MONTH_NAMES.map((name, index) => {
+              const sheet = months.find((month) => Number(month.startDay.slice(5, 7)) === index + 1);
+              return { label: name.slice(0, 3), count: sheet ? measureMonth(sheet, metric) : 0 };
+            })}
+            noun={noun}
+            formatCount={formatCount}
+            caption={`${what} by month, ${year}`}
+            categoryHeader="Month"
+            countHeader={what}
+            emptyText="Nothing recorded for this year"
+          />
+        </div>
+      </YearChart>
+
+      <YearChart title={`${what} by day`}>
+        <h4 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">{what} by day</h4>
+        <div className="mt-3">
+          <CountChart
+            counts={days.map((day) => ({ label: day.short, count: addUp(slots.filter((slot) => slot.day.offset === day.offset)) }))}
+            noun={noun}
+            formatCount={formatCount}
+            caption={`${what} by day of the week, ${year}`}
+            categoryHeader="Day"
+            countHeader={what}
+            emptyText="Nothing recorded for this year"
+          />
+        </div>
+      </YearChart>
+
+      <YearChart title={`${what} by hour`}>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h4 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">{what} by hour</h4>
+            <p className="text-xs text-neutral-500">
+              {weekdays ? "Weekdays" : "Weekends"} · {year}
+              {weekdays && summerNames.length > 0 ? ` · summer hours in ${summerNames.join(", ")}` : ""}
+            </p>
+          </div>
+          <ToggleSwitch off="Weekends" on="Weekdays" checked={weekdays} onChange={setWeekdays} label="Show weekdays" />
+        </div>
+        <div className="mt-3">
+          {weekdays ? (
+            <GroupedCountChart
+              series={schedules}
+              counts={hours.map((hour) => ({
+                label: formatHourRange(hour),
+                values: schedules.map(({ slotsOf }) => (slotsOf(hour).length > 0 ? addUp(slotsOf(hour)) : null)),
+              }))}
+              noun={noun}
+              formatCount={formatCount}
+              caption={`${what} by hour on weekdays, ${year}`}
+              categoryHeader="Hour"
+              emptyText="No weekdays recorded for this year"
+              barClassName="min-w-16"
+            />
+          ) : (
+            <CountChart
+              counts={hours.map((hour) => ({ label: formatHourRange(hour), count: addUp(ofGroup.filter((slot) => slot.hour === hour)) }))}
+              noun={noun}
+              formatCount={formatCount}
+              caption={`${what} by hour on weekends, ${year}`}
+              categoryHeader="Hour"
+              countHeader={what}
+              emptyText="No weekends recorded for this year"
+              barClassName="min-w-16"
+            />
+          )}
+        </div>
+      </YearChart>
+    </div>
+  );
+}
+
+// Every year with monthly sheets, newest first. A year's sheets load the first
+// time it's opened, shared with Month-to-month, so neither fetches them twice.
+function YearToDate({ yearly }: { yearly: ReturnType<typeof useYearlyRecords<AttendanceMonth>> }) {
+  const { years, loadingText, records, load } = yearly;
+  const [open, setOpen] = useState<Set<string>>(() => new Set());
+
+  if (loadingText || years.length === 0) {
+    return (
+      <div className="overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-sm">
+        <p className="p-6 text-center text-sm text-neutral-500">{loadingText ?? "No monthly attendance has been recorded yet."}</p>
+      </div>
+    );
+  }
+
+  return (
+    <ul className="divide-y divide-neutral-200 overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-sm">
+      {years.map(({ year, count }) => {
+        const isOpen = open.has(year);
+        const rows = records[year];
+        const panelId = `year-${year}`;
+        return (
+          <li key={year}>
+            <button
+              type="button"
+              aria-expanded={isOpen}
+              aria-controls={panelId}
+              onClick={() => {
+                setOpen((current) => {
+                  const next = new Set(current);
+                  if (isOpen) next.delete(year);
+                  else next.add(year);
+                  return next;
+                });
+                if (!isOpen && !(year in records)) load(year);
+              }}
+              className="group flex w-full items-center gap-2 bg-neutral-50 px-4 py-2.5 transition-colors hover:bg-secondary/5"
+            >
+              <ChevronIcon open={isOpen} />
+              <span className="text-base font-bold text-primary">{year}</span>
+              <span className="text-xs text-neutral-500">{plural(count, "month")}</span>
+            </button>
+            {isOpen && (
+              <div id={panelId} className="border-l-4 border-secondary bg-white">
+                {rows === undefined && (
+                  <p role="status" className="px-4 py-3 text-center text-sm text-neutral-500">
+                    Loading {year}…
+                  </p>
+                )}
+                {rows === null && (
+                  <p className="px-4 py-3 text-center text-sm text-neutral-500">
+                    Couldn&apos;t load {year}.{" "}
+                    <button type="button" onClick={() => load(year)} className="font-semibold text-primary underline">
+                      Try again
+                    </button>
+                  </p>
+                )}
+                {rows && <YearPanel year={year} months={rows.filter((month) => month.startDay.startsWith(year))} />}
+              </div>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+type AttendanceView = "week" | "month" | "year";
+
+const VIEWS: { id: AttendanceView; label: string; short: string }[] = [
+  { id: "week", label: "Week-to-week", short: "Week" },
+  { id: "month", label: "Month-to-month", short: "Month" },
+  { id: "year", label: "YTD", short: "YTD" },
 ];
+
+// Which months from `from` on have a monthly sheet: their first days, undefined
+// until that's known, null if it couldn't be.
+function useMonthlySheetStarts(from: string) {
+  const [starts, setStarts] = useState<string[] | null>();
+  const refresh = useCallback(() => {
+    fetchMonthlySheetStarts(from)
+      .then(setStarts)
+      .catch(() => setStarts(null));
+  }, [from]);
+  useEffect(refresh, [refresh]);
+  return { starts, refresh };
+}
 
 // How far back the reminder looks for a month with no monthly sheet.
 const MONTHS_TO_CHECK = 6;
 
-// /admin/attendance/all: the recorded weeks or monthly sheets, by a slider. Both
-// views stay mounted, so flipping the slider doesn't fetch anything again. Months
-// load from the start, since the reminder above both views needs them.
+// /admin/attendance/all: the recorded weeks, months or years, by a slider. Nothing
+// but the year lists and which months have sheets loads until a year is opened.
+// Views stay mounted once visited, so flipping the slider fetches nothing again.
 export function AdminAttendanceAll() {
   const [view, setView] = useState<AttendanceView>("week");
   // The month the generate dialog opened on, while it's open.
   const [generating, setGenerating] = useState<string | null>(null);
-  const months = useYearlyRecords<AttendanceMonth>("monthly", fetchAttendanceMonthsOf);
+  // Month-to-month and YTD share their sheets, and neither asks until visited.
+  const [monthsOpened, setMonthsOpened] = useState(false);
+  const months = useYearlyRecords<AttendanceMonth>("monthly", fetchAttendanceMonthsOf, monthsOpened);
   const today = todayDate();
   const thisMonth = `${today.slice(0, 7)}-01`;
   const recent = monthsBefore(today, MONTHS_TO_CHECK);
+  const { starts, refresh: refreshStarts } = useMonthlySheetStarts(recent[recent.length - 1]);
 
   const sheetOn: SheetLookup = (startDay) => {
     if (months.loadingText) return undefined;
@@ -897,12 +1165,15 @@ export function AdminAttendanceAll() {
     return rows.find((month) => month.startDay === startDay) ?? null;
   };
   // A month still going isn't due yet, so these start from last month.
-  const missing = recent.filter((startDay) => sheetOn(startDay) === null);
+  const missing = starts ? recent.filter((startDay) => !starts.includes(startDay)) : [];
   const defaultMonth = missing[0] ?? recent[0];
 
-  // Those months can reach back into a year nobody has opened.
-  const yearsToCheck = [...new Set([thisMonth, ...recent].map((startDay) => startDay.slice(0, 4)))].join();
+  // The generate dialog needs the sheets it offers, which can reach back into a
+  // year nobody has opened.
+  const choices = generating ? [...new Set([thisMonth, ...recent, generating])].sort().reverse() : [];
+  const yearsToCheck = [...new Set(choices.map((startDay) => startDay.slice(0, 4)))].join();
   useEffect(() => {
+    if (!yearsToCheck) return;
     for (const year of yearsToCheck.split(",")) {
       if (months.years.some((entry) => entry.year === year) && !(year in months.records)) months.load(year);
     }
@@ -918,8 +1189,11 @@ export function AdminAttendanceAll() {
             label="Attendance view"
             tabs={VIEWS}
             active={view}
-            onChange={setView}
-            className="w-full min-w-0 max-w-72"
+            onChange={(next) => {
+              setView(next);
+              if (next !== "week") setMonthsOpened(true);
+            }}
+            className="w-full min-w-0 max-w-[26rem]"
           />
           {view === "month" && (
             <button
@@ -940,19 +1214,27 @@ export function AdminAttendanceAll() {
       <div hidden={view !== "week"}>
         <WeekToWeek />
       </div>
-      <div hidden={view !== "month"}>
-        <MonthToMonth yearly={months} onCompare={setGenerating} />
-      </div>
+      {monthsOpened && (
+        <>
+          <div hidden={view !== "month"}>
+            <MonthToMonth yearly={months} onCompare={setGenerating} onDeleted={refreshStarts} />
+          </div>
+          <div hidden={view !== "year"}>
+            <YearToDate yearly={months} />
+          </div>
+        </>
+      )}
       {generating && (
         <GenerateMonthDialog
           // An older month opened from its row joins the usual ones, in order.
-          choices={[...new Set([thisMonth, ...recent, generating])].sort().reverse()}
+          choices={choices}
           initial={generating}
           sheetOn={sheetOn}
           onClose={() => setGenerating(null)}
           onGenerated={(year) => {
             setGenerating(null);
             months.reload(year);
+            refreshStarts();
           }}
         />
       )}

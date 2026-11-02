@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChartBar } from "@/components/CountChart";
+import { AllNumbersButton, ChartBar, countWidth } from "@/components/CountChart";
 
 // CountChart with a bar per series in each category, and a legend naming them.
 // A series with nothing to say for a category (null) leaves its place empty, as
@@ -29,6 +29,7 @@ export default function GroupedCountChart({
   barClassName: string;
 }) {
   const [tapped, setTapped] = useState<string | null>(null);
+  const [showAll, setShowAll] = useState(false);
   const max = Math.max(0, ...counts.flatMap((entry) => entry.values.map((value) => value ?? 0)));
 
   if (max === 0) {
@@ -41,22 +42,29 @@ export default function GroupedCountChart({
   );
   // The counts can change under a tapped bar, and that bar can go with them.
   const selected = tapped !== null && ids.includes(tapped) ? tapped : null;
+  // A category's counts run outwards from its bars in the middle, so it needs room
+  // for one each way.
+  const texts = counts.flatMap(({ values }) => values.flatMap((value) => (value === null ? [] : [formatCount(value)])));
+  const minWidth = showAll ? countWidth(texts) * series.length + 10 : undefined;
 
   return (
     <figure>
-      <ul className="mb-2 flex flex-wrap gap-x-4 gap-y-1">
-        {series.map(({ name, colorClassName }) => (
-          <li key={name} className="flex items-center gap-1.5 text-xs text-neutral-600">
-            <span aria-hidden="true" className={`h-2.5 w-2.5 shrink-0 rounded-sm ${colorClassName}`} />
-            {name}
-          </li>
-        ))}
-      </ul>
+      <div className="mb-2 flex flex-wrap items-start justify-between gap-x-4 gap-y-1">
+        <ul className="flex flex-wrap gap-x-4 gap-y-1">
+          {series.map(({ name, colorClassName }) => (
+            <li key={name} className="flex items-center gap-1.5 text-xs text-neutral-600">
+              <span aria-hidden="true" className={`h-2.5 w-2.5 shrink-0 rounded-sm ${colorClassName}`} />
+              {name}
+            </li>
+          ))}
+        </ul>
+        <AllNumbersButton showing={showAll} onChange={setShowAll} />
+      </div>
 
       <div className="overflow-x-auto">
         <div className="flex h-44 w-full min-w-max border-b border-neutral-300 pt-6">
           {counts.map(({ label, values }, category) => (
-            <div key={label} className={`flex flex-1 ${barClassName}`}>
+            <div key={label} style={{ minWidth }} className={`flex flex-1 ${barClassName}`}>
               {series.map(({ name, colorClassName }, index) => {
                 const value = values[index];
                 if (value === null) return <span key={name} aria-hidden="true" className="flex-1" />;
@@ -66,11 +74,21 @@ export default function GroupedCountChart({
                 return (
                   <ChartBar
                     key={name}
-                    edge={category === 0 ? "start" : category === counts.length - 1 ? "end" : undefined}
+                    edge={
+                      showAll && series.length > 1
+                        ? index === 0
+                          ? "end"
+                          : "start"
+                        : !showAll && category === 0
+                          ? "start"
+                          : !showAll && category === counts.length - 1
+                            ? "end"
+                            : undefined
+                    }
                     name={`${label}, ${name}: ${noun(value)}`}
                     height={`${(value / max) * 100}%`}
                     text={formatCount(value)}
-                    labelled={selected === null ? value === max : selected === id}
+                    labelled={showAll || (selected === null ? value === max : selected === id)}
                     dimmed={selected !== null && selected !== id}
                     onToggle={() => setTapped(selected === id ? null : id)}
                     barClassName={colorClassName}
@@ -84,7 +102,7 @@ export default function GroupedCountChart({
         </div>
         <div aria-hidden="true" className="flex w-full min-w-max pt-1.5">
           {counts.map(({ label }) => (
-            <span key={label} className={`flex-1 text-center text-[11px] text-neutral-500 ${barClassName}`}>
+            <span key={label} style={{ minWidth }} className={`flex-1 text-center text-[11px] text-neutral-500 ${barClassName}`}>
               {label}
             </span>
           ))}

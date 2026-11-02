@@ -99,6 +99,15 @@ export function attendanceYearsQuery(type: AttendanceType) {
   };
 }
 
+// When each record of a type from a date on starts, and nothing else - enough to
+// tell which are on file without reading any of them.
+export function attendanceStartsQuery(type: AttendanceType, from: string) {
+  return {
+    query: "SELECT VALUE c.startDay FROM c WHERE c.type = @type AND c.startDay >= @from",
+    parameters: [typeParameter(type), { name: "@from", value: from }],
+  };
+}
+
 // W-20261024-20261030 for a week, M-20260901-20260930 for a month.
 export function attendanceId(type: AttendanceType, startDay: string, endDay: string) {
   const compact = (date: string) => date.replaceAll("-", "");
