@@ -8,7 +8,8 @@ export default function SlidingTabs<T extends string>({
   className = "w-44",
 }: {
   label: string;
-  tabs: { id: T; label: string }[];
+  // `short` takes the label's place on phones, where it wouldn't fit.
+  tabs: { id: T; label: string; short?: string }[];
   active: T;
   onChange: (id: T) => void;
   // Sets the width - the tabs share it equally.
@@ -28,12 +29,20 @@ export default function SlidingTabs<T extends string>({
           type="button"
           role="tab"
           aria-selected={tab.id === active}
+          aria-label={tab.short ? tab.label : undefined}
           onClick={() => onChange(tab.id)}
           className={`relative flex-1 rounded px-2 py-1 text-xs font-semibold transition-colors ${
             tab.id === active ? "text-primary" : "text-neutral-500 hover:text-neutral-800"
           }`}
         >
-          {tab.label}
+          {tab.short ? (
+            <>
+              <span className="sm:hidden">{tab.short}</span>
+              <span className="max-sm:hidden">{tab.label}</span>
+            </>
+          ) : (
+            tab.label
+          )}
         </button>
       ))}
     </div>

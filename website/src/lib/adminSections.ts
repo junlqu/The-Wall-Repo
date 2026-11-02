@@ -38,6 +38,17 @@ export const ADMIN_SECTIONS: AdminSection[] = [
     ],
   },
   {
+    slug: "attendance",
+    title: "Attendance",
+    description: "Hourly drop-in tallies, entered weekly, with weekly, monthly and yearly metrics.",
+    subpages: [
+      { slug: "all", label: "See all attendance" },
+      { slug: "new", label: "Fill in attendance" },
+      { slug: "import", label: "Import attendance" },
+      { slug: "export", label: "Export attendance" },
+    ],
+  },
+  {
     slug: "equipment",
     title: "Equipment (WIP)",
     description: "Track the gear on hand and retire what's worn out.",
@@ -54,16 +65,6 @@ export const ADMIN_SECTIONS: AdminSection[] = [
     subpages: [
       { slug: "new", label: "Start new maintenance report" },
       { slug: "all", label: "See all reports" },
-    ],
-  },
-  {
-    slug: "attendance",
-    title: "Attendance",
-    description: "Hourly drop-in tallies, entered weekly, with weekly, monthly and yearly metrics.",
-    subpages: [
-      { slug: "all", label: "See all attendance" },
-      { slug: "new", label: "Fill in attendance" },
-      { slug: "import", label: "Import attendance" },
     ],
   },
   {

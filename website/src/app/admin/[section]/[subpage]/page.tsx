@@ -4,8 +4,10 @@ import type { ComponentType } from "react";
 import AdminAddAnnouncement from "@/components/AdminAddAnnouncement";
 import AdminAddClimb from "@/components/AdminAddClimb";
 import { AdminActiveAnnouncements, AdminArchivedAnnouncements } from "@/components/AdminAnnouncements";
-import { AdminAttendanceWeeks } from "@/components/AdminAttendance";
+import { AdminAttendanceAll } from "@/components/AdminAttendance";
+import AdminAttendanceExport from "@/components/AdminAttendanceExport";
 import AdminAttendanceForm from "@/components/AdminAttendanceForm";
+import AdminAttendanceImport from "@/components/AdminAttendanceImport";
 import AdminClimbExport from "@/components/AdminClimbExport";
 import AdminClimbImport from "@/components/AdminClimbImport";
 import { AdminActiveClimbs, AdminPastClimbs } from "@/components/AdminClimbs";
@@ -25,8 +27,10 @@ const TOOLS: Record<string, ComponentType> = {
   "climbs/archived": AdminPastClimbs,
   "climbs/import": AdminClimbImport,
   "climbs/export": AdminClimbExport,
-  "attendance/all": AdminAttendanceWeeks,
+  "attendance/all": AdminAttendanceAll,
   "attendance/new": AdminAttendanceForm,
+  "attendance/import": AdminAttendanceImport,
+  "attendance/export": AdminAttendanceExport,
   "users/all": AdminUserList,
   "users/permissions": AdminUserPermissions,
 };

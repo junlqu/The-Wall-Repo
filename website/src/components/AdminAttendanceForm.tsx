@@ -5,10 +5,6 @@ import { Suspense, useEffect, useState } from "react";
 import { ErrorMessage, FIELD_CLASS } from "@/components/ClimbForm";
 import {
   addDays,
-  ATTENDANCE_COLUMN_GROUPS,
-  ATTENDANCE_COLUMNS,
-  type AttendanceColumnKey,
-  type AttendanceColumnNode,
   type AttendanceCounts,
   type AttendanceWeek,
   countCents,
@@ -18,12 +14,18 @@ import {
   formatMoney,
   formatPrice,
   hoursOf,
-  isColumnGroup,
   openDatesOf,
   saveAttendance,
-  type WeekDay,
+  weekDayOf,
   weekEndingFor,
 } from "@/lib/attendance";
+import {
+  type AttendanceColumnKey,
+  type AttendanceColumnNode,
+  type AttendanceFormat,
+  formatForDate,
+  isColumnGroup,
+} from "@/lib/attendanceFormats";
 import { formatDate, todayDate } from "@/lib/climbs";
 
 // Far more than fit on the wall in an hour - matches the API's limit.
@@ -39,35 +41,33 @@ function depthOf(node: AttendanceColumnNode): number {
   return isColumnGroup(node) ? 1 + Math.max(...node.children.map(depthOf)) : 1;
 }
 
-const HEADER_DEPTH = Math.max(...ATTENDANCE_COLUMN_GROUPS.map(depthOf));
-
-// The column tree as header rows: a group spans its columns, and a column
-// with no sub-columns stretches down to the bottom header row.
-const HEADER_ROWS: HeaderCell[][] = (() => {
-  const rows: HeaderCell[][] = Array.from({ length: HEADER_DEPTH }, () => []);
-  const visit = (node: AttendanceColumnNode, level: number) => {
+// A format's column tree as header rows: a group spans its columns, and a
+// column with no sub-columns stretches down to the bottom header row. Also each
+// column's full name for screen readers - "UTSC, Drop-ins (Gear)".
+function buildHeader(format: AttendanceFormat) {
+  const depth = Math.max(...format.groups.map(depthOf));
+  const rows: HeaderCell[][] = Array.from({ length: depth }, () => []);
+  const names = {} as Record<AttendanceColumnKey, string>;
+  const visit = (node: AttendanceColumnNode, level: number, path: string[]) => {
     rows[level].push({
       label: node.label,
       colSpan: leafCount(node),
-      rowSpan: isColumnGroup(node) ? 1 : HEADER_DEPTH - level,
+      rowSpan: isColumnGroup(node) ? 1 : depth - level,
       muted: !isColumnGroup(node) && node.cents === null,
     });
-    if (isColumnGroup(node)) node.children.forEach((child) => visit(child, level + 1));
-  };
-  ATTENDANCE_COLUMN_GROUPS.forEach((node) => visit(node, 0));
-  return rows;
-})();
-
-// Each column's full name for screen readers - "UTSC, Drop-ins (Gear)".
-const COLUMN_NAMES = (() => {
-  const names = {} as Record<AttendanceColumnKey, string>;
-  const visit = (node: AttendanceColumnNode, path: string[]) => {
-    if (isColumnGroup(node)) node.children.forEach((child) => visit(child, [...path, node.label]));
+    if (isColumnGroup(node)) node.children.forEach((child) => visit(child, level + 1, [...path, node.label]));
     else names[node.key] = [...path, node.label].join(", ");
   };
-  ATTENDANCE_COLUMN_GROUPS.forEach((node) => visit(node, []));
-  return names;
-})();
+  format.groups.forEach((node) => visit(node, 0, []));
+  return { depth, rows, names };
+}
+
+const HEADERS = new Map<string, ReturnType<typeof buildHeader>>();
+
+function headerOf(format: AttendanceFormat) {
+  if (!HEADERS.has(format.id)) HEADERS.set(format.id, buildHeader(format));
+  return HEADERS.get(format.id)!;
+}
 
 const CELL_CLASS = "border border-neutral-200";
 const COUNT_INPUT_CLASS =
@@ -79,12 +79,15 @@ type DayDraft = { closed: boolean; hours: Record<string, AttendanceCounts>; turn
 type WeekDraft = Record<string, DayDraft>;
 
 // The week's open days with the schedule's hours, filled in from what was
-// saved. A saved week that's missing an open day had it closed.
+// saved. A saved week that's missing an open day had it closed, and a saved day
+// keeps the hours it was recorded with - older weeks kept different hours, and
+// sometimes opened on other days.
 function draftFor(weekEnding: string, saved: AttendanceWeek | undefined): WeekDraft {
+  const dates = [...new Set([...openDatesOf(weekEnding).map(({ date }) => date), ...(saved?.days ?? []).map(({ date }) => date)])];
   return Object.fromEntries(
-    openDatesOf(weekEnding).map(({ day, date }) => {
+    dates.map((date) => {
       const savedDay = saved?.days.find((item) => item.date === date);
-      const hours = [...new Set([...day.hours, ...(savedDay ? hoursOf(savedDay) : [])])].sort((a, b) => a - b);
+      const hours = savedDay && hoursOf(savedDay).length > 0 ? hoursOf(savedDay) : weekDayOf(date).hours;
       return [
         date,
         {
@@ -128,16 +131,18 @@ function sumHours(day: DayDraft, count: (counts: AttendanceCounts) => number) {
 }
 
 function DayTable({
-  day,
   date,
   draft,
   onChange,
 }: {
-  day: WeekDay;
   date: string;
   draft: DayDraft;
   onChange: (draft: DayDraft) => void;
 }) {
+  const day = weekDayOf(date);
+  // The sheet's columns and prices on this date.
+  const format = formatForDate(date);
+  const { depth, rows, names } = headerOf(format);
   const hours = hoursOf(draft);
   const setCount = (hour: number, key: AttendanceColumnKey, count: number) =>
     onChange({ ...draft, hours: { ...draft.hours, [hour]: { ...draft.hours[hour], [key]: count } } });
@@ -154,7 +159,7 @@ function DayTable({
         <div className="flex flex-wrap items-center gap-4 text-xs text-neutral-500">
           {!draft.closed && (
             <span>
-              {plural(sumHours(draft, countClimbers), "climber")} · {formatMoney(sumHours(draft, countCents))}
+              {plural(sumHours(draft, countClimbers), "climber")} · {formatMoney(sumHours(draft, (counts) => countCents(counts, format)))}
             </span>
           )}
           <label className="inline-flex cursor-pointer items-center gap-2 font-semibold text-neutral-600">
@@ -177,10 +182,10 @@ function DayTable({
         <div className="overflow-x-auto">
           <table className="w-full min-w-max border-collapse text-center text-sm">
             <thead className="bg-neutral-50 text-[11px] font-semibold leading-tight text-neutral-600">
-              {HEADER_ROWS.map((row, level) => (
+              {rows.map((row, level) => (
                 <tr key={level}>
                   {level === 0 && (
-                    <th scope="col" rowSpan={HEADER_DEPTH} className={`${CELL_CLASS} px-3 py-2 text-left`}>
+                    <th scope="col" rowSpan={depth} className={`${CELL_CLASS} px-3 py-2 text-left`}>
                       Hour
                     </th>
                   )}
@@ -196,7 +201,7 @@ function DayTable({
                     </th>
                   ))}
                   {level === 0 && (
-                    <th scope="col" rowSpan={HEADER_DEPTH} className={`${CELL_CLASS} px-3 py-2`}>
+                    <th scope="col" rowSpan={depth} className={`${CELL_CLASS} px-3 py-2`}>
                       Climbers
                     </th>
                   )}
@@ -206,7 +211,7 @@ function DayTable({
                 <th scope="row" className={`${CELL_CLASS} px-3 py-1 text-left font-semibold`}>
                   Price
                 </th>
-                {ATTENDANCE_COLUMNS.map((column) => (
+                {format.columns.map((column) => (
                   <td key={column.key} className={`${CELL_CLASS} px-2 py-1`}>
                     {formatPrice(column.cents)}
                   </td>
@@ -222,12 +227,12 @@ function DayTable({
                     <th scope="row" className={`${CELL_CLASS} whitespace-nowrap px-3 py-1 text-left font-semibold text-primary`}>
                       {formatHourRange(hour)}
                     </th>
-                    {ATTENDANCE_COLUMNS.map((column) => (
+                    {format.columns.map((column) => (
                       <td key={column.key} className={`${CELL_CLASS} p-0.5 ${column.cents === null ? "bg-neutral-50" : ""}`}>
                         <input
                           inputMode="numeric"
                           pattern="[0-9]*"
-                          aria-label={`${formatHourRange(hour)}, ${COLUMN_NAMES[column.key]}`}
+                          aria-label={`${formatHourRange(hour)}, ${names[column.key]}`}
                           value={counts[column.key] || ""}
                           placeholder="0"
                           onChange={(event) => setCount(hour, column.key, readCount(event.target.value))}
@@ -246,7 +251,7 @@ function DayTable({
                 <th scope="row" className={`${CELL_CLASS} px-3 py-1.5 text-left`}>
                   Total
                 </th>
-                {ATTENDANCE_COLUMNS.map((column) => (
+                {format.columns.map((column) => (
                   <td key={column.key} className={`${CELL_CLASS} px-2 py-1.5`}>
                     {sumHours(draft, (counts) => counts[column.key] ?? 0)}
                   </td>
@@ -257,7 +262,7 @@ function DayTable({
                 <th scope="row" className={`${CELL_CLASS} whitespace-nowrap px-3 py-1.5 text-left`}>
                   <label htmlFor={`turned-away-${date}`}>Turned away</label>
                 </th>
-                <td colSpan={ATTENDANCE_COLUMNS.length + 1} className={`${CELL_CLASS} px-2 py-1.5 text-left`}>
+                <td colSpan={format.columns.length + 1} className={`${CELL_CLASS} px-2 py-1.5 text-left`}>
                   <input
                     id={`turned-away-${date}`}
                     inputMode="numeric"
@@ -286,19 +291,14 @@ const SAVE_BUTTON_CLASS =
 const ARROW_BUTTON_CLASS =
   "inline-flex h-9 w-9 items-center justify-center rounded-full border border-neutral-300 bg-white text-neutral-600 transition-colors hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-neutral-300 disabled:hover:text-neutral-600";
 
-// The week that's just finished - the Friday on or before today.
-function lastFinishedWeek(today: string) {
-  const weekEnding = weekEndingFor(today);
-  return weekEnding === today ? today : addDays(weekEnding, -7);
-}
-
 function AttendanceForm() {
   const searchParams = useSearchParams();
   const today = todayDate();
   const latestWeek = weekEndingFor(today);
   const [weekEnding, setWeekEnding] = useState(() => {
     const asked = searchParams.get("week");
-    const week = asked && /^\d{4}-\d{2}-\d{2}$/.test(asked) ? weekEndingFor(asked) : lastFinishedWeek(today);
+    // Opens on the week today falls in.
+    const week = asked && /^\d{4}-\d{2}-\d{2}$/.test(asked) ? weekEndingFor(asked) : latestWeek;
     return week > latestWeek ? latestWeek : week;
   });
   // undefined while loading, null if the API couldn't be reached.
@@ -416,11 +416,11 @@ function AttendanceForm() {
         </button>
       </div>
 
-      {openDatesOf(weekEnding).map(({ day, date }) =>
-        draft[date] ? (
-          <DayTable key={date} day={day} date={date} draft={draft[date]} onChange={(next) => updateDay(date, next)} />
-        ) : null,
-      )}
+      {Object.keys(draft)
+        .sort()
+        .map((date) => (
+          <DayTable key={date} date={date} draft={draft[date]} onChange={(next) => updateDay(date, next)} />
+        ))}
 
       {/* Pinned to the corner so it's in reach from any of the day's tables.
           A failed save shows above it, where it'll be seen. */}
