@@ -3,6 +3,7 @@ import { app, HttpRequest, HttpResponseInit, InvocationContext } from "@azure/fu
 import { FORBIDDEN, readAnnouncementFields, toPublicAnnouncement } from "../announcementFields";
 import { corsHeaders, readSessionUser, rejectUnlessAdmin } from "../authUtils";
 import { getContainer } from "../cosmosClient";
+import { notifyDiscord } from "../discord";
 import { Announcement, ANNOUNCEMENT_CONTAINER } from "../models/Announcement";
 
 // GET /announcements - every announcement, active and archived. Listing them
@@ -50,6 +51,8 @@ export async function createAnnouncement(request: HttpRequest, context: Invocati
       guestViews: 0,
     };
     const { resource } = await getContainer(ANNOUNCEMENT_CONTAINER).items.create(announcement);
+    // A backlogged one goes straight to the archive, so it isn't news.
+    if (Date.parse(resource!.relevantUntil) > Date.now()) await notifyDiscord(resource!, context);
     return { status: 201, headers, jsonBody: toPublicAnnouncement(resource!, request) };
   } catch (error) {
     context.error("Failed to create announcement", error);
