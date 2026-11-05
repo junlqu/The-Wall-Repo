@@ -3,8 +3,9 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import AnnouncementDetails, { EyeIcon } from "@/components/AnnouncementDetails";
 import { LikeButton, useToggleLike } from "@/components/AnnouncementLike";
-import Carousel from "@/components/Carousel";
+import Carousel, { SLIDE_PADDING } from "@/components/Carousel";
 import { Kicker, Masthead, SectionRule } from "@/components/Masthead";
+import ProfileLink from "@/components/ProfileLink";
 import {
   type Announcement,
   ANNOUNCEMENT_TYPES,
@@ -140,9 +141,10 @@ function Byline({ announcement, now, light = false }: { announcement: Announceme
         className={`h-9 w-9 shrink-0 rounded-full object-cover ${light ? "ring-2 ring-white/30" : "ring-1 ring-neutral-200"}`}
       />
       <span className="flex min-w-0 flex-col leading-tight">
-        <span className={`truncate text-sm font-semibold ${light ? "text-white" : "text-neutral-900"}`}>
-          @{announcement.author}
-        </span>
+        <ProfileLink
+          username={announcement.author}
+          className={`truncate text-sm font-semibold ${light ? "text-white" : "text-neutral-900"}`}
+        />
         <time
           dateTime={announcement.announcedAt}
           title={formatDateTime(announcement.announcedAt)}
@@ -173,7 +175,7 @@ function TargetChip({ announcement, light = false }: { announcement: Announcemen
 function UrgentSlide({ announcement, now }: { announcement: Announcement; now: Date }) {
   const ref = useCountView<HTMLElement>(announcement.id);
   return (
-    <article ref={ref} className="flex h-full flex-col gap-5 border-t-4 border-red-500 bg-primary p-6 text-white sm:p-10">
+    <article ref={ref} className={`flex h-full flex-col gap-5 border-t-4 border-red-500 bg-primary text-white ${SLIDE_PADDING}`}>
       <div className="flex flex-wrap items-center gap-3">
         <span className="inline-flex items-center gap-2 rounded-full bg-red-500 px-3 py-1 text-xs font-bold uppercase tracking-wider">
           <span className="h-2 w-2 animate-pulse rounded-full bg-white motion-reduce:animate-none" />
@@ -229,7 +231,7 @@ function CotwCard({ cotw, friday, now }: { cotw: Announcement | undefined; frida
 function HighSlide({ announcement, now }: { announcement: Announcement; now: Date }) {
   const ref = useCountView<HTMLElement>(announcement.id);
   return (
-    <article ref={ref} className="flex h-full flex-col gap-4 rounded-xl border border-amber-200 bg-amber-50 p-6 sm:p-8">
+    <article ref={ref} className={`flex h-full flex-col gap-4 rounded-xl border border-amber-200 bg-amber-50 ${SLIDE_PADDING}`}>
       <div className="flex items-center justify-between gap-2">
         <Kicker className="text-amber-700">High priority</Kicker>
         <span className="text-xs font-semibold text-amber-800/70">{ANNOUNCEMENT_TYPES[announcement.type].label}</span>

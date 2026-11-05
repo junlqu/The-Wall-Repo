@@ -23,6 +23,7 @@ import {
   ratingStars,
 } from "@/lib/climbs";
 import { BOULDER_GRADES, compareGrades, ROUTE_GRADES } from "@/lib/grades";
+import { profileHref } from "@/lib/profiles";
 import { useSessionUser } from "@/lib/session";
 
 // The pieces the public climbs pages are built from.
@@ -248,17 +249,25 @@ export function ComboHandRoute({ hand }: { hand: ComboHand }) {
   );
 }
 
+// Their picture and username, linking to their profile.
 export function Person({ person }: { person: ClimbPerson | null }) {
-  return (
-    <span className="flex min-w-0 items-center gap-1.5">
-      {person ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={avatarUrl(person)} alt="" width={20} height={20} className="h-5 w-5 shrink-0 rounded-full object-cover ring-1 ring-neutral-200" />
-      ) : (
+  if (!person) {
+    return (
+      <span className="flex min-w-0 items-center gap-1.5">
         <span aria-hidden="true" className="h-5 w-5 shrink-0 rounded-full bg-neutral-200" />
-      )}
-      <span className="truncate font-semibold text-neutral-800">{person ? `@${person.username}` : "Former member"}</span>
-    </span>
+        <span className="truncate font-semibold text-neutral-800">Former member</span>
+      </span>
+    );
+  }
+  return (
+    <Link
+      href={profileHref(person.username)}
+      className="group flex min-w-0 items-center gap-1.5 focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-secondary"
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={avatarUrl(person)} alt="" width={20} height={20} className="h-5 w-5 shrink-0 rounded-full object-cover ring-1 ring-neutral-200" />
+      <span className="truncate font-semibold text-neutral-800 group-hover:underline">@{person.username}</span>
+    </Link>
   );
 }
 

@@ -3,6 +3,14 @@
 import { type SubmitEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import PasswordRules from "@/components/PasswordRules";
+import {
+  EMAIL_PATTERN,
+  MAX_EMAIL_LENGTH,
+  MAX_NAME_LENGTH,
+  MAX_PHONE_DIGITS,
+  PASSWORD_RULES,
+} from "@/lib/account";
 import { apiUrl } from "@/lib/api";
 import { preloadAvatar } from "@/lib/avatar";
 import { useReturnTo, withReturnTo } from "@/lib/returnTo";
@@ -11,19 +19,6 @@ import { setSessionUser, useSessionUser } from "@/lib/session";
 const INPUT_CLASS =
   "w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 focus:border-secondary focus:outline-none focus:ring-1 focus:ring-secondary";
 const LABEL_CLASS = "text-sm font-medium text-neutral-700";
-
-// Keep in sync with api/src/functions/authRegister.ts.
-const MAX_NAME_LENGTH = 128;
-const MAX_EMAIL_LENGTH = 512;
-const MAX_PHONE_DIGITS = 15;
-// Something before the @, and a "." with text either side somewhere after it.
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const PASSWORD_RULES = [
-  { label: "At least 8 characters", test: (p: string) => p.length >= 8 },
-  { label: "An uppercase letter", test: (p: string) => /[A-Z]/.test(p) },
-  { label: "A lowercase letter", test: (p: string) => /[a-z]/.test(p) },
-  { label: "A number", test: (p: string) => /[0-9]/.test(p) },
-];
 
 // The input's `required` attribute is what tells assistive tech the field is
 // mandatory, so the asterisk itself is purely visual.
@@ -230,19 +225,7 @@ export default function SignupPage() {
               aria-describedby="password-rules"
               className={INPUT_CLASS}
             />
-            {showPasswordRules && (
-              <ul id="password-rules" className="mt-1 grid grid-cols-2 gap-x-3 gap-y-0.5 text-xs">
-                {PASSWORD_RULES.map((rule) => {
-                  const met = rule.test(password);
-                  return (
-                    <li key={rule.label} className={met ? "text-green-700" : "text-red-600"}>
-                      <span aria-hidden="true">{met ? "✓" : "✗"}</span> {rule.label}
-                      <span className="sr-only">{met ? " (done)" : " (missing)"}</span>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
+            {showPasswordRules && <PasswordRules id="password-rules" password={password} />}
           </div>
 
           <div className="flex flex-col gap-1">

@@ -4,7 +4,11 @@ import { type ReactNode, useEffect, useState } from "react";
 
 const DEFAULT_ROTATE_MS = 8000;
 const CONTROL_CLASS =
-  "rounded-full bg-white p-1.5 text-neutral-600 shadow-sm ring-1 ring-neutral-200 transition-colors hover:text-primary";
+  "rounded-full bg-white/40 p-1.5 text-neutral-700 shadow-sm ring-1 ring-white/30 backdrop-blur-sm transition-colors hover:bg-white/80 hover:text-primary";
+
+// Padding for slides with text, keeping it clear of the arrows at the sides
+// and the dots along the bottom.
+export const SLIDE_PADDING = "px-12 pt-6 pb-12 sm:px-16 sm:pt-8";
 
 function ArrowIcon({ direction }: { direction: "previous" | "next" }) {
   return (
@@ -24,7 +28,8 @@ function prefersReducedMotion() {
 
 // Slides one item at a time, moving on by itself every `rotateMs` - except
 // while it's hovered or focused, or the visitor prefers less motion. Every
-// slide is as tall as the tallest, so the page doesn't jump as it turns.
+// slide is as tall as the tallest, so the page doesn't jump as it turns. The
+// arrows sit on either side and the dots along the bottom, over the slides.
 export default function Carousel<T>({
   label,
   items,
@@ -62,32 +67,49 @@ export default function Carousel<T>({
       onBlur={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget)) setPaused(false);
       }}
-      className="flex h-full flex-col gap-3"
+      className="relative h-full overflow-hidden rounded-xl"
     >
-      <div className="relative flex-1 overflow-hidden rounded-xl">
-        <div
-          className="flex h-full transition-transform duration-500 ease-out motion-reduce:transition-none"
-          style={{ transform: `translateX(-${current * 100}%)` }}
-        >
-          {items.map((item, i) => (
-            <div
-              key={getKey(item)}
-              role="group"
-              aria-roledescription="slide"
-              aria-label={`${i + 1} of ${count}`}
-              aria-hidden={i !== current}
-              inert={i !== current}
-              className="w-full shrink-0"
-            >
-              {renderItem(item)}
-            </div>
-          ))}
-        </div>
+      <div
+        className="flex h-full transition-transform duration-500 ease-out motion-reduce:transition-none"
+        style={{ transform: `translateX(-${current * 100}%)` }}
+      >
+        {items.map((item, i) => (
+          <div
+            key={getKey(item)}
+            role="group"
+            aria-roledescription="slide"
+            aria-label={`${i + 1} of ${count}`}
+            aria-hidden={i !== current}
+            inert={i !== current}
+            className="w-full shrink-0"
+          >
+            {renderItem(item)}
+          </div>
+        ))}
       </div>
 
+      {/* The controls sit over the slides - slides with text keep clear of
+          them with SLIDE_PADDING. */}
       {count > 1 && (
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-1.5">
+        <>
+          <button
+            type="button"
+            onClick={() => step(-1)}
+            aria-label="Previous"
+            className={`absolute top-1/2 left-2 -translate-y-1/2 sm:left-3 ${CONTROL_CLASS}`}
+          >
+            <ArrowIcon direction="previous" />
+          </button>
+          <button
+            type="button"
+            onClick={() => step(1)}
+            aria-label="Next"
+            className={`absolute top-1/2 right-2 -translate-y-1/2 sm:right-3 ${CONTROL_CLASS}`}
+          >
+            <ArrowIcon direction="next" />
+          </button>
+          {/* The faint outline keeps the white dots visible on light slides too. */}
+          <div className="absolute bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-1.5">
             {items.map((item, i) => (
               <button
                 key={getKey(item)}
@@ -95,29 +117,13 @@ export default function Carousel<T>({
                 onClick={() => setIndex(i)}
                 aria-label={`Show ${i + 1} of ${count}`}
                 aria-current={i === current}
-                className={`h-2 rounded-full transition-all ${i === current ? "w-6 bg-primary" : "w-2 bg-neutral-300"}`}
+                className={`h-2 rounded-full shadow-sm ring-1 ring-black/15 transition-all ${
+                  i === current ? "w-6 bg-white" : "w-2 bg-white/60 hover:bg-white/90"
+                }`}
               />
             ))}
           </div>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => step(-1)}
-              aria-label="Previous"
-              className={CONTROL_CLASS}
-            >
-              <ArrowIcon direction="previous" />
-            </button>
-            <button
-              type="button"
-              onClick={() => step(1)}
-              aria-label="Next"
-              className={CONTROL_CLASS}
-            >
-              <ArrowIcon direction="next" />
-            </button>
-          </div>
-        </div>
+        </>
       )}
     </section>
   );

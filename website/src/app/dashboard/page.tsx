@@ -1,17 +1,15 @@
 "use client";
 
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
-import Link from "next/link";
 import AccessNotice from "@/components/AccessNotice";
 import AnnouncementDetails, { EyeIcon } from "@/components/AnnouncementDetails";
 import { LikeButton, useToggleLike } from "@/components/AnnouncementLike";
-import { GradeTag, Person, Placeholder } from "@/components/ClimbCards";
-import ClimbColour from "@/components/ClimbColour";
-import { type Announcement, formatDateTime, formatShortDate } from "@/lib/announcements";
-import { type Climb, CLIMB_TYPES, climbHref, formatDate, ratingStars } from "@/lib/climbs";
+import { ClimbBox, RecentComment } from "@/components/ClimbActivity";
+import { Person, Placeholder } from "@/components/ClimbCards";
+import { type Announcement, formatShortDate } from "@/lib/announcements";
+import { type Climb, formatDate } from "@/lib/climbs";
 import {
   type Dashboard,
-  type DashboardComment,
   type DashboardMetrics,
   type DashboardUpdate,
   favouriteLineLabel,
@@ -65,22 +63,6 @@ function PostedAt({ at }: { at: string }) {
   );
 }
 
-// The climb's colour, where it is and its grade, as a small box linking to it.
-function ClimbBox({ climb }: { climb: Climb }) {
-  return (
-    <Link
-      href={climbHref(climb.id)}
-      className="flex items-center justify-between gap-3 rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm font-medium text-neutral-800 transition-colors hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-secondary"
-    >
-      <ClimbColour climb={climb} />
-      <span className="flex shrink-0 items-center gap-2 text-xs text-neutral-500">
-        {climb.line === undefined ? CLIMB_TYPES[climb.type] : `Line ${climb.line}`}
-        <GradeTag grade={climb.grade} />
-      </span>
-    </Link>
-  );
-}
-
 function UpdateItem({
   update,
   onToggleLike,
@@ -97,8 +79,11 @@ function UpdateItem({
           <PostedAt at={update.at} />
         </div>
         <AnnouncementDetails announcement={announcement} />
-        <div className="flex items-center justify-between text-xs text-neutral-500">
-          <span>Posted by @{announcement.author}</span>
+        <div className="flex items-center justify-between gap-4 text-xs text-neutral-500">
+          <span className="flex min-w-0 items-center gap-1.5">
+            <span className="shrink-0">Posted by</span>
+            <Person person={{ userID: announcement.userID, username: announcement.author }} />
+          </span>
           <span className="flex items-center gap-4 tabular-nums">
             <LikeButton announcement={announcement} canLike onToggle={onToggleLike} />
             <span className="flex items-center gap-1" title="Views">
@@ -225,41 +210,6 @@ function ClimbingPanel({ metrics, latestSendClimb }: { metrics: DashboardMetrics
         </div>
       </dl>
     </>
-  );
-}
-
-function RecentComment({ comment, climb }: DashboardComment) {
-  return (
-    <div className="flex flex-col gap-1.5 py-3 last:pb-0">
-      <div className="flex items-center justify-between gap-4 text-xs text-neutral-500">
-        {climb ? (
-          <Link href={climbHref(climb.id)} className="flex min-w-0 items-center gap-1.5 font-medium text-neutral-700 hover:text-primary">
-            <ClimbColour climb={climb} />
-            {climb.line !== undefined && <span className="shrink-0">· Line {climb.line}</span>}
-          </Link>
-        ) : (
-          <span>That climb is gone now</span>
-        )}
-        {/* With the time, as several in a day would otherwise look the same. */}
-        <time dateTime={comment.commentedAt} className="shrink-0">
-          {formatDateTime(comment.commentedAt)}
-        </time>
-      </div>
-      <p className="whitespace-pre-line break-words text-sm text-neutral-700">{comment.comment}</p>
-      {(comment.send || comment.grade || comment.rating !== undefined) && (
-        <div className="flex flex-wrap gap-2 text-xs">
-          {comment.send && <span className="rounded bg-green-100 px-1.5 py-0.5 font-semibold text-green-700">Sent</span>}
-          {comment.grade && (
-            <span className="rounded bg-secondary/15 px-1.5 py-0.5 font-medium text-primary">Graded {comment.grade}</span>
-          )}
-          {comment.rating !== undefined && (
-            <span className="rounded bg-neutral-100 px-1.5 py-0.5 font-medium text-neutral-600">
-              ★ {ratingStars(comment.rating).toFixed(1)}
-            </span>
-          )}
-        </div>
-      )}
-    </div>
   );
 }
 

@@ -5,6 +5,7 @@ import { Fragment, type ReactNode, useEffect, useId, useMemo, useState } from "r
 import AnnouncementActions from "@/components/AnnouncementActions";
 import AnnouncementDetails from "@/components/AnnouncementDetails";
 import { FIELD_CLASS } from "@/components/ClimbForm";
+import ProfileLink from "@/components/ProfileLink";
 import { type AdminSection, adminSubpageHref } from "@/lib/adminSections";
 import {
   type Announcement,
@@ -143,7 +144,7 @@ const COLUMNS: Column[] = [
     key: "author",
     label: "Posted by",
     value: (announcement) => announcement.author.toLowerCase(),
-    cell: (announcement) => `@${announcement.author}`,
+    cell: (announcement) => <ProfileLink username={announcement.author} />,
     cellClassName: "whitespace-nowrap text-neutral-500",
   },
 ];

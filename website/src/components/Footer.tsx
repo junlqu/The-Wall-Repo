@@ -55,9 +55,14 @@ export default function Footer() {
         </nav>
       </div>
 
-      <div className="border-t border-secondary/20">
-        <p className="px-4 py-5 text-center text-xs text-white/60 sm:px-6 lg:px-8">
+      {/* The version sits under the copyright on a phone, and in the bottom
+          right corner from sm up. */}
+      <div className="relative flex flex-col items-center gap-1 border-t border-secondary/20 px-4 py-5 text-xs sm:px-6 lg:px-8">
+        <p className="text-center text-white/60">
           &copy; {new Date().getFullYear()} TPASC Climbing Wall Community. All rights reserved.
+        </p>
+        <p className="text-white/40 tabular-nums sm:absolute sm:right-6 sm:bottom-5 lg:right-8">
+          v{process.env.NEXT_PUBLIC_APP_VERSION}
         </p>
       </div>
     </footer>

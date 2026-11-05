@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { ArrowIcon, Grade, lineLabel } from "@/components/AnnouncementClimbPicker";
 import ClimbColour from "@/components/ClimbColour";
-import { type Announcement, COTW_SECTIONS, SET_KINDS } from "@/lib/announcements";
+import { type Announcement, type AnnouncementClimb, type ClimbChange, COTW_SECTIONS, SET_KINDS } from "@/lib/announcements";
 import { climbHref } from "@/lib/climbs";
+import { BOULDER_GRADES } from "@/lib/grades";
 
 const HEADING_CLASS = "text-xs font-semibold uppercase tracking-wide";
 const TEXT_CLASS = "whitespace-pre-line text-sm";
@@ -38,15 +39,42 @@ function Section({ heading, text, onDark }: { heading: string; text: string; onD
   );
 }
 
-function ClimbList({ announcement, onDark }: { announcement: Announcement; onDark: boolean }) {
-  const { setKind, climbs = [] } = announcement.content;
-  const isReplaced = setKind === "replaced";
+// Where a boulder's grade sits, easiest first. New and unknown grades go last.
+function boulderRank(grade: string) {
+  const index = BOULDER_GRADES.indexOf(grade);
+  return index === -1 ? BOULDER_GRADES.length : index;
+}
+
+// Routes by line, then boulders by grade.
+function announcementOrder(a: AnnouncementClimb, b: AnnouncementClimb) {
+  const routesFirst = Number(a.line === undefined) - Number(b.line === undefined);
+  if (routesFirst) return routesFirst;
+  const byPlace = a.line === undefined ? boulderRank(a.grade) - boulderRank(b.grade) : a.line - b.line!;
+  return byPlace || a.colour.localeCompare(b.colour);
+}
+
+const CHANGE_LABELS: Record<ClimbChange, string> = { down: "Taken down", up: "Put up" };
+
+// Climbs under one heading. Replaced climbs (`change`) are marked with which way
+// they went.
+function ClimbList({
+  heading,
+  climbs,
+  change,
+  onDark,
+}: {
+  heading: string;
+  climbs: AnnouncementClimb[];
+  change?: ClimbChange;
+  onDark: boolean;
+}) {
+  const isReplaced = change !== undefined;
 
   return (
     <div className="flex flex-col gap-1">
-      <h4 className={tones(onDark).heading}>{setKind ? SET_KINDS[setKind].label : "Climbs"}</h4>
+      <h4 className={tones(onDark).heading}>{heading}</h4>
       <ul className="flex flex-col divide-y divide-neutral-100 overflow-hidden rounded-md border border-neutral-200 bg-white text-sm text-neutral-700">
-        {climbs.map((climb) => (
+        {[...climbs].sort(announcementOrder).map((climb) => (
           <li key={climb.routeID}>
             <Link
               href={climbHref(climb.routeID)}
@@ -55,12 +83,9 @@ function ClimbList({ announcement, onDark }: { announcement: Announcement; onDar
               }`}
             >
               {isReplaced ? (
-                <span
-                  title={climb.change === "down" ? "Taken down" : "Put up"}
-                  className={climb.change === "down" ? "text-red-600" : "text-green-600"}
-                >
-                  <ArrowIcon direction={climb.change ?? "up"} />
-                  <span className="sr-only">{climb.change === "down" ? "Taken down" : "Put up"}</span>
+                <span title={CHANGE_LABELS[change]} className={change === "down" ? "text-red-600" : "text-green-600"}>
+                  <ArrowIcon direction={change} />
+                  <span className="sr-only">{CHANGE_LABELS[change]}</span>
                 </span>
               ) : (
                 <span className="hidden sm:block" />
@@ -81,6 +106,26 @@ function ClimbList({ announcement, onDark }: { announcement: Announcement; onDar
         ))}
       </ul>
     </div>
+  );
+}
+
+// A sets announcement's climbs. Replaced climbs are split in two: the ones taken
+// down, then the ones put up.
+function SetClimbs({ announcement, onDark }: { announcement: Announcement; onDark: boolean }) {
+  const { setKind, climbs = [] } = announcement.content;
+  if (setKind !== "replaced") {
+    return <ClimbList heading={setKind ? SET_KINDS[setKind].label : "Climbs"} climbs={climbs} onDark={onDark} />;
+  }
+
+  return (
+    <>
+      {(["down", "up"] as const).map((change) => {
+        const changed = climbs.filter((climb) => (climb.change ?? "up") === change);
+        return changed.length === 0 ? null : (
+          <ClimbList key={change} heading={CHANGE_LABELS[change]} climbs={changed} change={change} onDark={onDark} />
+        );
+      })}
+    </>
   );
 }
 
@@ -109,7 +154,7 @@ export default function AnnouncementDetails({
   return (
     <div className="flex max-w-3xl flex-col gap-4">
       {content.details && <p className={tones(onDark).text}>{content.details}</p>}
-      {announcement.type === "sets" && <ClimbList announcement={announcement} onDark={onDark} />}
+      {announcement.type === "sets" && <SetClimbs announcement={announcement} onDark={onDark} />}
     </div>
   );
 }

@@ -1,3 +1,4 @@
+import "./functions/account";
 import "./functions/announcementItem";
 import "./functions/announcements";
 import "./functions/archives";
@@ -9,6 +10,7 @@ import "./functions/authRegister";
 import "./functions/avatars";
 import "./functions/dashboard";
 import "./functions/health";
+import "./functions/profiles";
 import "./functions/routeActivity";
 import "./functions/routeComments";
 import "./functions/routeItem";

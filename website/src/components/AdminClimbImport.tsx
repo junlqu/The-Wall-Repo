@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import ClimbColour from "@/components/ClimbColour";
-import { CLIMB_TYPES, fetchClimbs, formatDate } from "@/lib/climbs";
+import { climbTypeLabel, fetchClimbs, formatDate } from "@/lib/climbs";
 import {
   type ClimbChange,
   ClimbImportError,
@@ -230,7 +230,7 @@ function Preview({
                       <td className="px-4 py-3">
                         <ClimbColour climb={climb} />
                       </td>
-                      <td className="px-4 py-3">{CLIMB_TYPES[climb.type]}</td>
+                      <td className="px-4 py-3">{climbTypeLabel(climb)}</td>
                       <td className="px-4 py-3">{climb.setter || <span className="text-neutral-400">—</span>}</td>
                       <td className="whitespace-nowrap px-4 py-3">{formatDate(climb.setAt)}</td>
                       <td className="px-4 py-3">{climb.status === "active" ? "Active" : "Past"}</td>

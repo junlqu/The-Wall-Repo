@@ -1,12 +1,19 @@
 "use client";
 
 import { type ReactNode, useEffect, useMemo, useState } from "react";
-import Carousel from "@/components/Carousel";
+import Carousel, { SLIDE_PADDING } from "@/components/Carousel";
 import InfoTip from "@/components/InfoTip";
 import { Kicker, Masthead, SectionRule } from "@/components/Masthead";
 import { formatShortDate } from "@/lib/announcements";
 import { parseDate } from "@/lib/climbs";
-import { type BookingSlot, type DayHours, fetchBookingSlots, WEEKLY_HOURS } from "@/lib/schedule";
+import {
+  BOOKING_URL,
+  type BookingSlot,
+  type DayHours,
+  fetchBookingSlots,
+  WAIVER_URL,
+  WEEKLY_HOURS,
+} from "@/lib/schedule";
 
 const DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const DAY_SHORT = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -53,10 +60,6 @@ function getActiveUpdates(updates: ScheduleUpdate[], now: Date): ScheduleUpdate[
 }
 
 const BELAY_TEST_NOTE = "The climber must pass or have passed a belay test at TPASC.";
-
-// Placeholder - replace with the real external booking system URL.
-const BOOKING_URL = "https://tpasc.ezfacility.com/";
-const WAIVER_URL = "https://waiver.smartwaiver.com/w/5b6064099948a/kiosk/";
 
 type PriceItem = {
   label: string;
@@ -224,7 +227,7 @@ function ClockIcon() {
 
 function UpdateSlide({ update }: { update: ScheduleUpdate }) {
   return (
-    <article className="flex h-full flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50 p-6 sm:p-8">
+    <article className={`flex h-full flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50 ${SLIDE_PADDING}`}>
       <div className="flex items-center justify-between gap-2">
         <Kicker className="text-amber-700">Schedule update</Kicker>
         <span className="text-xs font-semibold text-amber-800/70">{formatShortDate(parseDate(update.postedAt))}</span>

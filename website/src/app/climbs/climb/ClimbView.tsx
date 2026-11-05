@@ -21,10 +21,10 @@ import {
   type ClimbComment,
   type ClimbPerson,
   type ClimbType,
-  CLIMB_TYPES,
   climbColour,
   climbHref,
   climbSetters,
+  climbTypeLabel,
   deleteMyComment,
   fetchClimb,
   fetchClimbActivity,
@@ -142,7 +142,7 @@ function ColourCircle({ climb }: { climb: Climb }) {
 // its first ascent.
 function PostCard({ climb, lastSend }: { climb: Climb; lastSend: LastSend }) {
   const setters = climbSetters(climb);
-  const type = CLIMB_TYPES[climb.type];
+  const type = climbTypeLabel(climb);
   const initials = setters.length > 0 ? setters.map((name) => name[0]).join("").slice(0, 2).toUpperCase() : "?";
 
   let lastSender: ReactNode;

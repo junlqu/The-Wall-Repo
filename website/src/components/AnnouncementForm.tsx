@@ -301,7 +301,8 @@ function relevanceFrom(draft: AnnouncementDraft) {
 // Changes the type, resetting the priority to the new type's default and
 // dropping an end date the new type can't have. A new announcement's target
 // date starts as today, or blank where the type doesn't need one. Switching
-// to CotW also moves it to the next Friday, relevant through that Friday.
+// to CotW also moves it to the next Friday, relevant through that Friday, and
+// switching to sets starts it as replaced climbs.
 export function withType(draft: AnnouncementDraft, type: AnnouncementType): AnnouncementDraft {
   if (type === draft.type) return draft;
   const config = ANNOUNCEMENT_TYPES[type];
@@ -316,12 +317,16 @@ export function withType(draft: AnnouncementDraft, type: AnnouncementType): Anno
     targetDate,
     targetEndDate: config.range ? draft.targetEndDate : "",
   };
+  if (type === "sets") return changed.setKind ? changed : withSetKind(changed, DEFAULT_SET_KIND);
   if (type !== "cotw") return changed;
   const friday = upcomingFriday(targetDate || today);
   return { ...changed, targetDate: friday, relevance: relevantThrough(friday) };
 }
 
 const SET_KIND_TITLES: string[] = Object.values(SET_KINDS).map((kind) => kind.label);
+
+// Most sets announcements are about climbs coming down and going up together.
+const DEFAULT_SET_KIND: SetKind = "replaced";
 
 // Picks what a sets announcement is about. The title follows it while it's
 // blank or still another kind's default, and replaced climbs start as put up.

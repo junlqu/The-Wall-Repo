@@ -16,7 +16,10 @@ export type SentRoute = Pick<Route, "routeID" | "type" | "line" | "proposedGrade
 
 // Easiest to hardest. Mirrors website/src/lib/grades.ts - Dyno isn't a
 // difficulty, so it can't be anyone's hardest.
-const BOULDER_GRADES = ["VB", "V0-1", "V2-3", "V4-5", "V6-7", "V8-9", "V10+"];
+const BOULDER_GRADES = [
+  ...Array.from({ length: 10 }, (_, grade) => [`V${grade}`, `V${grade}/${grade + 1}`]).flat(),
+  "V10", "V10+",
+];
 
 // A route grade as a number to compare, so "5.10" (no letter, as people often
 // write it) sits between 5.10b and 5.10c. Null when it isn't one.

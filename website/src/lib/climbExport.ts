@@ -81,7 +81,9 @@ export function buildClimbRows(climbs: Climb[]): (ExportCell | undefined)[][] {
     put(row, COLUMN.setter, climb.setter);
   };
   const writeBoulder = (row: number, climb: Climb) => {
-    put(row, COLUMN.boulder, climb.tape ? `${climb.colour}/${climb.tape} Tape` : climb.colour);
+    // A buddy climb's two colours are written "Red & Blue".
+    const holds = climb.secondary ? `${climb.colour} & ${climb.secondary}` : climb.colour;
+    put(row, COLUMN.boulder, climb.tape ? `${holds}/${climb.tape} Tape` : holds);
     put(row, COLUMN.difficulty, climb.grade);
     put(row, COLUMN.boulderSetAt, date(climb.setAt));
     put(row, COLUMN.boulderSetter, climb.setter);
