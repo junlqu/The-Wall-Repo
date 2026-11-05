@@ -10,6 +10,7 @@ import "./functions/authRegister";
 import "./functions/avatars";
 import "./functions/dashboard";
 import "./functions/health";
+import "./functions/profiles";
 import "./functions/routeActivity";
 import "./functions/routeComments";
 import "./functions/routeItem";
