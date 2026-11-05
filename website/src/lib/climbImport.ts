@@ -228,9 +228,11 @@ export function readClimbSheet(rows: Cell[][]): { climbs: ImportedClimb[]; skipp
       const name = text(row[columns.name]);
       if (!name || label(row[columns.name]) === "boulder problems") continue;
 
-      // "Blue/Light Brown Tape" is blue holds marked with light brown tape.
+      // "Blue/Light Brown Tape" is blue holds marked with light brown tape, and
+      // "Red & Blue" is a buddy climb with a colour for each climber.
       const [holds, ...tapeParts] = name.split("/");
       const tape = tapeParts.join("/").replace(/\s*tape$/i, "").trim();
+      const [colour, secondary] = holds.split("&").map((part) => normaliseColour(part.trim()));
       const warnings: string[] = [];
       const grade = columns.difficulty === -1 ? "" : text(row[columns.difficulty]);
       if (!grade) warnings.push("No grade");
@@ -238,7 +240,8 @@ export function readClimbSheet(rows: Cell[][]): { climbs: ImportedClimb[]; skipp
         row: index + 1,
         type: "boulder",
         status,
-        colour: normaliseColour(holds.trim()),
+        colour,
+        secondary: secondary || undefined,
         tape: tape || undefined,
         grade,
         setter: columns.setter === -1 ? "" : text(row[columns.setter]),

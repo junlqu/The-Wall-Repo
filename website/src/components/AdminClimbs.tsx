@@ -11,6 +11,7 @@ import {
   CLIMB_TYPES,
   type Climb,
   climbColour,
+  climbTypeLabel,
   fetchClimbs,
   formatDate,
   LEADABLE,
@@ -90,7 +91,7 @@ const COLUMNS: Column[] = [
     key: "type",
     label: "Type",
     value: (climb) => Object.keys(CLIMB_TYPES).indexOf(climb.type),
-    cell: (climb) => CLIMB_TYPES[climb.type],
+    cell: (climb) => climbTypeLabel(climb),
   },
   { key: "setter", label: "Setter", value: (climb) => climb.setter, cell: (climb) => climb.setter },
   {

@@ -8,7 +8,7 @@ import { LikeButton, useToggleLike } from "@/components/AnnouncementLike";
 import { GradeTag, Person, Placeholder } from "@/components/ClimbCards";
 import ClimbColour from "@/components/ClimbColour";
 import { type Announcement, formatDateTime, formatShortDate } from "@/lib/announcements";
-import { type Climb, CLIMB_TYPES, climbHref, formatDate, ratingStars } from "@/lib/climbs";
+import { type Climb, climbHref, climbTypeLabel, formatDate, ratingStars } from "@/lib/climbs";
 import {
   type Dashboard,
   type DashboardComment,
@@ -74,7 +74,7 @@ function ClimbBox({ climb }: { climb: Climb }) {
     >
       <ClimbColour climb={climb} />
       <span className="flex shrink-0 items-center gap-2 text-xs text-neutral-500">
-        {climb.line === undefined ? CLIMB_TYPES[climb.type] : `Line ${climb.line}`}
+        {climb.line === undefined ? climbTypeLabel(climb) : `Line ${climb.line}`}
         <GradeTag grade={climb.grade} />
       </span>
     </Link>

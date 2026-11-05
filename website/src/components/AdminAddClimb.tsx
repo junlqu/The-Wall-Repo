@@ -4,15 +4,19 @@ import Link from "next/link";
 import { type FormEvent, type ReactNode, useEffect, useId, useState } from "react";
 import ClimbColour from "@/components/ClimbColour";
 import {
+  BOULDER_GRADE_OPTIONS,
   ErrorMessage,
   FIELD_CLASS,
   LABEL_CLASS,
   ListSelect,
   PRIMARY_BUTTON_CLASS,
   ROUTE_GRADE_OPTIONS,
+  TapeInput,
   useRequest,
 } from "@/components/ClimbForm";
+import TabBar from "@/components/TabBar";
 import {
+  BUDDY_CLIMB,
   CLIMB_COLOURS,
   type Climb,
   type ClimbDetails,
@@ -26,11 +30,11 @@ import {
   SETTERS,
   todayDate,
 } from "@/lib/climbs";
-import { BOULDER_GRADES, NEW_GRADE, ROUTE_GRADES } from "@/lib/grades";
+import { NEW_GRADE, ROUTE_GRADES } from "@/lib/grades";
 
 const TYPE_OPTIONS: { id: ClimbType; label: string; description: string }[] = [
   { id: "route", label: "Route", description: "One colour, set on a line." },
-  { id: "boulder", label: "Boulder", description: "A problem marked by its holds and tape." },
+  { id: "boulder", label: "Boulder", description: "A problem marked by its holds and tape, or a buddy climb." },
   { id: "combo", label: "Combo", description: "Two active routes on a line, one per hand." },
 ];
 
@@ -71,7 +75,6 @@ function SharedFields({
   leadable: Leadable;
   setLeadable: (leadable: Leadable) => void;
 }) {
-  const gradeListId = useId();
   const setterListId = useId();
   // Combos aren't set, so these two fields hold their first ascent.
   const isCombo = type === "combo";
@@ -80,33 +83,13 @@ function SharedFields({
     <>
       <label className={LABEL_CLASS}>
         Grade
-        {type === "boulder" ? (
-          // The boulder scale doesn't match the wall's grades yet, so it's
-          // only suggested.
-          <>
-            <input
-              required
-              value={grade}
-              onChange={(event) => setGrade(event.target.value)}
-              list={gradeListId}
-              maxLength={128}
-              className={FIELD_CLASS}
-            />
-            <datalist id={gradeListId}>
-              {[NEW_GRADE, ...BOULDER_GRADES].map((option) => (
-                <option key={option} value={option} />
-              ))}
-            </datalist>
-          </>
-        ) : (
-          <ListSelect
-            options={isCombo ? ROUTE_GRADES : ROUTE_GRADE_OPTIONS}
-            required
-            value={grade}
-            onChange={setGrade}
-            emptyLabel="Choose a grade"
-          />
-        )}
+        <ListSelect
+          options={type === "boulder" ? BOULDER_GRADE_OPTIONS : isCombo ? ROUTE_GRADES : ROUTE_GRADE_OPTIONS}
+          required
+          value={grade}
+          onChange={setGrade}
+          emptyLabel="Choose a grade"
+        />
       </label>
       {type !== "boulder" && (
         <label className={LABEL_CLASS}>
@@ -170,6 +153,9 @@ function DetailsForm({
 }) {
   const [line, setLine] = useState("");
   const [colour, setColour] = useState("");
+  // A buddy climb is a boulder with a second colour, one for each climber.
+  const [isBuddy, setIsBuddy] = useState(false);
+  const [buddyColour, setBuddyColour] = useState("");
   const [tape, setTape] = useState("");
   const [leftId, setLeftId] = useState("");
   const [rightId, setRightId] = useState("");
@@ -191,8 +177,8 @@ function DetailsForm({
     const details: ClimbDetails = {
       type,
       colour: type === "combo" ? left!.colour : colour,
-      secondary: type === "combo" ? right!.colour : undefined,
-      tape: type === "boulder" && tape ? tape : undefined,
+      secondary: type === "combo" ? right!.colour : type === "boulder" && isBuddy ? buddyColour : undefined,
+      tape: type === "boulder" && tape.trim() ? tape.trim() : undefined,
       line: type === "boulder" ? undefined : Number(line),
       grade,
       setter: setter.trim(),
@@ -256,13 +242,37 @@ function DetailsForm({
   } else if (type === "boulder") {
     fields = (
       <>
+        {/* Buddy climbs are set a couple of times a year, so the switch stays small. */}
+        <div className="w-fit sm:col-span-2">
+          <TabBar
+            label="Kind of boulder"
+            tabs={[
+              { id: "boulder", label: "Boulder" },
+              { id: "buddy", label: BUDDY_CLIMB },
+            ]}
+            active={isBuddy ? "buddy" : "boulder"}
+            onChange={(id) => setIsBuddy(id === "buddy")}
+          />
+        </div>
         <label className={LABEL_CLASS}>
-          Hold colour
+          {isBuddy ? "First climber's colour" : "Hold colour"}
           <ListSelect options={CLIMB_COLOURS} required value={colour} onChange={setColour} emptyLabel="Choose a colour" />
         </label>
+        {isBuddy && (
+          <label className={LABEL_CLASS}>
+            Second climber&apos;s colour
+            <ListSelect
+              options={CLIMB_COLOURS}
+              required
+              value={buddyColour}
+              onChange={setBuddyColour}
+              emptyLabel="Choose a colour"
+            />
+          </label>
+        )}
         <label className={LABEL_CLASS}>
           Tape
-          <ListSelect options={CLIMB_COLOURS} value={tape} onChange={setTape} emptyLabel="No tape" />
+          <TapeInput value={tape} onChange={setTape} />
         </label>
         {shared}
       </>
@@ -341,7 +351,7 @@ function DetailsForm({
       {(type !== "combo" || (left && right)) && (
         <div className="flex justify-end">
           <button type="submit" disabled={busy} className={PRIMARY_BUTTON_CLASS}>
-            {busy ? "Adding…" : `Add ${type}`}
+            {busy ? "Adding…" : `Add ${isBuddy ? BUDDY_CLIMB.toLowerCase() : type}`}
           </button>
         </div>
       )}

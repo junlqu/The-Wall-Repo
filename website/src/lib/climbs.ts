@@ -5,6 +5,19 @@ import { adminRequest, apiUrl } from "@/lib/api";
 export const CLIMB_TYPES = { route: "Route", boulder: "Boulder", combo: "Combo" } as const;
 export type ClimbType = keyof typeof CLIMB_TYPES;
 
+// Buddy climbs are stored as boulders with a second hold colour, so they share
+// the boulder pages, grades and charts.
+export const BUDDY_CLIMB = "Buddy climb";
+
+export function isBuddyClimb(climb: Pick<Climb, "type" | "secondary">) {
+  return climb.type === "boulder" && Boolean(climb.secondary);
+}
+
+// What kind of climb it is, as shown to people.
+export function climbTypeLabel(climb: Pick<Climb, "type" | "secondary">) {
+  return isBuddyClimb(climb) ? BUDDY_CLIMB : CLIMB_TYPES[climb.type];
+}
+
 export const LEADABLE = ["Yes", "Sketch", "No", "?"] as const;
 export type Leadable = (typeof LEADABLE)[number];
 
@@ -17,7 +30,8 @@ export type Climb = {
   type: ClimbType;
   status: ClimbStatus;
   colour: string;
-  // Combos only - one colour per hand, so the climb is `colour` / `secondary`.
+  // Combos have one colour per hand, so the climb is `colour` / `secondary`. A
+  // boulder with a second colour is a buddy climb, one colour per climber.
   secondary?: string;
   // Boulders only.
   tape?: string;
@@ -365,7 +379,7 @@ export function climbColour(climb: Pick<Climb, "colour" | "secondary">) {
 // How a climb is named in messages, e.g. "Blue 5.10a on line 1".
 export function climbName(climb: Climb) {
   const where = climb.line === undefined ? "" : ` on line ${climb.line}`;
-  return `${climbColour(climb)} ${climb.grade || CLIMB_TYPES[climb.type].toLowerCase()}${where}`;
+  return `${climbColour(climb)} ${climb.grade || climbTypeLabel(climb).toLowerCase()}${where}`;
 }
 
 // Parse as a local date so "2026-06-12" doesn't shift a day in UTC-minus zones.

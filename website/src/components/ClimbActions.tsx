@@ -5,11 +5,11 @@ import { ComboHandRoute } from "@/components/ClimbCards";
 import {
   archiveClimb,
   CLIMB_COLOURS,
-  CLIMB_TYPES,
   type Climb,
   type ClimbDeletion,
   type ClimbDetails,
   climbName,
+  climbTypeLabel,
   COMBO_LINE_REACH,
   deleteClimb,
   fetchClimbDeletion,
@@ -21,6 +21,7 @@ import {
   updateClimb,
 } from "@/lib/climbs";
 import {
+  BOULDER_GRADE_OPTIONS,
   CANCEL_BUTTON_CLASS,
   ErrorMessage,
   FIELD_CLASS,
@@ -28,9 +29,10 @@ import {
   ListSelect,
   PRIMARY_BUTTON_CLASS,
   ROUTE_GRADE_OPTIONS,
+  TapeInput,
   useRequest,
 } from "@/components/ClimbForm";
-import { BOULDER_GRADES, NEW_GRADE, ROUTE_GRADES } from "@/lib/grades";
+import { ROUTE_GRADES } from "@/lib/grades";
 
 // Rough height of the open menu, used to open it upwards near the bottom of
 // the screen instead of off the edge.
@@ -240,6 +242,8 @@ export function SidePanel({ title, busy = false, onClose, children }: ModalProps
 function EditDialog({ climb, onClose, onSaved }: { climb: Climb; onClose: () => void; onSaved: (climb: Climb) => void }) {
   // A climb's type is fixed once it's set, so it's shown but not editable.
   const { type, hands } = climb;
+  // Combos and buddy climbs have two colours.
+  const hasSecondary = type === "combo" || Boolean(climb.secondary);
   // A combo can only be on a line both its hands reach.
   const lines = hands
     ? LINES.filter(
@@ -257,14 +261,13 @@ function EditDialog({ climb, onClose, onSaved }: { climb: Climb; onClose: () => 
   const [setAt, setSetAt] = useState(climb.setAt);
   const [leadable, setLeadable] = useState<Leadable>(climb.leadable);
   const { busy, error, run } = useRequest();
-  const gradeListId = useId();
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
     const details: ClimbDetails = {
       type,
       colour: colour.trim(),
-      secondary: type === "combo" && secondary.trim() ? secondary.trim() : undefined,
+      secondary: hasSecondary && secondary.trim() ? secondary.trim() : undefined,
       tape: type === "boulder" && tape.trim() ? tape.trim() : undefined,
       line: type === "boulder" ? undefined : line,
       grade: grade.trim(),
@@ -283,7 +286,7 @@ function EditDialog({ climb, onClose, onSaved }: { climb: Climb; onClose: () => 
             <div className={LABEL_CLASS}>
               Type
               <p className="rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm font-normal normal-case tracking-normal text-neutral-600">
-                {CLIMB_TYPES[type]}
+                {climbTypeLabel(climb)}
               </p>
             </div>
             {type !== "boulder" && (
@@ -300,32 +303,13 @@ function EditDialog({ climb, onClose, onSaved }: { climb: Climb; onClose: () => 
             )}
             <label className={LABEL_CLASS}>
               Grade
-              {type === "boulder" ? (
-                // The boulder scale doesn't match the wall's grades yet, so it's
-                // only suggested.
-                <>
-                  <input
-                    value={grade}
-                    onChange={(event) => setGrade(event.target.value)}
-                    list={gradeListId}
-                    maxLength={128}
-                    className={FIELD_CLASS}
-                  />
-                  <datalist id={gradeListId}>
-                    {[NEW_GRADE, ...BOULDER_GRADES].map((option) => (
-                      <option key={option} value={option} />
-                    ))}
-                  </datalist>
-                </>
-              ) : (
-                <ListSelect
-                  options={type === "combo" ? ROUTE_GRADES : ROUTE_GRADE_OPTIONS}
-                  required
-                  value={grade}
-                  onChange={setGrade}
-                  emptyLabel="Choose a grade"
-                />
-              )}
+              <ListSelect
+                options={type === "boulder" ? BOULDER_GRADE_OPTIONS : type === "combo" ? ROUTE_GRADES : ROUTE_GRADE_OPTIONS}
+                required
+                value={grade}
+                onChange={setGrade}
+                emptyLabel="Choose a grade"
+              />
             </label>
             {hands ? (
               // A combo's colours come from its routes, so they're changed there.
@@ -347,7 +331,7 @@ function EditDialog({ climb, onClose, onSaved }: { climb: Climb; onClose: () => 
                   Colour
                   <ListSelect options={CLIMB_COLOURS} required value={colour} onChange={setColour} emptyLabel="Choose a colour" />
                 </label>
-                {type === "combo" && (
+                {hasSecondary && (
                   <label className={LABEL_CLASS}>
                     Second colour
                     <ListSelect options={CLIMB_COLOURS} required value={secondary} onChange={setSecondary} emptyLabel="Choose a colour" />
@@ -358,7 +342,7 @@ function EditDialog({ climb, onClose, onSaved }: { climb: Climb; onClose: () => 
             {type === "boulder" && (
               <label className={LABEL_CLASS}>
                 Tape
-                <ListSelect options={CLIMB_COLOURS} value={tape} onChange={setTape} emptyLabel="No tape" />
+                <TapeInput value={tape} onChange={setTape} />
               </label>
             )}
             <label className={LABEL_CLASS}>
@@ -501,7 +485,7 @@ function DeleteDialog({ climb, onClose, onDeleted }: { climb: Climb; onClose: ()
         <div className="flex flex-col gap-3 text-sm text-neutral-600">
           <p className="font-semibold text-neutral-800">This can&apos;t be undone. It permanently deletes:</p>
           <ul className="flex list-disc flex-col gap-1 pl-5">
-            <li>This {CLIMB_TYPES[climb.type].toLowerCase()}</li>
+            <li>This {climbTypeLabel(climb).toLowerCase()}</li>
             {reach.combos.length > 0 && (
               <li>
                 {count(reach.combos.length, "combo")} using it:

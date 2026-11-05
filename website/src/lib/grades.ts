@@ -10,9 +10,12 @@ export const ROUTE_GRADES = [
   "5.13a", "5.13b", "5.13c", "5.13d",
 ];
 
-// Boulders are graded in bands rather than single grades. Dyno isn't a
-// difficulty, so it sits after the hardest band.
-export const BOULDER_GRADES = ["VB", "V0-1", "V2-3", "V4-5", "V6-7", "V8-9", "V10+", "Dyno"];
+// Each V grade with the split between it and the next, e.g. V0, V0/1, V1, up
+// to V10 and V10+. Dyno isn't a difficulty, so it sits after the hardest.
+export const BOULDER_GRADES = [
+  ...Array.from({ length: 10 }, (_, grade) => [`V${grade}`, `V${grade}/${grade + 1}`]).flat(),
+  "V10", "V10+", "Dyno",
+];
 
 // A climb that's up but not graded yet. It isn't on either scale, so it's
 // left off the grade chart and sorts after every real grade.

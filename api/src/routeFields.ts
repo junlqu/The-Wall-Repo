@@ -34,7 +34,8 @@ export function readRouteFields(value: unknown): RouteFields | null {
   // Blank grades, setters and dates are allowed - old records are patchy.
   if (setAt !== "" && !isDate(setAt)) return null;
   if (tape !== undefined && (type !== "boulder" || !isFilledText(tape))) return null;
-  if (secondary !== undefined && (type !== "combo" || !isFilledText(secondary))) return null;
+  // Combos have a colour per hand; a boulder with two is a buddy climb.
+  if (secondary !== undefined && (type === "route" || !isFilledText(secondary))) return null;
   // Boulders aren't on a line; routes and combos must be.
   if (type === "boulder" ? line !== undefined : !ROUTE_LINES.includes(line as RouteLine)) return null;
 
