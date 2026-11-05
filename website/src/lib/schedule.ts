@@ -17,6 +17,10 @@ export const WEEKLY_HOURS: Record<number, DayHours> = {
   6: { open: "12:00 PM", close: "4:00 PM" },
 };
 
+// Placeholder - replace with the real external booking system URL.
+export const BOOKING_URL = "https://tpasc.ezfacility.com/";
+export const WAIVER_URL = "https://waiver.smartwaiver.com/w/5b6064099948a/kiosk/";
+
 export function parseTimeString(time: string): { hours: number; minutes: number } {
   const match = time.match(/(\d+):(\d+)\s*(AM|PM)/i);
   if (!match) return { hours: 0, minutes: 0 };
