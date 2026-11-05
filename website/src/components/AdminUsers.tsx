@@ -4,6 +4,7 @@ import Link from "next/link";
 import { type LiHTMLAttributes, type ReactNode, useEffect, useState } from "react";
 import { FIELD_CLASS } from "@/components/ClimbForm";
 import CountChart from "@/components/CountChart";
+import ProfileLink from "@/components/ProfileLink";
 import SlidingTabs from "@/components/SlidingTabs";
 import { type AdminSection, adminSubpageHref } from "@/lib/adminSections";
 import { avatarUrl } from "@/lib/avatar";
@@ -95,7 +96,9 @@ function Leaderboard({
               {leader ? (
                 <>
                   <Avatar user={leader} size="sm" />
-                  <span className="min-w-0 flex-1 truncate font-semibold text-neutral-700">@{leader.username}</span>
+                  <span className="min-w-0 flex-1 truncate">
+                    <ProfileLink username={leader.username} className="font-semibold text-neutral-700" />
+                  </span>
                   <span className="shrink-0 text-xs font-semibold text-primary">{plural(leader.count, unit)}</span>
                 </>
               ) : (
@@ -335,7 +338,9 @@ export function UserCard({
     >
       <Avatar user={user} size="md" />
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-semibold text-neutral-800">@{user.username}</p>
+        <p className="truncate text-sm font-semibold text-neutral-800">
+          <ProfileLink username={user.username} />
+        </p>
         <p className="truncate text-sm text-neutral-600">
           {user.fname} {user.lname}
         </p>

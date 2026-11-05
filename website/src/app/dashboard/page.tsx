@@ -79,8 +79,11 @@ function UpdateItem({
           <PostedAt at={update.at} />
         </div>
         <AnnouncementDetails announcement={announcement} />
-        <div className="flex items-center justify-between text-xs text-neutral-500">
-          <span>Posted by @{announcement.author}</span>
+        <div className="flex items-center justify-between gap-4 text-xs text-neutral-500">
+          <span className="flex min-w-0 items-center gap-1.5">
+            <span className="shrink-0">Posted by</span>
+            <Person person={{ userID: announcement.userID, username: announcement.author }} />
+          </span>
           <span className="flex items-center gap-4 tabular-nums">
             <LikeButton announcement={announcement} canLike onToggle={onToggleLike} />
             <span className="flex items-center gap-1" title="Views">

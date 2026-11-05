@@ -5,6 +5,7 @@ import AnnouncementDetails, { EyeIcon } from "@/components/AnnouncementDetails";
 import { LikeButton, useToggleLike } from "@/components/AnnouncementLike";
 import Carousel, { SLIDE_PADDING } from "@/components/Carousel";
 import { Kicker, Masthead, SectionRule } from "@/components/Masthead";
+import ProfileLink from "@/components/ProfileLink";
 import {
   type Announcement,
   ANNOUNCEMENT_TYPES,
@@ -140,9 +141,10 @@ function Byline({ announcement, now, light = false }: { announcement: Announceme
         className={`h-9 w-9 shrink-0 rounded-full object-cover ${light ? "ring-2 ring-white/30" : "ring-1 ring-neutral-200"}`}
       />
       <span className="flex min-w-0 flex-col leading-tight">
-        <span className={`truncate text-sm font-semibold ${light ? "text-white" : "text-neutral-900"}`}>
-          @{announcement.author}
-        </span>
+        <ProfileLink
+          username={announcement.author}
+          className={`truncate text-sm font-semibold ${light ? "text-white" : "text-neutral-900"}`}
+        />
         <time
           dateTime={announcement.announcedAt}
           title={formatDateTime(announcement.announcedAt)}
