@@ -1,19 +1,11 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from "@azure/functions";
+import { isValidPassword, PASSWORD_RULES_MESSAGE, readAccountDetails } from "../accountFields";
 import { getContainer } from "../cosmosClient";
 import { buildSessionCookie, corsHeaders, hashPassword, newUserId, signSessionToken, toSessionUser } from "../authUtils";
 import { getStarterAvatar } from "../avatarUtils";
 import { Avatar, AVATAR_CONTAINER } from "../models/Avatar";
 import { User, USER_CONTAINER, USER_LEVEL } from "../models/User";
 import { buildMetrics } from "../userMetrics";
-
-// Keep in sync with website/src/app/signup/page.tsx.
-const MAX_NAME_LENGTH = 128;
-const MAX_EMAIL_LENGTH = 512;
-// Digits only, up to 15 - the longest number E.164 allows.
-const PHONE_PATTERN = /^\d{1,15}$/;
-// Something before the @, and a "." with text either side somewhere after it.
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const PASSWORD_RULES = [/.{8,}/, /[A-Z]/, /[a-z]/, /[0-9]/];
 
 type RegisterBody = {
   fname?: string;
@@ -29,32 +21,15 @@ export async function authRegister(request: HttpRequest, context: InvocationCont
 
   try {
     const body = (await request.json()) as RegisterBody;
-    const fname = body.fname?.trim();
-    const lname = body.lname?.trim();
     const username = body.username?.trim().toLowerCase();
-    const email = body.email?.trim().toLowerCase() || undefined;
-    const phone = body.phone?.trim() || undefined;
-
-    if (!fname || !lname || !username) {
+    if (!username) {
       return { status: 400, headers, jsonBody: { error: "First name, last name, and username are required." } };
     }
-    if (fname.length > MAX_NAME_LENGTH || lname.length > MAX_NAME_LENGTH) {
-      return { status: 400, headers, jsonBody: { error: `Names must be ${MAX_NAME_LENGTH} characters or fewer.` } };
-    }
-    if (email && (email.length > MAX_EMAIL_LENGTH || !EMAIL_PATTERN.test(email))) {
-      return { status: 400, headers, jsonBody: { error: "Enter a valid email address." } };
-    }
-    if (phone && !PHONE_PATTERN.test(phone)) {
-      return { status: 400, headers, jsonBody: { error: "Phone number can only contain digits." } };
-    }
-    if (!body.password || !PASSWORD_RULES.every((rule) => rule.test(body.password!))) {
-      return {
-        status: 400,
-        headers,
-        jsonBody: {
-          error: "Password must be at least 8 characters with an uppercase letter, a lowercase letter, and a number.",
-        },
-      };
+    const details = readAccountDetails(body);
+    if ("error" in details) return { status: 400, headers, jsonBody: { error: details.error } };
+    const { fname, lname, email, phone } = details;
+    if (!isValidPassword(body.password)) {
+      return { status: 400, headers, jsonBody: { error: PASSWORD_RULES_MESSAGE } };
     }
 
     // Email and phone are optional, but must still be unique when provided.

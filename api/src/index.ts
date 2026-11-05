@@ -1,3 +1,4 @@
+import "./functions/account";
 import "./functions/announcementItem";
 import "./functions/announcements";
 import "./functions/archives";

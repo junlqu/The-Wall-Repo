@@ -21,29 +21,19 @@ export function preloadAvatar(user: Pick<SessionUser, "userID" | "avatarUpdatedA
   });
 }
 
-// Centre-crops the picked image to a square and shrinks it to 128x128, so
-// uploads stay a few KB no matter what the user picks.
-export async function resizeToAvatar(file: File): Promise<string> {
-  const bitmap = await createImageBitmap(file);
-  const side = Math.min(bitmap.width, bitmap.height);
+// A square of the source image, in its own pixels.
+export type AvatarCrop = { x: number; y: number; size: number };
+
+// Shrinks the chosen square of the image to 128x128, so uploads stay a few KB
+// no matter what the user picks.
+export function renderAvatar(image: CanvasImageSource, crop: AvatarCrop): string {
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = AVATAR_SIZE;
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Canvas not supported.");
 
   ctx.imageSmoothingQuality = "high";
-  ctx.drawImage(
-    bitmap,
-    (bitmap.width - side) / 2,
-    (bitmap.height - side) / 2,
-    side,
-    side,
-    0,
-    0,
-    AVATAR_SIZE,
-    AVATAR_SIZE,
-  );
-  bitmap.close();
+  ctx.drawImage(image, crop.x, crop.y, crop.size, crop.size, 0, 0, AVATAR_SIZE, AVATAR_SIZE);
 
   // Browsers that can't encode WebP silently return PNG instead - JPEG is smaller.
   const webp = canvas.toDataURL("image/webp", 0.85);
