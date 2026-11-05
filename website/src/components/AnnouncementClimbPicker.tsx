@@ -1,17 +1,27 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import ClimbColour from "@/components/ClimbColour";
 import { FIELD_CLASS, LABEL_CLASS } from "@/components/ClimbForm";
-import type { AnnouncementClimb, ClimbChange, SetKind } from "@/lib/announcements";
-import { type Climb, CLIMB_TYPES, climbColour, fetchClimbs } from "@/lib/climbs";
+import { addDays, type AnnouncementClimb, type ClimbChange, type SetKind } from "@/lib/announcements";
+import { type Climb, CLIMB_TYPES, climbColour, fetchClimbs, todayDate } from "@/lib/climbs";
 import { NEW_GRADE } from "@/lib/grades";
 
 const MAX_RESULTS = 30;
+// How far back a climb set or taken down counts as recent. Climbs taken down
+// longer ago can't be picked.
+const RECENT_DAYS = 7;
 const ROW_CLASS = "grid grid-cols-[4.5rem_minmax(0,1fr)_4rem] items-center gap-3";
 
-// Only climbs on the wall can be picked, so a replaced climb starts as put up.
+// Most climbs picked are on the wall, so a replaced climb starts as put up.
 export const DEFAULT_CHANGE: ClimbChange = "up";
+
+// Routes and boulders on the wall, and ones taken down in the last week. Combos
+// aren't set, so they're never announced.
+function isPickable(climb: Climb, since: string) {
+  if (climb.type === "combo") return false;
+  return climb.status === "active" || (climb.removedAt !== undefined && climb.removedAt >= since);
+}
 
 function toPicked(climb: Climb): AnnouncementClimb {
   return {
@@ -28,10 +38,27 @@ export function lineLabel(line?: number) {
   return line === undefined ? "Boulder" : `Line ${line}`;
 }
 
-// Ungraded new climbs at the very top, then by line.
-function pickerOrder(a: Climb, b: Climb) {
-  const newFirst = Number(b.grade === NEW_GRADE) - Number(a.grade === NEW_GRADE);
-  return newFirst || (a.line ?? 99) - (b.line ?? 99) || climbColour(a).localeCompare(climbColour(b));
+// What a sets announcement is most likely about: ungraded new climbs, and ones
+// set or taken down in the last week.
+function isRecent(climb: Climb, since: string) {
+  return climb.status === "past" || climb.grade === NEW_GRADE || climb.setAt >= since;
+}
+
+// Recent climbs at the top. Then climbs on the wall before ones taken down,
+// ungraded new climbs first, then by line.
+function pickerOrder(since: string) {
+  return (a: Climb, b: Climb) => {
+    const recentFirst = Number(isRecent(b, since)) - Number(isRecent(a, since));
+    const upFirst = Number(b.status === "active") - Number(a.status === "active");
+    const newFirst = Number(b.grade === NEW_GRADE) - Number(a.grade === NEW_GRADE);
+    return (
+      recentFirst ||
+      upFirst ||
+      newFirst ||
+      (a.line ?? 99) - (b.line ?? 99) ||
+      climbColour(a).localeCompare(climbColour(b))
+    );
+  };
 }
 
 // Ungraded new climbs stand out. Shared with the announcement details.
@@ -65,8 +92,9 @@ const CHANGE_OPTIONS: { id: ClimbChange; label: string; chosen: string; idle: st
   { id: "down", label: "Taken down", chosen: "bg-red-100 text-red-700 ring-1 ring-red-600/30", idle: "hover:text-red-700" },
 ];
 
-// Search the climbs on the wall and pick the ones a sets announcement is about. For
-// replaced climbs, each one also says whether it went up or came down.
+// Search the climbs on the wall, and the ones taken down in the last week, and pick
+// the ones a sets announcement is about. For replaced climbs, each one also says
+// whether it went up or came down - climbs already taken down start as down.
 export default function AnnouncementClimbPicker({
   kind,
   climbs,
@@ -76,34 +104,45 @@ export default function AnnouncementClimbPicker({
   climbs: AnnouncementClimb[];
   onChange: (climbs: AnnouncementClimb[]) => void;
 }) {
-  // The climbs on the wall. undefined while loading, null if they couldn't be
-  // loaded.
+  // The climbs that can be picked. undefined while loading, null if they
+  // couldn't be loaded.
   const [all, setAll] = useState<Climb[] | null>();
+  // The day a climb set or taken down since counts as recent.
+  const [since, setSince] = useState("");
   const [query, setQuery] = useState("");
   const isReplaced = kind === "replaced";
 
   useEffect(() => {
     fetchClimbs()
-      .then((loaded) => setAll(loaded.filter((climb) => climb.status === "active").sort(pickerOrder)))
+      .then((loaded) => {
+        const since = addDays(todayDate(), -RECENT_DAYS);
+        setSince(since);
+        setAll(loaded.filter((climb) => isPickable(climb, since)).sort(pickerOrder(since)));
+      })
       .catch(() => setAll(null));
   }, []);
 
-  // Every word typed has to match the climb's line, colour, grade or type.
+  // Every word typed has to match the climb's line, colour, grade or type, or
+  // "down" for climbs taken down.
   const results = useMemo(() => {
     const picked = new Set(climbs.map((climb) => climb.routeID));
     const words = query.toLowerCase().split(/\s+/).filter(Boolean);
     return (all ?? [])
       .filter((climb) => {
         if (picked.has(climb.id)) return false;
-        const text = `${lineLabel(climb.line)} ${climbColour(climb)} ${climb.grade} ${CLIMB_TYPES[climb.type]}`.toLowerCase();
+        const down = climb.status === "past" ? " taken down" : "";
+        const text = `${lineLabel(climb.line)} ${climbColour(climb)} ${climb.grade} ${CLIMB_TYPES[climb.type]}${down}`.toLowerCase();
         return words.every((word) => text.includes(word));
       })
       .slice(0, MAX_RESULTS);
   }, [all, climbs, query]);
 
+  // A climb already taken down is always marked down, so it stays down if the
+  // kind is switched to replaced later.
   const add = (climb: Climb) => {
     const picked = toPicked(climb);
-    onChange([...climbs, isReplaced ? { ...picked, change: DEFAULT_CHANGE } : picked]);
+    const change = climb.status === "past" ? "down" : isReplaced ? DEFAULT_CHANGE : undefined;
+    onChange([...climbs, change ? { ...picked, change } : picked]);
   };
   const setChange = (routeID: string, change: ClimbChange) =>
     onChange(climbs.map((climb) => (climb.routeID === routeID ? { ...climb, change } : climb)));
@@ -129,18 +168,31 @@ export default function AnnouncementClimbPicker({
           ) : results.length === 0 ? (
             <li className="px-3 py-4 text-center text-neutral-500">No climbs match.</li>
           ) : (
-            results.map((climb) => (
-              <li key={climb.id}>
-                <button
-                  type="button"
-                  onClick={() => add(climb)}
-                  className={`${ROW_CLASS} w-full px-3 py-2 text-left text-neutral-700 transition-colors hover:bg-secondary/10`}
-                >
-                  <span>{lineLabel(climb.line)}</span>
-                  <ClimbColour climb={climb} />
-                  <Grade grade={climb.grade} />
-                </button>
-              </li>
+            results.map((climb, index) => (
+              <Fragment key={climb.id}>
+                {/* A solid bar under the recent climbs. */}
+                {index > 0 && isRecent(results[index - 1], since) && !isRecent(climb, since) && (
+                  <li role="separator" className="h-1 bg-neutral-300" />
+                )}
+                <li>
+                  <button
+                    type="button"
+                    onClick={() => add(climb)}
+                    className={`${ROW_CLASS} w-full px-3 py-2 text-left text-neutral-700 transition-colors hover:bg-secondary/10`}
+                  >
+                    <span>{lineLabel(climb.line)}</span>
+                    <span className="flex min-w-0 items-center gap-2">
+                      <ClimbColour climb={climb} />
+                      {climb.status === "past" && (
+                        <span className="shrink-0 rounded bg-neutral-100 px-1.5 py-0.5 text-xs font-medium text-neutral-500">
+                          Down {climb.removedAt}
+                        </span>
+                      )}
+                    </span>
+                    <Grade grade={climb.grade} />
+                  </button>
+                </li>
+              </Fragment>
             ))
           )}
         </ul>
