@@ -13,7 +13,7 @@ export async function authLogin(request: HttpRequest, context: InvocationContext
 
   try {
     const body = (await request.json()) as LoginBody;
-    const identifier = body.identifier?.trim().toLowerCase();
+    const identifier = body.identifier?.trim();
     const password = body.password;
 
     if (!identifier || !password) {
@@ -23,8 +23,10 @@ export async function authLogin(request: HttpRequest, context: InvocationContext
     const container = getContainer(USER_CONTAINER);
     const { resources } = await container.items
       .query({
-        query:
-          "SELECT * FROM c WHERE c.email = @identifier OR c.username = @identifier OR c.phone = @identifier",
+        // Usernames are case-sensitive; emails aren't (sign-up stores them
+        // lowercased, but older or hand-made accounts can have capitals).
+        query: `SELECT * FROM c WHERE c.username = @identifier OR c.phone = @identifier
+          OR STRINGEQUALS(c.email, @identifier, true)`,
         parameters: [{ name: "@identifier", value: identifier }],
       })
       .fetchAll();
