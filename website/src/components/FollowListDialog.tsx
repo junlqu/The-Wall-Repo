@@ -24,7 +24,8 @@ function Highlighted({ text, search }: { text: string; search: string }) {
   );
 }
 
-// Their picture, name and username, linking to their profile.
+// Their picture, name and username, linking to their profile - marked when
+// they and the visitor follow each other.
 function FollowCard({ person, search }: { person: ListedFollow; search: string }) {
   return (
     <li>
@@ -48,6 +49,14 @@ function FollowCard({ person, search }: { person: ListedFollow; search: string }
             @<Highlighted text={person.username} search={search} />
           </span>
         </span>
+        {person.mutual && (
+          <span
+            title="You follow each other"
+            className="shrink-0 rounded-full bg-secondary/15 px-2 py-0.5 text-xs font-semibold text-primary"
+          >
+            Friend
+          </span>
+        )}
       </Link>
     </li>
   );

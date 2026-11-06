@@ -92,7 +92,7 @@ async function getFollowList(
       return { status: 403, headers, jsonBody: { error: "You can only see your own followers and follows." } };
     }
 
-    const users = list === "followers" ? await listFollowers(me.userID) : await listFollowing(me);
+    const users = list === "followers" ? await listFollowers(me) : await listFollowing(me);
     return { status: 200, headers, jsonBody: { users } };
   } catch (error) {
     context.error(`Failed to list ${list}`, error);

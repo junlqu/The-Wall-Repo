@@ -82,6 +82,8 @@ export type ListedFollow = {
   fname: string;
   lastInitial: string;
   avatarUpdatedAt?: string;
+  // Whether the two of them follow each other.
+  mutual: boolean;
 };
 
 // Everyone who follows the logged-in visitor, or who they follow, most recent

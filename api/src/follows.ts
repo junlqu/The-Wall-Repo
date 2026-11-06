@@ -101,47 +101,65 @@ export type ListedFollow = {
   fname: string;
   lastInitial: string;
   avatarUpdatedAt?: string;
+  // Whether the two of them follow each other.
+  mutual: boolean;
 };
 
-type FollowRow = Pick<User, "userID" | "username" | "fname" | "lname" | "avatarUpdatedAt"> & { followedAt: string };
+type FollowRow = Pick<User, "userID" | "username" | "fname" | "lname" | "avatarUpdatedAt"> & {
+  followedAt: string;
+  mutual: boolean;
+};
 
 function toListed(rows: FollowRow[]): ListedFollow[] {
   return rows
     .sort((a, b) => b.followedAt.localeCompare(a.followedAt))
-    .map(({ userID, username, fname, lname, avatarUpdatedAt }) => ({
+    .map(({ userID, username, fname, lname, avatarUpdatedAt, mutual }) => ({
       userID,
       username,
       fname,
       lastInitial: lname.trim().charAt(0).toUpperCase(),
       avatarUpdatedAt,
+      mutual,
     }));
 }
 
 // Everyone who follows them, most recently followed first.
-export async function listFollowers(userID: string): Promise<ListedFollow[]> {
+export async function listFollowers(user: Pick<User, "userID" | "following">): Promise<ListedFollow[]> {
   const { resources } = await getContainer(USER_CONTAINER)
-    .items.query<FollowRow>({
+    .items.query<Omit<FollowRow, "mutual">>({
       query: `SELECT c.userID, c.username, c.fname, c.lname, c.avatarUpdatedAt, f.followedAt
               FROM c JOIN f IN c.following WHERE f.userID = @userID`,
-      parameters: [{ name: "@userID", value: userID }],
+      parameters: [{ name: "@userID", value: user.userID }],
     })
     .fetchAll();
-  return toListed(resources);
+  const following = new Set(followingIDs(user));
+  return toListed(resources.map((person) => ({ ...person, mutual: following.has(person.userID) })));
 }
 
 // Everyone they follow whose account is still there, most recently followed
 // first.
-export async function listFollowing(user: Pick<User, "following">): Promise<ListedFollow[]> {
+export async function listFollowing(user: Pick<User, "userID" | "following">): Promise<ListedFollow[]> {
   const ids = followingIDs(user);
   if (ids.length === 0) return [];
 
   const { resources } = await getContainer(USER_CONTAINER)
-    .items.query<Omit<FollowRow, "followedAt">>({
-      query: `SELECT c.userID, c.username, c.fname, c.lname, c.avatarUpdatedAt FROM c
-              WHERE ARRAY_CONTAINS(@ids, c.userID) AND NOT IS_DEFINED(c.deletedAt)`,
-      parameters: [{ name: "@ids", value: ids }],
+    .items.query<Omit<FollowRow, "followedAt" | "mutual"> & { followsBack?: boolean }>({
+      query: `SELECT c.userID, c.username, c.fname, c.lname, c.avatarUpdatedAt,
+                ARRAY_CONTAINS(c.following, {"userID": @userID}, true) AS followsBack
+              FROM c WHERE ARRAY_CONTAINS(@ids, c.userID) AND NOT IS_DEFINED(c.deletedAt)`,
+      parameters: [
+        { name: "@ids", value: ids },
+        { name: "@userID", value: user.userID },
+      ],
     })
     .fetchAll();
   const since = new Map((user.following ?? []).map((follow) => [follow.userID, follow.followedAt]));
-  return toListed(resources.map((person) => ({ ...person, followedAt: since.get(person.userID) ?? "" })));
+  return toListed(
+    resources.map(({ followsBack, ...person }) => ({
+      ...person,
+      followedAt: since.get(person.userID) ?? "",
+      // Missing rather than false for anyone who follows nobody.
+      mutual: followsBack === true,
+    })),
+  );
 }
