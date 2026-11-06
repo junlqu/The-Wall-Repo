@@ -20,7 +20,8 @@ async function readByUsername(username: string): Promise<User | undefined> {
     .items.query<User>({
       // Ignoring case: sign-up lowercases usernames, but accounts made
       // before that - or by hand - can have capitals.
-      query: "SELECT * FROM c WHERE STRINGEQUALS(c.username, @username, true)",
+      // A deleted account's profile is gone, as if they'd never been.
+      query: "SELECT * FROM c WHERE STRINGEQUALS(c.username, @username, true) AND NOT IS_DEFINED(c.deletedAt)",
       parameters: [{ name: "@username", value: username }],
     })
     .fetchAll();

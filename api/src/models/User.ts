@@ -62,6 +62,11 @@ export type User = {
   level: UserLevel;
   // Accounts made before settings existed don't have it.
   settings?: UserSettings;
+  // ISO date and time they deleted their account. The document stays - with
+  // their details wiped by DELETE /account - so their comments and sends
+  // still have someone to point at, but nobody can log in as them or open
+  // their profile.
+  deletedAt?: string;
 };
 
 export function isUserLevel(value: unknown): value is UserLevel {

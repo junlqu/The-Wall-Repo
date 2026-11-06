@@ -1,6 +1,6 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from "@azure/functions";
 import { getContainer } from "../cosmosClient";
-import { buildSessionCookie, corsHeaders, readSessionUser, signSessionToken } from "../authUtils";
+import { buildSessionCookie, corsHeaders, readCurrentUser, signSessionToken, toSessionUser } from "../authUtils";
 import { decodeDataUrl, getStarterAvatar, isValidAvatarUpload } from "../avatarUtils";
 import { Avatar, AVATAR_CONTAINER } from "../models/Avatar";
 import { USER_CONTAINER } from "../models/User";
@@ -39,11 +39,13 @@ export async function putAvatar(request: HttpRequest, context: InvocationContext
   const userID = request.params.userID;
 
   try {
-    const session = readSessionUser(request);
-    if (!session) {
+    // Their account as it is now, not just their session - a deleted
+    // account's picture stays its starter.
+    const account = await readCurrentUser(request);
+    if (!account) {
       return { status: 401, headers, jsonBody: { error: "You need to be logged in." } };
     }
-    if (session.userID !== userID) {
+    if (account.userID !== userID) {
       return { status: 403, headers, jsonBody: { error: "You can only change your own picture." } };
     }
     if (Number(request.headers.get("content-length") ?? 0) > MAX_UPLOAD_BODY_BYTES) {
@@ -63,7 +65,7 @@ export async function putAvatar(request: HttpRequest, context: InvocationContext
       .patch([{ op: "set", path: "/avatarUpdatedAt", value: updatedAt }]);
 
     // The session token carries avatarUpdatedAt, so reissue it.
-    const user = { ...session, avatarUpdatedAt: updatedAt };
+    const user = toSessionUser({ ...account, avatarUpdatedAt: updatedAt });
     return {
       status: 200,
       headers,

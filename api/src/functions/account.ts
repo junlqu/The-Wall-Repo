@@ -1,6 +1,8 @@
+import { randomBytes } from "node:crypto";
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from "@azure/functions";
 import { isValidPassword, PASSWORD_RULES_MESSAGE, readAccountDetails } from "../accountFields";
 import {
+  buildClearedSessionCookie,
   buildSessionCookie,
   corsHeaders,
   hashPassword,
@@ -10,7 +12,9 @@ import {
   toSessionUser,
   verifyPassword,
 } from "../authUtils";
+import { getStarterAvatar } from "../avatarUtils";
 import { getContainer } from "../cosmosClient";
+import { Avatar, AVATAR_CONTAINER } from "../models/Avatar";
 import { User, USER_CONTAINER } from "../models/User";
 
 // The logged-in visitor's own account, for their profile page. Their username
@@ -56,7 +60,7 @@ export async function updateAccount(request: HttpRequest, context: InvocationCon
     if (!session) return { ...NOT_LOGGED_IN, headers };
     const item = getContainer(USER_CONTAINER).item(session.userID, session.userID);
     const { resource: user } = await item.read<User>();
-    if (!user) return { ...NOT_LOGGED_IN, headers };
+    if (!user || user.deletedAt) return { ...NOT_LOGGED_IN, headers };
 
     const details = readAccountDetails(await request.json().catch(() => null));
     if ("error" in details) return { status: 400, headers, jsonBody: { error: details.error } };
@@ -140,14 +144,71 @@ export async function changePassword(request: HttpRequest, context: InvocationCo
   }
 }
 
+// DELETE /account - needs their password. The account isn't removed but
+// emptied: everything that says who they were is wiped, so their comments and
+// sends stay put without naming them. Their username and name become pieces
+// of their userID, email and phone go, their password is swapped for one
+// nobody knows and their picture goes back to their starter. Their settings
+// stay, for recovering the account by hand. deletedAt then stops anyone
+// logging in as them or opening their profile.
+export async function deleteAccount(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
+  const headers = corsHeaders(request);
+
+  try {
+    const session = readSessionUser(request);
+    if (!session) return { ...NOT_LOGGED_IN, headers };
+    const item = getContainer(USER_CONTAINER).item(session.userID, session.userID);
+    const { resource: user } = await item.read<User>();
+    if (!user || user.deletedAt) return { ...NOT_LOGGED_IN, headers };
+
+    const { password } = ((await request.json().catch(() => null)) ?? {}) as { password?: unknown };
+    if (typeof password !== "string" || !(await verifyPassword(password, user.passwordHash))) {
+      return { status: 403, headers, jsonBody: { error: "Your password is incorrect." } };
+    }
+
+    // Their picture goes first: if the rest then fails they can try again,
+    // whereas a deleted account can't log back in to finish the job.
+    const now = new Date().toISOString();
+    const avatar: Avatar = { id: user.userID, userID: user.userID, avatar: getStarterAvatar(user.userID), updatedAt: now };
+    await getContainer(AVATAR_CONTAINER).items.upsert(avatar);
+
+    // 32 hex digits once the dashes are out.
+    const digits = user.userID.replace(/-/g, "");
+    const deleted: User = {
+      ...user,
+      username: digits.slice(0, 16),
+      fname: digits.slice(16, 20),
+      lname: digits.slice(20, 24),
+      // Left off the document, as a blank email or phone always is.
+      email: undefined,
+      phone: undefined,
+      passwordHash: await hashPassword(randomBytes(32).toString("hex")),
+      avatarUpdatedAt: now,
+      deletedAt: now,
+    };
+    // Only if nothing else changed the account since it was read, as in
+    // updateAccount.
+    await item.replace<User>(deleted, { accessCondition: { type: "IfMatch", condition: user._etag } });
+
+    return { status: 204, headers, cookies: [buildClearedSessionCookie()] };
+  } catch (error) {
+    if ((error as { code?: number }).code === 412) {
+      return { status: 409, headers, jsonBody: { error: "Your account changed while deleting - try again." } };
+    }
+    context.error("Failed to delete account", error);
+    return { status: 500, headers, jsonBody: { error: "Failed to delete your account." } };
+  }
+}
+
 app.http("account", {
-  methods: ["GET", "PUT", "OPTIONS"],
+  methods: ["GET", "PUT", "DELETE", "OPTIONS"],
   authLevel: "anonymous",
   route: "account",
   handler: async (request, context) => {
     if (request.method === "OPTIONS") {
       return { status: 204, headers: corsHeaders(request) };
     }
+    if (request.method === "DELETE") return deleteAccount(request, context);
     return request.method === "PUT" ? updateAccount(request, context) : getAccount(request, context);
   },
 });

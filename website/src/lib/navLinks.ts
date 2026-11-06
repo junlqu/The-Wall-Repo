@@ -1,4 +1,5 @@
 import { profileHref } from "@/lib/profiles";
+import { settingsHref } from "@/lib/settings";
 
 // Single source for the site navigation - the header and the footer both
 // build their tabs from these lists so the two never drift apart.
@@ -23,10 +24,10 @@ export const EXTRAS_LINKS: NavLink[] = [
 ];
 
 // Their own profile, as it shows by ?username=, and the page where they
-// change their details - /profile without a username.
+// change their details.
 export function accountLinks(username: string): NavLink[] {
   return [
     { label: "Profile", href: profileHref(username) },
-    { label: "Settings", href: "/profile" },
+    { label: "Settings", href: settingsHref() },
   ];
 }

@@ -76,14 +76,14 @@ export function readSessionUser(request: HttpRequest): SessionUser | null {
 }
 
 // The signed-in user's account as it is now, or null when there's no valid
-// session or the account is gone. The session token carries the level they
-// had when they logged in, so anything that hangs on their level reads this
-// instead - a promotion or demotion counts from their next request.
+// session or the account is gone or deleted. The session token carries the
+// level they had when they logged in, so anything that hangs on their level
+// reads this instead - a promotion or demotion counts from their next request.
 export async function readCurrentUser(request: HttpRequest): Promise<User | null> {
   const session = readSessionUser(request);
   if (!session) return null;
   const { resource } = await getContainer(USER_CONTAINER).item(session.userID, session.userID).read<User>();
-  return resource ?? null;
+  return resource && !resource.deletedAt ? resource : null;
 }
 
 // The 401/403 to send back when the request isn't from someone logged in who

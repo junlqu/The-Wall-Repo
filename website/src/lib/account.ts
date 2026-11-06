@@ -58,6 +58,12 @@ export async function changePassword(currentPassword: string, newPassword: strin
   await accountRequest("/account/password", { method: "PUT", body: JSON.stringify({ currentPassword, newPassword }) });
 }
 
+// Wipes their details and logs them out - see deleteAccount in
+// api/src/functions/account.ts.
+export async function deleteAccount(password: string): Promise<void> {
+  await accountRequest("/account", { method: "DELETE", body: JSON.stringify({ password }) });
+}
+
 // `avatar` is a data URL from renderAvatar. Returns who they are now, with
 // the new picture's version.
 export async function uploadAvatar(userID: string, avatar: string): Promise<SessionUser> {

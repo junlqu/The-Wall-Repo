@@ -30,7 +30,8 @@ export async function authLogin(request: HttpRequest, context: InvocationContext
       .fetchAll();
 
     const user = resources[0] as User | undefined;
-    if (!user || !user.passwordHash || !(await verifyPassword(password, user.passwordHash))) {
+    // A deleted account's password is already unguessable - this is belt and braces.
+    if (!user || user.deletedAt || !user.passwordHash || !(await verifyPassword(password, user.passwordHash))) {
       return { status: 401, headers, jsonBody: { error: "Incorrect login or password." } };
     }
 

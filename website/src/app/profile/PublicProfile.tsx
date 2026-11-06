@@ -10,6 +10,7 @@ import { commentSentAt, formatDate } from "@/lib/climbs";
 import { favouriteLineLabel, hardestSendLabel, totalSends } from "@/lib/dashboard";
 import { displayName, fetchProfile, type Profile, profileHref } from "@/lib/profiles";
 import { useSessionUser } from "@/lib/session";
+import { settingsHref } from "@/lib/settings";
 
 const PANEL_CLASS = "rounded-lg border border-neutral-200 bg-white p-6 shadow-sm";
 const PANEL_HEADING_CLASS = "text-sm font-semibold uppercase tracking-wide text-neutral-500";
@@ -39,7 +40,7 @@ function OwnerBar({ username, asOthers }: { username: string; asOthers: boolean 
             <Link href={profileHref(username, true)} replace className={BAR_BUTTON_CLASS}>
               View as others
             </Link>
-            <Link href="/profile" className={BAR_BUTTON_CLASS}>
+            <Link href={settingsHref()} className={BAR_BUTTON_CLASS}>
               Edit profile
             </Link>
           </>
