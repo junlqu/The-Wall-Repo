@@ -19,8 +19,11 @@ function ToSettings() {
 function ProfileRoute() {
   const params = useSearchParams();
   const username = params.get("username")?.trim();
+  const asOthers = params.get("view") === "public";
+  // Keyed on the view too: the two are fetched separately, so switching
+  // starts afresh rather than showing the other one until it loads.
   return username ? (
-    <PublicProfile key={username} username={username} asOthers={params.get("view") === "public"} />
+    <PublicProfile key={`${username}:${asOthers}`} username={username} asOthers={asOthers} />
   ) : (
     <ToSettings />
   );

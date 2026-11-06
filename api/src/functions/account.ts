@@ -16,6 +16,7 @@ import { getStarterAvatar } from "../avatarUtils";
 import { getContainer } from "../cosmosClient";
 import { Avatar, AVATAR_CONTAINER } from "../models/Avatar";
 import { User, USER_CONTAINER } from "../models/User";
+import { privacyOf, readPrivacy } from "../profilePrivacy";
 
 // The logged-in visitor's own account, for their profile page. Their username
 // is shown but can't be changed here; their picture goes through
@@ -33,6 +34,7 @@ function toAccount(user: User) {
     email: user.email ?? "",
     phone: user.phone ?? "",
     avatarUpdatedAt: user.avatarUpdatedAt,
+    privacy: privacyOf(user),
   };
 }
 
@@ -144,6 +146,34 @@ export async function changePassword(request: HttpRequest, context: InvocationCo
   }
 }
 
+// PUT /account/privacy - who can see each part of their profile. Takes all of
+// them at once.
+export async function updatePrivacy(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
+  const headers = corsHeaders(request);
+
+  try {
+    const user = await readCurrentUser(request);
+    if (!user) return { ...NOT_LOGGED_IN, headers };
+
+    const privacy = readPrivacy(((await request.json().catch(() => null)) as { privacy?: unknown } | null)?.privacy);
+    if ("error" in privacy) return { status: 400, headers, jsonBody: { error: privacy.error } };
+
+    // Accounts made before settings existed need the whole object, as in
+    // metricsPatch.
+    await getContainer(USER_CONTAINER)
+      .item(user.userID, user.userID)
+      .patch([
+        user.settings
+          ? { op: "set", path: "/settings/privacy", value: privacy }
+          : { op: "set", path: "/settings", value: { privacy } },
+      ]);
+    return { status: 200, headers, jsonBody: { privacy } };
+  } catch (error) {
+    context.error("Failed to save privacy", error);
+    return { status: 500, headers, jsonBody: { error: "Failed to save your privacy settings." } };
+  }
+}
+
 // DELETE /account - needs their password. The account isn't removed but
 // emptied: everything that says who they were is wiped, so their comments and
 // sends stay put without naming them. Their username and name become pieces
@@ -222,5 +252,17 @@ app.http("accountPassword", {
       return { status: 204, headers: corsHeaders(request) };
     }
     return changePassword(request, context);
+  },
+});
+
+app.http("accountPrivacy", {
+  methods: ["PUT", "OPTIONS"],
+  authLevel: "anonymous",
+  route: "account/privacy",
+  handler: async (request, context) => {
+    if (request.method === "OPTIONS") {
+      return { status: 204, headers: corsHeaders(request) };
+    }
+    return updatePrivacy(request, context);
   },
 });

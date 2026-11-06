@@ -84,12 +84,12 @@ export async function fetchOlderUpdates(
   return { updates: body.updates.map(toUpdate), hasMoreUpdates: body.hasMoreUpdates };
 }
 
-export function totalSends({ sends }: DashboardMetrics) {
+export function totalSends({ sends }: Pick<DashboardMetrics, "sends">) {
   return sends.route + sends.boulder + sends.combo;
 }
 
 // "5.11b · V4-5" - routes and boulders are on different scales.
-export function hardestSendLabel({ hardestSend }: DashboardMetrics) {
+export function hardestSendLabel({ hardestSend }: Pick<DashboardMetrics, "hardestSend">) {
   return [hardestSend.route, hardestSend.boulder].filter(Boolean).join(" · ") || "—";
 }
 

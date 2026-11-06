@@ -1,3 +1,4 @@
+import type { ProfilePrivacy } from "../profilePrivacy";
 import { ClimbType } from "./Route";
 
 export const USER_CONTAINER = "User";
@@ -35,8 +36,9 @@ export type UserMetrics = {
 };
 
 // What's saved with the user's account. `metrics` is missing on older accounts
-// until they first open their dashboard.
-export type UserSettings = { metrics?: UserMetrics };
+// until they first open their dashboard. `privacy` is missing until they first
+// save it - see privacyOf in profilePrivacy.ts for what that means.
+export type UserSettings = { metrics?: UserMetrics; privacy?: Partial<ProfilePrivacy> };
 
 // Partition key: /userID. Cosmos also requires an `id` on every document, so
 // it's always set to the same value as userID.

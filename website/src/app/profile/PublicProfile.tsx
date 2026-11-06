@@ -7,7 +7,8 @@ import { ClimbBox, RecentComment } from "@/components/ClimbActivity";
 import { Placeholder } from "@/components/ClimbCards";
 import { AVATAR_SIZE, avatarUrl } from "@/lib/avatar";
 import { commentSentAt, formatDate } from "@/lib/climbs";
-import { favouriteLineLabel, hardestSendLabel, totalSends } from "@/lib/dashboard";
+import { hardestSendLabel, totalSends } from "@/lib/dashboard";
+import type { ProfileSection } from "@/lib/privacy";
 import { displayName, fetchProfile, type Profile, profileHref } from "@/lib/profiles";
 import { useSessionUser } from "@/lib/session";
 import { settingsHref } from "@/lib/settings";
@@ -72,26 +73,61 @@ function Header({ profile }: { profile: Profile }) {
   );
 }
 
-function Stats({ profile }: { profile: Profile }) {
-  const { metrics } = profile;
-  const { route, boulder, combo } = metrics.sends;
-  const breakdown = [
-    route && `${route} route${route === 1 ? "" : "s"}`,
-    boulder && `${boulder} boulder${boulder === 1 ? "" : "s"}`,
-    combo && `${combo} combo${combo === 1 ? "" : "s"}`,
-  ].filter(Boolean);
-  const stats = [
-    { label: "Comments", value: metrics.commentsPosted },
-    { label: "Sends", value: totalSends(metrics), note: breakdown.join(" · ") },
-    { label: "Hardest send", value: hardestSendLabel(metrics) },
-    { label: "Favourite line", value: favouriteLineLabel(metrics) },
-  ];
-
+// On their own profile, beside anything they've hidden from everyone else.
+function HiddenBadge({ profile, section }: { profile: Profile; section: ProfileSection }) {
+  const visibility = profile.privacy?.[section];
+  if (!visibility || visibility === "everyone") return null;
   return (
-    <dl className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+    <span className="inline-flex items-center gap-1 rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-semibold normal-case tracking-normal text-neutral-500">
+      <svg
+        aria-hidden="true"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="h-3 w-3"
+      >
+        <rect x="4" y="11" width="16" height="10" rx="2" />
+        <path d="M8 11V7a4 4 0 018 0v4" />
+      </svg>
+      {visibility === "friends" ? "Friends only" : "Only you"}
+    </span>
+  );
+}
+
+type Stat = { section: ProfileSection; label: string; value: string | number; note?: string };
+
+// Only the numbers they show - none at all when they've hidden every one.
+function Stats({ profile }: { profile: Profile }) {
+  const { sends, commentsPosted, hardestSend, favouriteLine } = profile.stats;
+  const stats: Stat[] = [];
+  if (commentsPosted !== undefined) stats.push({ section: "comments", label: "Comments", value: commentsPosted });
+  if (sends) {
+    const { route, boulder, combo } = sends;
+    const breakdown = [
+      route && `${route} route${route === 1 ? "" : "s"}`,
+      boulder && `${boulder} boulder${boulder === 1 ? "" : "s"}`,
+      combo && `${combo} combo${combo === 1 ? "" : "s"}`,
+    ].filter(Boolean);
+    stats.push({ section: "sends", label: "Sends", value: totalSends({ sends }), note: breakdown.join(" · ") });
+  }
+  if (hardestSend) stats.push({ section: "hardestSend", label: "Hardest send", value: hardestSendLabel({ hardestSend }) });
+  if (favouriteLine !== undefined) {
+    stats.push({ section: "favouriteLine", label: "Favourite line", value: favouriteLine ? `Line ${favouriteLine}` : "—" });
+  }
+  if (stats.length === 0) return null;
+
+  // As many columns as fit, so a hidden number doesn't leave a gap.
+  return (
+    <dl className="grid grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] gap-4">
       {stats.map((stat) => (
         <div key={stat.label} className="flex flex-col rounded-lg border border-neutral-200 bg-white px-5 py-4 shadow-sm">
-          <dt className="text-xs font-semibold uppercase tracking-wide text-neutral-500">{stat.label}</dt>
+          <dt className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-semibold uppercase tracking-wide text-neutral-500">
+            {stat.label}
+            <HiddenBadge profile={profile} section={stat.section} />
+          </dt>
           <dd className="order-first break-words text-2xl font-bold text-primary tabular-nums">{stat.value}</dd>
           {stat.note && <dd className="mt-1 text-xs text-neutral-500">{stat.note}</dd>}
         </div>
@@ -100,13 +136,13 @@ function Stats({ profile }: { profile: Profile }) {
   );
 }
 
-function Sends({ profile }: { profile: Profile }) {
-  if (profile.recentSends.length === 0) {
+function Sends({ sends }: { sends: NonNullable<Profile["recentSends"]> }) {
+  if (sends.length === 0) {
     return <p className="py-6 text-center text-sm text-neutral-500">No sends yet.</p>;
   }
   return (
     <ol className="mt-4 flex flex-col gap-4">
-      {profile.recentSends.map(({ comment, climb }) => {
+      {sends.map(({ comment, climb }) => {
         const sentAt = commentSentAt(comment);
         return (
           <li key={comment.commentID} className="flex flex-col gap-1.5">
@@ -121,30 +157,67 @@ function Sends({ profile }: { profile: Profile }) {
   );
 }
 
-function Comments({ profile }: { profile: Profile }) {
-  if (profile.recentComments.length === 0) {
+function Comments({ comments }: { comments: NonNullable<Profile["recentComments"]> }) {
+  if (comments.length === 0) {
     return <p className="py-6 text-center text-sm text-neutral-500">No comments yet.</p>;
   }
   return (
     <div className="mt-2 flex flex-col divide-y divide-neutral-100">
-      {profile.recentComments.map(({ comment, climb }) => (
+      {comments.map(({ comment, climb }) => (
         <RecentComment key={comment.commentID} comment={comment} climb={climb} />
       ))}
     </div>
   );
 }
 
-// Anyone's profile, as everyone sees it - and to its owner with a bar of
-// their own above it, unless they've asked to see it as others do.
+// What they've said and sent lately, side by side - or whichever of the two
+// they show, across the page. When they've hidden everything, a line saying
+// so instead.
+function Activity({ profile }: { profile: Profile }) {
+  const { recentComments, recentSends } = profile;
+  if (!recentComments && !recentSends) {
+    return Object.keys(profile.stats).length > 0 ? null : (
+      <p className={`${PANEL_CLASS} text-center text-sm text-neutral-500`}>
+        @{profile.username} keeps the rest of their profile private.
+      </p>
+    );
+  }
+  return (
+    <div className={`grid grid-cols-1 gap-6 ${recentComments && recentSends ? "md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]" : ""}`}>
+      {recentComments && (
+        <section aria-labelledby="comments-heading" className={PANEL_CLASS}>
+          <h2 id="comments-heading" className={`${PANEL_HEADING_CLASS} flex flex-wrap items-center gap-2`}>
+            Latest comments
+            <HiddenBadge profile={profile} section="recentComments" />
+          </h2>
+          <Comments comments={recentComments} />
+        </section>
+      )}
+      {recentSends && (
+        <section aria-labelledby="sends-heading" className={`${PANEL_CLASS} self-start`}>
+          <h2 id="sends-heading" className={`${PANEL_HEADING_CLASS} flex flex-wrap items-center gap-2`}>
+            Recent sends
+            <HiddenBadge profile={profile} section="recentSends" />
+          </h2>
+          <Sends sends={recentSends} />
+        </section>
+      )}
+    </div>
+  );
+}
+
+// Anyone's profile, without what they've hidden - and to its owner all of it,
+// with a bar of their own above it, unless they've asked to see it as others
+// do.
 export default function PublicProfile({ username, asOthers }: { username: string; asOthers: boolean }) {
   const sessionUserID = useSessionUser()?.userID;
   const [profile, setProfile] = useState<Profile | null | "error" | undefined>(undefined);
 
   useEffect(() => {
-    fetchProfile(username)
+    fetchProfile(username, asOthers)
       .then(setProfile)
       .catch(() => setProfile("error"));
-  }, [username]);
+  }, [username, asOthers]);
 
   if (profile === null) {
     return (
@@ -175,20 +248,7 @@ export default function PublicProfile({ username, asOthers }: { username: string
             {sessionUserID === profile.userID && <OwnerBar username={profile.username} asOthers={asOthers} />}
             <Header profile={profile} />
             <Stats profile={profile} />
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-              <section aria-labelledby="comments-heading" className={PANEL_CLASS}>
-                <h2 id="comments-heading" className={PANEL_HEADING_CLASS}>
-                  Latest comments
-                </h2>
-                <Comments profile={profile} />
-              </section>
-              <section aria-labelledby="sends-heading" className={`${PANEL_CLASS} self-start`}>
-                <h2 id="sends-heading" className={PANEL_HEADING_CLASS}>
-                  Recent sends
-                </h2>
-                <Sends profile={profile} />
-              </section>
-            </div>
+            <Activity profile={profile} />
           </>
         )}
       </div>

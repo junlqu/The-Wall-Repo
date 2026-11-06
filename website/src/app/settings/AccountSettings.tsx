@@ -18,9 +18,11 @@ import {
   MAX_PHONE_DIGITS,
   PASSWORD_RULES,
   saveAccount,
+  savePrivacy,
   uploadAvatar,
 } from "@/lib/account";
 import { AVATAR_SIZE, avatarUrl } from "@/lib/avatar";
+import { PROFILE_SECTIONS, type ProfilePrivacy, VISIBILITIES } from "@/lib/privacy";
 import { profileHref } from "@/lib/profiles";
 import { withReturnTo } from "@/lib/returnTo";
 import { type SessionUser, setSessionUser, useSessionUser } from "@/lib/session";
@@ -47,7 +49,7 @@ type SaveStatus = { ok: boolean; message: string } | null;
 
 // Tabs with no settings in them yet - each shows a placeholder until it gets
 // some.
-const EMPTY_TABS: SettingsTabID[] = ["privacy", "preferences", "accessibility", "dashboard", "cookies", "data-privacy"];
+const EMPTY_TABS: SettingsTabID[] = ["preferences", "accessibility", "dashboard", "cookies", "data-privacy"];
 
 function Field({ id, label, children }: { id: string; label: string; children: ReactNode }) {
   return (
@@ -534,6 +536,89 @@ function PasswordCard() {
   );
 }
 
+// Who can see each part of their profile, one row each - a choice of
+// Everyone, Friends or No one. Saved together.
+function PrivacyCard({ account, onSaved }: { account: Account; onSaved: (account: Account) => void }) {
+  const [privacy, setPrivacy] = useState<ProfilePrivacy>(account.privacy);
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState<SaveStatus>(null);
+  const changed = PROFILE_SECTIONS.some(({ id }) => privacy[id] !== account.privacy[id]);
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    setBusy(true);
+    setStatus(null);
+    try {
+      const saved = await savePrivacy(privacy);
+      setPrivacy(saved);
+      onSaved({ ...account, privacy: saved });
+      setStatus({ ok: true, message: "Your privacy settings have been saved." });
+    } catch (saveError) {
+      setStatus({ ok: false, message: saveError instanceof Error ? saveError.message : "Something went wrong. Try again." });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section aria-labelledby="privacy-heading" className={PANEL_CLASS}>
+      <h3 id="privacy-heading" className={PANEL_HEADING_CLASS}>
+        Public profile
+      </h3>
+      <p className="mt-1 text-sm text-neutral-500">
+        Choose who can see each part of your profile. Your picture, name and username are always shown.
+      </p>
+      <form onSubmit={submit} className="mt-4 flex flex-col gap-4">
+        <div className="flex flex-col divide-y divide-neutral-100">
+          {PROFILE_SECTIONS.map((section) => (
+            <div
+              key={section.id}
+              className="flex flex-col gap-2 py-3 first:pt-0 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
+            >
+              <p id={`privacy-${section.id}`} className={LABEL_CLASS}>
+                {section.label}
+              </p>
+              <div
+                role="radiogroup"
+                aria-labelledby={`privacy-${section.id}`}
+                className="inline-flex shrink-0 self-start rounded-full border border-neutral-300 bg-neutral-50 p-0.5 sm:self-auto"
+              >
+                {VISIBILITIES.map((visibility) => (
+                  <label
+                    key={visibility.id}
+                    className="cursor-pointer rounded-full px-3 py-1 text-xs font-semibold text-neutral-600 transition-colors hover:text-neutral-900 has-[:checked]:bg-primary has-[:checked]:text-white has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-secondary"
+                  >
+                    <input
+                      type="radio"
+                      name={`privacy-${section.id}`}
+                      value={visibility.id}
+                      checked={privacy[section.id] === visibility.id}
+                      onChange={() => {
+                        setPrivacy((current) => ({ ...current, [section.id]: visibility.id }));
+                        setStatus(null);
+                      }}
+                      className="sr-only"
+                    />
+                    {visibility.label}
+                  </label>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+        <p className="text-xs text-neutral-500">
+          You can&apos;t add friends yet, so for now Friends means only you can see it.{" "}
+          <Link href={profileHref(account.username, true)} className="font-medium text-primary hover:underline">
+            See how others see you
+          </Link>
+        </p>
+        <Status status={status} />
+        <SaveButton busy={busy} disabled={!changed} />
+      </form>
+    </section>
+  );
+}
+
 // A tab whose settings haven't been added yet.
 function EmptyTab() {
   return (
@@ -715,6 +800,7 @@ export default function AccountSettings() {
             {tab === "account" &&
               withAccount((loaded) => <LoginDetailsCard account={loaded} onSaved={setAccount} />)}
             {tab === "password" && <PasswordCard />}
+            {tab === "privacy" && withAccount((loaded) => <PrivacyCard account={loaded} onSaved={setAccount} />)}
             {tab === "account-status" && <DeleteAccountCard />}
             {EMPTY_TABS.includes(tab) && <EmptyTab />}
           </section>

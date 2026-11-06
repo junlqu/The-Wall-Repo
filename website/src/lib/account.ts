@@ -2,6 +2,7 @@
 // Mirrors api/src/functions/account.ts.
 
 import { apiUrl } from "@/lib/api";
+import type { ProfilePrivacy } from "@/lib/privacy";
 import type { SessionUser } from "@/lib/session";
 
 // Keep in sync with api/src/accountFields.ts.
@@ -26,6 +27,7 @@ export type Account = {
   email: string;
   phone: string;
   avatarUpdatedAt?: string;
+  privacy: ProfilePrivacy;
 };
 
 export type AccountDetails = Pick<Account, "fname" | "lname" | "email" | "phone">;
@@ -56,6 +58,12 @@ export async function saveAccount(details: AccountDetails): Promise<{ account: A
 
 export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
   await accountRequest("/account/password", { method: "PUT", body: JSON.stringify({ currentPassword, newPassword }) });
+}
+
+// Returns the choices as saved.
+export async function savePrivacy(privacy: ProfilePrivacy): Promise<ProfilePrivacy> {
+  const body = await accountRequest("/account/privacy", { method: "PUT", body: JSON.stringify({ privacy }) });
+  return body.privacy as ProfilePrivacy;
 }
 
 // Wipes their details and logs them out - see deleteAccount in
