@@ -1,3 +1,4 @@
+import type { PatchOperation } from "@azure/cosmos";
 import type { ProfilePrivacy } from "../profilePrivacy";
 import { ClimbType } from "./Route";
 
@@ -35,10 +36,31 @@ export type UserMetrics = {
   latestSend: { routeID: string; date: string } | null;
 };
 
-// What's saved with the user's account. `metrics` is missing on older accounts
-// until they first open their dashboard. `privacy` is missing until they first
-// save it - see privacyOf in profilePrivacy.ts for what that means.
-export type UserSettings = { metrics?: UserMetrics; privacy?: Partial<ProfilePrivacy> };
+// Their choice about cookies the site could do without. Off until they turn
+// it on. There aren't any such cookies yet, so it changes nothing for now -
+// what they let them hold will go here too.
+export type CookieSettings = { optional: boolean };
+
+export const DEFAULT_COOKIES: CookieSettings = { optional: false };
+
+// What's saved with the user's account. New accounts start with all three.
+// On older accounts, `metrics` is missing until they first open their
+// dashboard, and `privacy` and `cookies` until they first save them - see
+// privacyOf in profilePrivacy.ts and cookiesOf below for what that means.
+export type UserSettings = { metrics?: UserMetrics; privacy?: Partial<ProfilePrivacy>; cookies?: CookieSettings };
+
+export function cookiesOf(user: User): CookieSettings {
+  return { ...DEFAULT_COOKIES, ...user.settings?.cookies };
+}
+
+// The patch that saves one of their settings. Accounts made before settings
+// existed need the whole object - a patch can't reach inside one that isn't
+// there.
+export function settingsPatch<K extends keyof UserSettings>(user: User, key: K, value: UserSettings[K]): PatchOperation {
+  return user.settings
+    ? { op: "set", path: `/settings/${key}`, value }
+    : { op: "set", path: "/settings", value: { [key]: value } };
+}
 
 // Partition key: /userID. Cosmos also requires an `id` on every document, so
 // it's always set to the same value as userID.

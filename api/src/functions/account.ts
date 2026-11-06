@@ -15,7 +15,8 @@ import {
 import { getStarterAvatar } from "../avatarUtils";
 import { getContainer } from "../cosmosClient";
 import { Avatar, AVATAR_CONTAINER } from "../models/Avatar";
-import { User, USER_CONTAINER } from "../models/User";
+import { Comment, COMMENT_CONTAINER } from "../models/Comment";
+import { cookiesOf, settingsPatch, User, USER_CONTAINER } from "../models/User";
 import { privacyOf, readPrivacy } from "../profilePrivacy";
 
 // The logged-in visitor's own account, for their profile page. Their username
@@ -35,6 +36,7 @@ function toAccount(user: User) {
     phone: user.phone ?? "",
     avatarUpdatedAt: user.avatarUpdatedAt,
     privacy: privacyOf(user),
+    cookies: cookiesOf(user),
   };
 }
 
@@ -158,19 +160,81 @@ export async function updatePrivacy(request: HttpRequest, context: InvocationCon
     const privacy = readPrivacy(((await request.json().catch(() => null)) as { privacy?: unknown } | null)?.privacy);
     if ("error" in privacy) return { status: 400, headers, jsonBody: { error: privacy.error } };
 
-    // Accounts made before settings existed need the whole object, as in
-    // metricsPatch.
     await getContainer(USER_CONTAINER)
       .item(user.userID, user.userID)
-      .patch([
-        user.settings
-          ? { op: "set", path: "/settings/privacy", value: privacy }
-          : { op: "set", path: "/settings", value: { privacy } },
-      ]);
+      .patch([settingsPatch(user, "privacy", privacy)]);
     return { status: 200, headers, jsonBody: { privacy } };
   } catch (error) {
     context.error("Failed to save privacy", error);
     return { status: 500, headers, jsonBody: { error: "Failed to save your privacy settings." } };
+  }
+}
+
+// PUT /account/cookies - whether the site can use cookies it could do
+// without.
+export async function updateCookies(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
+  const headers = corsHeaders(request);
+
+  try {
+    const user = await readCurrentUser(request);
+    if (!user) return { ...NOT_LOGGED_IN, headers };
+
+    const { optional } = ((await request.json().catch(() => null)) ?? {}) as { optional?: unknown };
+    if (typeof optional !== "boolean") {
+      return { status: 400, headers, jsonBody: { error: "Choose whether to allow optional cookies." } };
+    }
+
+    const cookies = { ...cookiesOf(user), optional };
+    await getContainer(USER_CONTAINER)
+      .item(user.userID, user.userID)
+      .patch([settingsPatch(user, "cookies", cookies)]);
+    return { status: 200, headers, jsonBody: { cookies } };
+  } catch (error) {
+    context.error("Failed to save cookie settings", error);
+    return { status: 500, headers, jsonBody: { error: "Failed to save your cookie settings." } };
+  }
+}
+
+// What the database adds to every document for itself - not theirs.
+function withoutSystemFields(document: object) {
+  return Object.fromEntries(Object.entries(document).filter(([key]) => !key.startsWith("_")));
+}
+
+// GET /account/data/user - their account as it's saved, for them to keep.
+// Everything but their password hash, which is no use to them and a risk if
+// the file goes astray.
+export async function exportUser(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
+  const headers = corsHeaders(request);
+
+  try {
+    const user = await readCurrentUser(request);
+    if (!user) return { ...NOT_LOGGED_IN, headers };
+    const { passwordHash: _passwordHash, ...rest } = user;
+    return { status: 200, headers, jsonBody: withoutSystemFields(rest) };
+  } catch (error) {
+    context.error("Failed to export account", error);
+    return { status: 500, headers, jsonBody: { error: "Failed to get your account data." } };
+  }
+}
+
+// GET /account/data/comments - every comment they've left, as saved, oldest
+// first. That includes the ones that are only a send, grade or rating.
+export async function exportComments(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
+  const headers = corsHeaders(request);
+
+  try {
+    const user = await readCurrentUser(request);
+    if (!user) return { ...NOT_LOGGED_IN, headers };
+    const { resources } = await getContainer(COMMENT_CONTAINER)
+      .items.query<Comment>({
+        query: "SELECT * FROM c WHERE c.userID = @userID ORDER BY c.commentedAt ASC",
+        parameters: [{ name: "@userID", value: user.userID }],
+      })
+      .fetchAll();
+    return { status: 200, headers, jsonBody: resources.map(withoutSystemFields) };
+  } catch (error) {
+    context.error("Failed to export comments", error);
+    return { status: 500, headers, jsonBody: { error: "Failed to get your comments." } };
   }
 }
 
@@ -264,5 +328,32 @@ app.http("accountPrivacy", {
       return { status: 204, headers: corsHeaders(request) };
     }
     return updatePrivacy(request, context);
+  },
+});
+
+app.http("accountCookies", {
+  methods: ["PUT", "OPTIONS"],
+  authLevel: "anonymous",
+  route: "account/cookies",
+  handler: async (request, context) => {
+    if (request.method === "OPTIONS") {
+      return { status: 204, headers: corsHeaders(request) };
+    }
+    return updateCookies(request, context);
+  },
+});
+
+// /account/data/user or /account/data/comments.
+app.http("accountData", {
+  methods: ["GET", "OPTIONS"],
+  authLevel: "anonymous",
+  route: "account/data/{part}",
+  handler: async (request, context) => {
+    if (request.method === "OPTIONS") {
+      return { status: 204, headers: corsHeaders(request) };
+    }
+    if (request.params.part === "user") return exportUser(request, context);
+    if (request.params.part === "comments") return exportComments(request, context);
+    return { status: 404, headers: corsHeaders(request), jsonBody: { error: "Not found." } };
   },
 });

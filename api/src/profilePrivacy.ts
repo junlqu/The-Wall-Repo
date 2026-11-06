@@ -18,11 +18,15 @@ export type Visibility = (typeof VISIBILITIES)[number];
 
 export type ProfilePrivacy = Record<ProfileSection, Visibility>;
 
-// Anything they haven't chosen - which is everything, on a new account - is
-// shown to everyone.
+// What a new account starts with: every part shown to everyone.
+export const DEFAULT_PRIVACY = Object.fromEntries(
+  PROFILE_SECTIONS.map((section) => [section, "everyone"]),
+) as ProfilePrivacy;
+
+// Anything they haven't chosen is left as the default. Older accounts may not
+// have chosen anything.
 export function privacyOf(user: User): ProfilePrivacy {
-  const saved = user.settings?.privacy ?? {};
-  return Object.fromEntries(PROFILE_SECTIONS.map((section) => [section, saved[section] ?? "everyone"])) as ProfilePrivacy;
+  return { ...DEFAULT_PRIVACY, ...user.settings?.privacy };
 }
 
 // Whether someone other than the owner can see a part. There are no friends

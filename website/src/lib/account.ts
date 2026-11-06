@@ -28,7 +28,12 @@ export type Account = {
   phone: string;
   avatarUpdatedAt?: string;
   privacy: ProfilePrivacy;
+  cookies: CookieSettings;
 };
+
+// Whether the site can use cookies it could do without. Off until they turn
+// it on - there aren't any yet. Mirrors CookieSettings in api/src/models/User.ts.
+export type CookieSettings = { optional: boolean };
 
 export type AccountDetails = Pick<Account, "fname" | "lname" | "email" | "phone">;
 
@@ -64,6 +69,18 @@ export async function changePassword(currentPassword: string, newPassword: strin
 export async function savePrivacy(privacy: ProfilePrivacy): Promise<ProfilePrivacy> {
   const body = await accountRequest("/account/privacy", { method: "PUT", body: JSON.stringify({ privacy }) });
   return body.privacy as ProfilePrivacy;
+}
+
+// Returns the choice as saved.
+export async function saveCookies(optional: boolean): Promise<CookieSettings> {
+  const body = await accountRequest("/account/cookies", { method: "PUT", body: JSON.stringify({ optional }) });
+  return body.cookies as CookieSettings;
+}
+
+// A copy of what's saved about them: their account, or every comment they've
+// left. Both exactly as the database has them, bar their password hash.
+export async function fetchAccountData(part: "user" | "comments"): Promise<unknown> {
+  return accountRequest(`/account/data/${part}`);
 }
 
 // Wipes their details and logs them out - see deleteAccount in

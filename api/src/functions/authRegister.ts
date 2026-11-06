@@ -4,7 +4,8 @@ import { getContainer } from "../cosmosClient";
 import { buildSessionCookie, corsHeaders, hashPassword, newUserId, signSessionToken, toSessionUser } from "../authUtils";
 import { getStarterAvatar } from "../avatarUtils";
 import { Avatar, AVATAR_CONTAINER } from "../models/Avatar";
-import { User, USER_CONTAINER, USER_LEVEL } from "../models/User";
+import { DEFAULT_COOKIES, User, USER_CONTAINER, USER_LEVEL } from "../models/User";
+import { DEFAULT_PRIVACY } from "../profilePrivacy";
 import { buildMetrics } from "../userMetrics";
 
 type RegisterBody = {
@@ -72,7 +73,7 @@ export async function authRegister(request: HttpRequest, context: InvocationCont
       avatarUpdatedAt: createdAt,
       lastOnline: createdAt,
       level: USER_LEVEL.member,
-      settings: { metrics: buildMetrics([], []) },
+      settings: { metrics: buildMetrics([], []), privacy: DEFAULT_PRIVACY, cookies: DEFAULT_COOKIES },
     };
 
     await container.items.create(user);

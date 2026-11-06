@@ -3,7 +3,7 @@ import { InvocationContext } from "@azure/functions";
 import { getContainer } from "./cosmosClient";
 import { Comment, COMMENT_CONTAINER } from "./models/Comment";
 import { Route, ROUTE_CONTAINER } from "./models/Route";
-import { User, USER_CONTAINER, UserMetrics } from "./models/User";
+import { settingsPatch, User, USER_CONTAINER, UserMetrics } from "./models/User";
 
 // Keeps the numbers on someone's dashboard saved in their settings, so opening
 // it doesn't have to go through their comments. They're always worked out
@@ -105,12 +105,9 @@ export async function computeMetrics(userID: string): Promise<UserMetrics> {
   return buildMetrics(comments, routes);
 }
 
-// The patch that saves `metrics`. Accounts made before settings existed need
-// the whole object - a patch can't reach inside one that isn't there.
+// The patch that saves `metrics`.
 export function metricsPatch(user: User, metrics: UserMetrics): PatchOperation {
-  return user.settings
-    ? { op: "set", path: "/settings/metrics", value: metrics }
-    : { op: "set", path: "/settings", value: { metrics } };
+  return settingsPatch(user, "metrics", metrics);
 }
 
 export async function refreshMetrics(userID: string) {
