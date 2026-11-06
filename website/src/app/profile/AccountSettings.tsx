@@ -87,9 +87,14 @@ function PictureCard({ user }: { user: SessionUser }) {
         <div className="text-center sm:text-left">
           <p className="text-xl font-bold text-primary">{user.fname}</p>
           <p className="text-sm text-neutral-500">@{user.username}</p>
-          <Link href={profileHref(user.username, true)} className="text-sm font-medium text-primary hover:underline">
-            See how others see you
-          </Link>
+          <p className="flex flex-wrap justify-center gap-x-3 sm:justify-start">
+            <Link href={profileHref(user.username)} className="text-sm font-medium text-primary hover:underline">
+              View your profile
+            </Link>
+            <Link href={profileHref(user.username, true)} className="text-sm font-medium text-primary hover:underline">
+              See how others see you
+            </Link>
+          </p>
         </div>
         <input ref={input} type="file" accept="image/*" onChange={pick} className="hidden" />
         <button type="button" onClick={() => input.current?.click()} className={SECONDARY_BUTTON_CLASS}>

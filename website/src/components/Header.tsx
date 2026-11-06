@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { avatarUrl } from "@/lib/avatar";
-import { ACCOUNT_LINKS, CLIMBS_LINKS, EXTRAS_LINKS } from "@/lib/navLinks";
+import { accountLinks, CLIMBS_LINKS, EXTRAS_LINKS } from "@/lib/navLinks";
 import { canUseAdminTools, logout, useSessionUser } from "@/lib/session";
 import logo from "@/static/logo.svg";
 
@@ -158,7 +158,7 @@ export default function Header() {
 
               <div className="invisible absolute right-0 top-full pt-3 opacity-0 transition-all duration-150 group-hover:visible group-hover:opacity-100">
                 <div className="flex min-w-[160px] flex-col rounded-lg border border-secondary/20 bg-primary py-2 text-sm font-medium shadow-lg">
-                  {ACCOUNT_LINKS.map((link) => (
+                  {accountLinks(user.username).map((link) => (
                     <Link
                       key={link.href}
                       href={link.href}
@@ -280,7 +280,7 @@ export default function Header() {
               // the user, with Log out on the left of the user's row.
               <div className="mt-auto flex flex-col border-t border-secondary/20 pt-4 text-sm">
                 <div className="flex flex-col items-end">
-                  {ACCOUNT_LINKS.map((link) => (
+                  {accountLinks(user.username).map((link) => (
                     <Link
                       key={link.href}
                       href={link.href}

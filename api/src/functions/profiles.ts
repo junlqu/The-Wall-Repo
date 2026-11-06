@@ -18,7 +18,9 @@ const MAX_USERNAME_LENGTH = 128;
 async function readByUsername(username: string): Promise<User | undefined> {
   const { resources } = await getContainer(USER_CONTAINER)
     .items.query<User>({
-      query: "SELECT * FROM c WHERE c.username = @username",
+      // Ignoring case: sign-up lowercases usernames, but accounts made
+      // before that - or by hand - can have capitals.
+      query: "SELECT * FROM c WHERE STRINGEQUALS(c.username, @username, true)",
       parameters: [{ name: "@username", value: username }],
     })
     .fetchAll();
@@ -59,7 +61,7 @@ export async function getProfile(request: HttpRequest, context: InvocationContex
   const headers = corsHeaders(request);
 
   try {
-    const username = (request.params.username ?? "").trim().toLowerCase();
+    const username = (request.params.username ?? "").trim();
     const user = username && username.length <= MAX_USERNAME_LENGTH ? await readByUsername(username) : undefined;
     if (!user) return { status: 404, headers, jsonBody: { error: "There's nobody with that username." } };
 
