@@ -5,11 +5,14 @@ import Link from "next/link";
 import AccessNotice from "@/components/AccessNotice";
 import { ClimbBox, RecentComment } from "@/components/ClimbActivity";
 import { Placeholder } from "@/components/ClimbCards";
+import FollowListDialog from "@/components/FollowListDialog";
 import { AVATAR_SIZE, avatarUrl } from "@/lib/avatar";
 import { commentSentAt, formatDate } from "@/lib/climbs";
 import { hardestSendLabel, totalSends } from "@/lib/dashboard";
+import { type FollowList, type FollowRelation, isFriend, setUserFollowed } from "@/lib/follows";
 import type { ProfileSection } from "@/lib/privacy";
 import { displayName, fetchProfile, type Profile, profileHref } from "@/lib/profiles";
+import { withReturnTo } from "@/lib/returnTo";
 import { useSessionUser } from "@/lib/session";
 import { settingsHref } from "@/lib/settings";
 
@@ -51,7 +54,149 @@ function OwnerBar({ username, asOthers }: { username: string; asOthers: boolean 
   );
 }
 
-function Header({ profile }: { profile: Profile }) {
+const FOLLOW_CLASS =
+  "inline-flex w-full items-center justify-center rounded-full px-5 py-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-secondary disabled:cursor-wait disabled:opacity-60";
+const FILLED_CLASS = `${FOLLOW_CLASS} bg-primary text-white hover:bg-primary/90`;
+const OUTLINE_CLASS = `${FOLLOW_CLASS} border border-primary bg-white text-primary hover:bg-primary/5`;
+
+// Following them, or - after checking they're sure - unfollowing them. A
+// prompt to log in for visitors who aren't, and nothing on their own profile.
+function FollowControl({
+  profile,
+  onChanged,
+}: {
+  profile: Profile;
+  onChanged: (change: { followers: number; relation: FollowRelation }) => void;
+}) {
+  const user = useSessionUser();
+  const [status, setStatus] = useState<"idle" | "confirm" | "busy">("idle");
+  const [error, setError] = useState<string | null>(null);
+  const { relation, username } = profile;
+
+  if (user === undefined) return null;
+  if (user === null) {
+    return (
+      <Link href={withReturnTo("/login", profileHref(username))} className={FILLED_CLASS}>
+        Follow
+      </Link>
+    );
+  }
+  if (!relation) return null;
+
+  async function change(follow: boolean) {
+    setStatus("busy");
+    setError(null);
+    try {
+      onChanged(await setUserFollowed(username, follow));
+      setStatus("idle");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong. Try again.");
+      setStatus(follow ? "idle" : "confirm");
+    }
+  }
+
+  const friends = isFriend(relation);
+  return (
+    <div className="flex flex-col gap-2 text-center">
+      {status === "confirm" || (status === "busy" && relation.follows) ? (
+        <div className="flex flex-col gap-2">
+          <p className="text-sm text-neutral-600">
+            Unfollow @{username}?{friends && " You'll stop being friends."}
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            <button type="button" onClick={() => setStatus("idle")} disabled={status === "busy"} className={OUTLINE_CLASS}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => change(false)}
+              disabled={status === "busy"}
+              className={`${FOLLOW_CLASS} bg-red-600 text-white hover:bg-red-700`}
+            >
+              {status === "busy" ? "Unfollowing…" : "Unfollow"}
+            </button>
+          </div>
+        </div>
+      ) : relation.follows ? (
+        <button
+          type="button"
+          onClick={() => setStatus("confirm")}
+          aria-label={`${friends ? "Friends" : "Following"} - unfollow @${username}`}
+          className={OUTLINE_CLASS}
+        >
+          {friends ? "Friends" : "Following"}
+        </button>
+      ) : (
+        <button type="button" onClick={() => change(true)} disabled={status === "busy"} className={FILLED_CLASS}>
+          {status === "busy" ? "Following…" : relation.followedBy ? "Follow back" : "Follow"}
+        </button>
+      )}
+      {error && (
+        <p role="alert" className="text-xs text-red-700">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
+// Side by side, each taking half the width, with the number above its label.
+// On their own profile, each opens a popup listing the people in it.
+function FollowCounts({ profile, isOwner }: { profile: Profile; isOwner: boolean }) {
+  const [open, setOpen] = useState<FollowList | null>(null);
+  const { followers, following } = profile;
+  const counts: { list: FollowList; label: string; value: number }[] = [
+    { list: "followers", label: followers === 1 ? "Follower" : "Followers", value: followers },
+    { list: "following", label: "Following", value: following },
+  ];
+  return (
+    <>
+      <dl className="grid grid-cols-2 gap-4 text-center">
+        {counts.map((count) => {
+          const content = (
+            <>
+              <span className="block text-lg font-bold text-primary tabular-nums">{count.value}</span>
+              <span className="block text-sm text-neutral-600">{count.label}</span>
+            </>
+          );
+          return (
+            <div key={count.list}>
+              <dt className="sr-only">{count.label}</dt>
+              <dd>
+                {isOwner ? (
+                  <button
+                    type="button"
+                    onClick={() => setOpen(count.list)}
+                    aria-label={`${count.value} ${count.label.toLowerCase()} - see who`}
+                    className="w-full rounded-lg px-2 py-1 transition-colors hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-secondary"
+                  >
+                    {content}
+                  </button>
+                ) : (
+                  <span aria-hidden="true" className="block px-2 py-1">
+                    {content}
+                  </span>
+                )}
+                {!isOwner && <span className="sr-only">{count.value}</span>}
+              </dd>
+            </div>
+          );
+        })}
+      </dl>
+      {open && <FollowListDialog username={profile.username} list={open} onClose={() => setOpen(null)} />}
+    </>
+  );
+}
+
+function Header({
+  profile,
+  isOwner,
+  onFollowChanged,
+}: {
+  profile: Profile;
+  isOwner: boolean;
+  onFollowChanged: (change: { followers: number; relation: FollowRelation }) => void;
+}) {
   return (
     <section
       aria-label="Who they are"
@@ -67,7 +212,18 @@ function Header({ profile }: { profile: Profile }) {
       />
       <div className="min-w-0 flex-1">
         <h1 className="break-words text-3xl font-bold text-primary sm:text-4xl">{displayName(profile)}</h1>
-        <p className="mt-1 text-neutral-500">@{profile.username}</p>
+        <p className="mt-1 flex flex-wrap items-center justify-center gap-2 text-neutral-500 sm:justify-start">
+          @{profile.username}
+          {profile.relation?.followedBy && !profile.relation.follows && (
+            <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs font-semibold text-neutral-600">Follows you</span>
+          )}
+        </p>
+      </div>
+      {/* On the right: the counts, with following them underneath at the same
+          width. */}
+      <div className="flex w-full max-w-64 shrink-0 flex-col gap-3 sm:w-64">
+        <FollowCounts profile={profile} isOwner={isOwner} />
+        <FollowControl profile={profile} onChanged={onFollowChanged} />
       </div>
     </section>
   );
@@ -246,7 +402,11 @@ export default function PublicProfile({ username, asOthers }: { username: string
         ) : (
           <>
             {sessionUserID === profile.userID && <OwnerBar username={profile.username} asOthers={asOthers} />}
-            <Header profile={profile} />
+            <Header
+              profile={profile}
+              isOwner={sessionUserID === profile.userID && !asOthers}
+              onFollowChanged={(change) => setProfile({ ...profile, ...change })}
+            />
             <Stats profile={profile} />
             <Activity profile={profile} />
           </>

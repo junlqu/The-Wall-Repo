@@ -4,7 +4,15 @@ import Link from "next/link";
 import { GradeTag } from "@/components/ClimbCards";
 import ClimbColour from "@/components/ClimbColour";
 import { formatDateTime } from "@/lib/announcements";
-import { type Climb, climbHref, climbTypeLabel, ratingStars } from "@/lib/climbs";
+import {
+  type Climb,
+  type ClimbComment,
+  climbHref,
+  climbTypeLabel,
+  commentSentAt,
+  formatDate,
+  ratingStars,
+} from "@/lib/climbs";
 import type { DashboardComment } from "@/lib/dashboard";
 
 // What someone has said and sent, for the dashboard and profiles.
@@ -43,18 +51,31 @@ export function RecentComment({ comment, climb }: DashboardComment) {
         </time>
       </div>
       <p className="whitespace-pre-line break-words text-sm text-neutral-700">{comment.comment}</p>
-      {(comment.send || comment.grade || comment.rating !== undefined) && (
-        <div className="flex flex-wrap gap-2 text-xs">
-          {comment.send && <span className="rounded bg-green-100 px-1.5 py-0.5 font-semibold text-green-700">Sent</span>}
-          {comment.grade && (
-            <span className="rounded bg-secondary/15 px-1.5 py-0.5 font-medium text-primary">Graded {comment.grade}</span>
-          )}
-          {comment.rating !== undefined && (
-            <span className="rounded bg-neutral-100 px-1.5 py-0.5 font-medium text-neutral-600">
-              ★ {ratingStars(comment.rating).toFixed(1)}
-            </span>
-          )}
-        </div>
+      <CommentTags comment={comment} />
+    </div>
+  );
+}
+
+// Whether they sent the climb, and the grade and rating they gave it - nothing
+// when they did none of those.
+export function CommentTags({ comment, sentOn = false }: { comment: ClimbComment; sentOn?: boolean }) {
+  if (!comment.send && !comment.grade && comment.rating === undefined) return null;
+  const sentAt = commentSentAt(comment);
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-xs">
+      {comment.send && <span className="rounded bg-green-100 px-1.5 py-0.5 font-semibold text-green-700">Sent</span>}
+      {comment.send && sentOn && sentAt && (
+        <span className="-ml-1 text-neutral-500">
+          on <time dateTime={sentAt}>{formatDate(sentAt)}</time>
+        </span>
+      )}
+      {comment.grade && (
+        <span className="rounded bg-secondary/15 px-1.5 py-0.5 font-medium text-primary">Graded {comment.grade}</span>
+      )}
+      {comment.rating !== undefined && (
+        <span className="rounded bg-neutral-100 px-1.5 py-0.5 font-medium text-neutral-600">
+          ★ {ratingStars(comment.rating).toFixed(1)}
+        </span>
       )}
     </div>
   );

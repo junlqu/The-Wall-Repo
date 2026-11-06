@@ -16,10 +16,15 @@ export type DashboardMetrics = {
 // A comment and the climb it's on - null once the climb is gone.
 export type DashboardComment = { comment: ClimbComment; climb: Climb | null };
 
+// Why a comment or send is in their updates: it's on a climb they've saved,
+// or by someone they follow - or by a friend, someone they follow who follows
+// them back. Mirrors FollowedVia in api/src/functions/dashboard.ts.
+export type FollowedVia = "climb" | "user" | "friend";
+
 // `isNew` when it came after their last visit.
 export type DashboardUpdate = { at: string; isNew: boolean } & (
   | { kind: "announcement"; announcement: Announcement }
-  | ({ kind: "comment" } & DashboardComment)
+  | ({ kind: "comment"; via: FollowedVia } & DashboardComment)
 );
 
 export type Dashboard = {
@@ -31,13 +36,19 @@ export type Dashboard = {
   latestSendClimb: Climb | null;
   // Their own, newest first.
   recentComments: DashboardComment[];
+  // Their visit before this one - updates from then on are new.
+  since: string;
 };
+
+// Which updates to show. Mirrors UPDATE_FILTERS in
+// api/src/functions/dashboard.ts.
+export type UpdateFilter = "all" | "announcements" | "following" | "climbs";
 
 // Mirrors openDashboard in api/src/functions/dashboard.ts.
 type ApiComment = { comment: ClimbComment; climb: ApiRoute | null };
 type ApiUpdate = { at: string; isNew: boolean } & (
   | { kind: "announcement"; announcement: ApiAnnouncement }
-  | ({ kind: "comment" } & ApiComment)
+  | ({ kind: "comment"; via: FollowedVia } & ApiComment)
 );
 type ApiDashboard = {
   updates: ApiUpdate[];
@@ -45,6 +56,7 @@ type ApiDashboard = {
   metrics: DashboardMetrics;
   latestSendClimb: ApiRoute | null;
   recentComments: ApiComment[];
+  since: string;
 };
 
 function toDashboardComment({ comment, climb }: ApiComment): DashboardComment {
@@ -55,7 +67,7 @@ function toUpdate(update: ApiUpdate): DashboardUpdate {
   const { at, isNew } = update;
   return update.kind === "announcement"
     ? { at, isNew, kind: "announcement", announcement: toAnnouncement(update.announcement) }
-    : { at, isNew, kind: "comment", ...toDashboardComment(update) };
+    : { at, isNew, kind: "comment", via: update.via, ...toDashboardComment(update) };
 }
 
 // Loads the dashboard and marks them as having been on it now, so ask once per
@@ -70,15 +82,25 @@ export async function openDashboard(): Promise<Dashboard> {
     metrics: body.metrics,
     latestSendClimb: body.latestSendClimb && toClimb(body.latestSendClimb),
     recentComments: body.recentComments.map(toDashboardComment),
+    since: body.since,
   };
 }
 
-// The next page of updates from before the moment `before` (ISO), for "Load
-// more". Doesn't count as a visit.
-export async function fetchOlderUpdates(
-  before: string,
-): Promise<Pick<Dashboard, "updates" | "hasMoreUpdates">> {
-  const res = await fetch(apiUrl(`/dashboard/updates?before=${encodeURIComponent(before)}`), { credentials: "include" });
+// A page of updates of the kind `only` picks, from before the moment `before`
+// (ISO) - or the newest, without one. Those from `since` on are new. Doesn't
+// count as a visit.
+export async function fetchUpdates({
+  before,
+  only,
+  since,
+}: {
+  before?: string;
+  only: UpdateFilter;
+  since: string;
+}): Promise<Pick<Dashboard, "updates" | "hasMoreUpdates">> {
+  const query = new URLSearchParams({ only, since });
+  if (before) query.set("before", before);
+  const res = await fetch(apiUrl(`/dashboard/updates?${query}`), { credentials: "include" });
   if (!res.ok) throw new Error(`Failed to load more updates (${res.status})`);
   const body = (await res.json()) as Pick<ApiDashboard, "updates" | "hasMoreUpdates">;
   return { updates: body.updates.map(toUpdate), hasMoreUpdates: body.hasMoreUpdates };

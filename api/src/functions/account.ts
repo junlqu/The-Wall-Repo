@@ -276,6 +276,8 @@ export async function deleteAccount(request: HttpRequest, context: InvocationCon
       // Left off the document, as a blank email or phone always is.
       email: undefined,
       phone: undefined,
+      // So they stop counting as anyone's follower.
+      following: undefined,
       passwordHash: await hashPassword(randomBytes(32).toString("hex")),
       avatarUpdatedAt: now,
       deletedAt: now,

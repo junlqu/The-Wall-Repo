@@ -86,12 +86,24 @@ export type User = {
   level: UserLevel;
   // Accounts made before settings existed don't have it.
   settings?: UserSettings;
+  // The people they follow, whose comments and sends show on their dashboard,
+  // oldest first. Two people who follow each other are friends. Missing until
+  // they first follow someone - see follows.ts.
+  following?: Follow[];
   // ISO date and time they deleted their account. The document stays - with
   // their details wiped by DELETE /account - so their comments and sends
   // still have someone to point at, but nobody can log in as them or open
   // their profile.
   deletedAt?: string;
 };
+
+// Someone they follow, and when they started - an ISO date and time.
+export type Follow = { userID: string; followedAt: string };
+
+// The userIDs of the people they follow.
+export function followingIDs(user: Pick<User, "following">): string[] {
+  return (user.following ?? []).map((follow) => follow.userID);
+}
 
 export function isUserLevel(value: unknown): value is UserLevel {
   return Object.values(USER_LEVEL).includes(value as UserLevel);

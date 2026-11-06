@@ -3,20 +3,22 @@ import { corsHeaders, readSessionUser } from "../authUtils";
 import { readClimbs } from "../climbLinks";
 import { toPublicComment } from "../commentFields";
 import { getContainer } from "../cosmosClient";
+import { countFollowers, readFollowing } from "../follows";
 import { Comment, COMMENT_CONTAINER } from "../models/Comment";
-import { User, USER_CONTAINER, UserMetrics } from "../models/User";
+import { followingIDs, User, USER_CONTAINER, UserMetrics } from "../models/User";
 import { isVisibleToOthers, privacyOf, ProfileSection } from "../profilePrivacy";
 import { computeMetrics } from "../userMetrics";
 
 // Anyone's profile: their picture, username, first name and the first letter
-// of their last, and - unless they've hidden them - their numbers and what
-// they've said and sent lately. Nothing else of their account.
+// of their last, how many people follow them and they follow, and - unless
+// they've hidden them - their numbers and what they've said and sent lately.
+// Nothing else of their account.
 
 const RECENT_COMMENTS = 5;
 const RECENT_SENDS = 3;
 const MAX_USERNAME_LENGTH = 128;
 
-async function readByUsername(username: string): Promise<User | undefined> {
+export async function readByUsername(username: string): Promise<User | undefined> {
   const { resources } = await getContainer(USER_CONTAINER)
     .items.query<User>({
       // Ignoring case: sign-up lowercases usernames, but accounts made
@@ -40,6 +42,11 @@ async function readRecentComments(userID: string): Promise<Comment[]> {
     })
     .fetchAll();
   return resources;
+}
+
+async function readViewer(userID: string): Promise<User | undefined> {
+  const { resource } = await getContainer(USER_CONTAINER).item(userID, userID).read<User>();
+  return resource;
 }
 
 // When a climb was sent, to sort by - the day, then when it was logged to
@@ -77,16 +84,22 @@ export async function getProfile(request: HttpRequest, context: InvocationContex
     const user = username && username.length <= MAX_USERNAME_LENGTH ? await readByUsername(username) : undefined;
     if (!user) return { status: 404, headers, jsonBody: { error: "There's nobody with that username." } };
 
-    const isOwner = readSessionUser(request)?.userID === user.userID && request.query.get("view") !== "public";
+    const viewerID = readSessionUser(request)?.userID;
+    const isOwner = viewerID === user.userID && request.query.get("view") !== "public";
     const privacy = privacyOf(user);
     const shows = (section: ProfileSection) => isOwner || isVisibleToOthers(privacy[section]);
     const showsStats = (["sends", "comments", "hardestSend", "favouriteLine"] as const).some(shows);
 
+    // Someone logged in looking at somebody else's profile.
+    const otherID = viewerID !== user.userID ? viewerID : undefined;
     // Only what's shown is read.
-    const [metrics, comments, sends] = await Promise.all([
+    const [metrics, comments, sends, followers, { following }, viewer] = await Promise.all([
       showsStats ? (user.settings?.metrics ?? computeMetrics(user.userID)) : undefined,
       shows("recentComments") ? readRecentComments(user.userID) : [],
       shows("recentSends") ? readSends(user.userID) : [],
+      countFollowers(user.userID),
+      readFollowing(user),
+      otherID ? readViewer(otherID) : undefined,
     ]);
     const routes = await readClimbs([...new Set([...comments, ...sends].map((comment) => comment.routeID))]);
 
@@ -104,6 +117,17 @@ export async function getProfile(request: HttpRequest, context: InvocationContex
         ...person,
         fname: user.fname,
         lastInitial: user.lname.trim().charAt(0).toUpperCase(),
+        followers,
+        following: following.length,
+        // Whether the logged-in visitor follows them and they follow the
+        // visitor back - left out for visitors who aren't logged in, and on
+        // their own profile.
+        relation: otherID
+          ? {
+              follows: viewer ? followingIDs(viewer).includes(user.userID) : false,
+              followedBy: followingIDs(user).includes(otherID),
+            }
+          : undefined,
         // Each number is left out when it's hidden.
         stats: metrics
           ? {

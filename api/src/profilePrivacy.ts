@@ -29,8 +29,9 @@ export function privacyOf(user: User): ProfilePrivacy {
   return { ...DEFAULT_PRIVACY, ...user.settings?.privacy };
 }
 
-// Whether someone other than the owner can see a part. There are no friends
-// yet, so "friends" hides it from everyone for now.
+// Whether someone other than the owner can see a part. Friends (people who
+// follow each other - see follows.ts) aren't let through yet, so "friends"
+// hides it from everyone for now.
 export function isVisibleToOthers(visibility: Visibility) {
   return visibility === "everyone";
 }

@@ -4,6 +4,7 @@
 import { apiUrl } from "@/lib/api";
 import { type ApiRoute, type ClimbComment, type ClimbPerson, toClimb } from "@/lib/climbs";
 import type { DashboardComment, DashboardMetrics } from "@/lib/dashboard";
+import type { FollowRelation } from "@/lib/follows";
 import type { ProfilePrivacy } from "@/lib/privacy";
 
 // Each one is missing when it's hidden. `favouriteLine` is the line's number,
@@ -16,6 +17,12 @@ export type Profile = ClimbPerson & {
   fname: string;
   // Just the first letter of their last name.
   lastInitial: string;
+  // How many people follow them, and how many they follow.
+  followers: number;
+  following: number;
+  // Where the logged-in visitor stands with them - missing for visitors who
+  // aren't logged in, and on their own profile.
+  relation?: FollowRelation;
   stats: ProfileStats;
   // Newest first. Null when hidden.
   recentComments: DashboardComment[] | null;
