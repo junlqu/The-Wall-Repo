@@ -2,10 +2,12 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { DETAIL_COPY, operationsHref, unannouncedEntries } from "@/components/AdminOperations";
 import ClimbCharts from "@/components/ClimbCharts";
 import TabBar from "@/components/TabBar";
 import { type Announcement, fetchAnnouncements, formatShortDate, localDate, upcomingFriday } from "@/lib/announcements";
 import { type Climb, fetchClimbs, LINES, parseDate, swatchFor } from "@/lib/climbs";
+import { type Details, entryStatus, formatEntryDates, shiftDate, todayKey, useDetails } from "@/lib/details";
 
 type Line = (typeof LINES)[number];
 
@@ -37,6 +39,29 @@ function cotwMessages(announcements: Announcement[] | null | undefined, now: Dat
       action: { label: "Post it", href: "/admin/announcements/new" },
     },
   ];
+}
+
+// Days ahead an unannounced change turns urgent.
+const ANNOUNCE_URGENT_DAYS = 3;
+
+// One reminder per price change, hours change or closure that's in effect or
+// coming up with no announcement linked - urgent once it's in effect or close.
+function detailMessages(details: Details | null | undefined): DashboardMessage[] {
+  if (!details) return [];
+  const today = todayKey();
+  const soon = shiftDate(today, ANNOUNCE_URGENT_DAYS);
+  return unannouncedEntries(details).map(({ detailID, entry }) => {
+    const live = entryStatus(detailID, entry, today) === "current";
+    const reason = "reason" in entry ? ` (${String(entry.reason)})` : "";
+    return {
+      id: `detail-${entry.id}`,
+      message: `${DETAIL_COPY[detailID].noun} ${formatEntryDates(detailID, entry).toLowerCase()}${reason} ${
+        live ? "is in effect" : "is coming up"
+      } with no announcement linked.`,
+      severity: live || entry.startDate <= soon ? "high" : "medium",
+      action: { label: "Announce it", href: operationsHref(detailID) },
+    };
+  });
 }
 
 // How long a climb can stay up before the dashboard reminds admins to reset it.
@@ -145,6 +170,7 @@ export default function AdminOverview() {
   // undefined while loading, null if the API couldn't be reached.
   const [climbs, setClimbs] = useState<Climb[] | null>();
   const [announcements, setAnnouncements] = useState<Announcement[] | null>();
+  const details = useDetails();
 
   useEffect(() => {
     fetchClimbs()
@@ -161,9 +187,11 @@ export default function AdminOverview() {
   const activeBoulders = active.filter((climb) => climb.type === "boulder");
   const lineRoutes = activeRoutes.filter((route) => route.line === line);
   // Urgent ones first.
-  const messages = [...cotwMessages(announcements, now), ...staleMessages([...activeRoutes, ...activeBoulders], now)].sort(
-    (a, b) => Number(b.severity === "high") - Number(a.severity === "high"),
-  );
+  const messages = [
+    ...cotwMessages(announcements, now),
+    ...detailMessages(details),
+    ...staleMessages([...activeRoutes, ...activeBoulders], now),
+  ].sort((a, b) => Number(b.severity === "high") - Number(a.severity === "high"));
   const loadingText =
     climbs === undefined ? "Loading climbs…" : climbs === null ? "Couldn't load climbs" : null;
 

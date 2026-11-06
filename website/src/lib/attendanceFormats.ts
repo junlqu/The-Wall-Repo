@@ -3,6 +3,12 @@
 // format has a start for both. A format covers a date from its start until the
 // next format's. Columns and prices are read off the real sheets in
 // local/TPASC Wall Usage.
+//
+// Prices admins set on the Operations pages override a format's own for the
+// dates they cover, so earnings follow the prices of the time. The sheet's
+// layout (and its printed header) stays the format's.
+
+import { columnCents, type PricingEntry, pricingBetween, pricingOn } from "@/lib/details";
 
 // Mirrors ATTENDANCE_COLUMN_KEYS in api/src/models/Attendance.ts.
 export type AttendanceColumnKey =
@@ -664,14 +670,39 @@ export const ATTENDANCE_FORMATS: AttendanceFormat[] = [
   CURRENT_FORMAT,
 ];
 
-// The format a weekly sheet used for this date, YYYY-MM-DD. Before the first
-// format's start it falls back on the oldest.
+// Each format at each pricing period's prices, made once.
+const PRICED = new WeakMap<PricingEntry, Map<string, AttendanceFormat>>();
+
+function withCents(node: AttendanceColumnNode, cents: Partial<Record<AttendanceColumnKey, number>>): AttendanceColumnNode {
+  if (isColumnGroup(node)) return { ...node, children: node.children.map((child) => withCents(child, cents)) };
+  // Columns of people who didn't climb are never priced.
+  const price = cents[node.key];
+  return node.cents === null || price === undefined ? node : { ...node, cents: price };
+}
+
+// A format with its prices swapped for a pricing period's.
+function priced(format: AttendanceFormat, pricing: PricingEntry | undefined): AttendanceFormat {
+  if (!pricing) return format;
+  let formats = PRICED.get(pricing);
+  if (!formats) PRICED.set(pricing, (formats = new Map()));
+  let found = formats.get(format.id);
+  if (!found) {
+    const cents = columnCents(pricing);
+    const groups = format.groups.map((node) => withCents(node, cents));
+    found = { ...format, groups, columns: groups.flatMap(leavesOf) };
+    formats.set(format.id, found);
+  }
+  return found;
+}
+
+// The format a weekly sheet used for this date, YYYY-MM-DD, at the prices of
+// that date. Before the first format's start it falls back on the oldest.
 export function formatForDate(date: string): AttendanceFormat {
   let found = FORMAT_2016;
   for (const format of ATTENDANCE_FORMATS) {
     if (format.weeklyFrom && format.weeklyFrom <= date) found = format;
   }
-  return found;
+  return priced(found, pricingOn(date));
 }
 
 function namesIn(nodes: AttendanceColumnNode[], path: string[] = []): [AttendanceColumnKey, string][] {
@@ -690,14 +721,17 @@ export function columnName(format: AttendanceFormat, key: AttendanceColumnKey) {
   return key;
 }
 
-// The format a monthly sheet used for this month. Takes any date in it.
+// The format a monthly sheet used for this month, at the prices most of the
+// month had. Takes any date in it.
 export function formatForMonth(date: string): AttendanceFormat {
   const month = date.slice(0, 7);
   let found = FORMAT_2016;
   for (const format of ATTENDANCE_FORMATS) {
     if (format.monthlyFrom && format.monthlyFrom <= month) found = format;
   }
-  return found;
+  const [year, monthNumber] = month.split("-").map(Number);
+  const lastDay = new Date(year, monthNumber, 0).getDate();
+  return priced(found, pricingBetween(`${month}-01`, `${month}-${String(lastDay).padStart(2, "0")}`));
 }
 
 const LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";

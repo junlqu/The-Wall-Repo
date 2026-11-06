@@ -7,26 +7,34 @@ import { Kicker, Masthead, SectionRule } from "@/components/Masthead";
 import { formatShortDate } from "@/lib/announcements";
 import { parseDate } from "@/lib/climbs";
 import {
-  BOOKING_URL,
-  type BookingSlot,
+  closureOn,
+  DAY_NAMES,
   type DayHours,
-  fetchBookingSlots,
-  WAIVER_URL,
-  WEEKLY_HOURS,
-} from "@/lib/schedule";
+  entryStatus,
+  formatCents,
+  formatDayHours,
+  formatEntryDates,
+  formatShortClock,
+  hoursOn,
+  lessonsOf,
+  lessonsOn,
+  PRICE_LIST,
+  type PriceListItem,
+  type Prices,
+  pricesOn,
+  useDetails,
+  type WeekHours,
+  type WeekLessons,
+} from "@/lib/details";
+import { BOOKING_URL, type BookingSlot, fetchBookingSlots, WAIVER_URL } from "@/lib/schedule";
 
-const DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const DAY_SHORT = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
-// Lessons run during the same hours as the wall itself, on Mon/Wed/Fri only.
-const LESSON_SLOTS: { open: string; close: string }[] = [
-  { open: "4:00 PM", close: "5:30 PM" },
-  { open: "6:00 PM", close: "7:30 PM" },
-];
-const LESSON_DAYS = new Set([0, 2, 4]); // Monday, Wednesday, Friday
-
-function getLessonSlots(weekday: number): { open: string; close: string }[] | null {
-  return LESSON_DAYS.has(weekday) ? LESSON_SLOTS : null;
+// A date's Learn-to-Climb sessions, set with the hours on the Operations page -
+// null when there are none (or the wall is closed).
+function getLessonSlots(date: Date): DayHours[] | null {
+  const lessons = lessonsOn(dateKey(date));
+  return lessons.length > 0 ? lessons : null;
 }
 
 type ScheduleUpdate = {
@@ -61,62 +69,50 @@ function getActiveUpdates(updates: ScheduleUpdate[], now: Date): ScheduleUpdate[
 
 const BELAY_TEST_NOTE = "The climber must pass or have passed a belay test at TPASC.";
 
-type PriceItem = {
-  label: string;
-  price?: string;
-  note?: string;
-  // Shows an info icon explaining the belay test requirement.
-  needsBelayTest?: boolean;
-  tiers?: { label: string; price: string }[];
-};
-
-const PRICE_GROUPS: { audience: string; items: PriceItem[] }[] = [
-  {
-    audience: "UTSC Students",
-    items: [
-      { label: "Drop-in", price: "$0", note: "You have your own gear (shoes + harness)", needsBelayTest: true },
-      { label: "Drop-in + Gear", price: "$5", needsBelayTest: true },
-      { label: "Learn-to-Climb", price: "$5" },
-    ],
-  },
-  {
-    audience: "TPASC Members",
-    items: [
-      { label: "Drop-in", price: "$0", note: "You have your own gear (shoes + harness)", needsBelayTest: true },
-      { label: "Drop-in + Gear", price: "$6", needsBelayTest: true },
-      { label: "Belay service + Gear (1 hour)", price: "$12" },
-      { label: "Learn-to-Climb", price: "$30" },
-    ],
-  },
-  {
-    audience: "Non-TPASC Members",
-    items: [
-      { label: "Drop-in + Gear", price: "$12", needsBelayTest: true },
-      {
-        label: "Belay service + Gear (1 hour)",
-        tiers: [
-          { label: "Age 5–12", price: "$18" },
-          { label: "Age 13–21", price: "$20.40" },
-          { label: "Age 22+", price: "$24" },
-        ],
-      },
-      { label: "Learn-to-Climb", price: "$30" },
-    ],
-  },
-];
-
-function formatHours(hours: DayHours): string {
-  return hours ? `${hours.open} – ${hours.close}` : "Closed";
+// Hours, closures and prices all come from the Operations pages (lib/details),
+// falling back on the built-in ones for anything never set.
+function formatHours(hours: DayHours | null): string {
+  return formatDayHours(hours);
 }
 
-// The next day after `weekday` that the wall is open, as a Monday-first index.
-function nextOpenDay(weekday: number) {
-  for (let ahead = 1; ahead <= 7; ahead++) {
-    const day = (weekday + ahead) % 7;
-    if (WEEKLY_HOURS[day]) return { day, ahead };
+// How far ahead to look for the next open day - long enough for any closure.
+const NEXT_OPEN_SEARCH_DAYS = 120;
+
+// The next day after `from` that the wall is open, going by the hours and
+// closures in effect on each day.
+function nextOpenDay(from: Date) {
+  for (let ahead = 1; ahead <= NEXT_OPEN_SEARCH_DAYS; ahead++) {
+    const date = new Date(from.getFullYear(), from.getMonth(), from.getDate() + ahead);
+    const hours = hoursOn(dateKey(date));
+    if (hours) return { date, ahead, hours };
   }
   return null;
 }
+
+// "Mon, Wed, Fri: 4:00 PM – 10:00 PM · Tue, Thu: Closed" - days with the same
+// hours grouped together.
+function describeWeek(week: WeekHours) {
+  return groupDays(week.map((hours) => formatHours(hours)));
+}
+
+// "Mon, Wed, Fri: 4:00 PM – 5:30 PM, 6:00 PM – 7:30 PM" - the days with
+// lessons, grouped the same way.
+function describeLessons(lessons: WeekLessons) {
+  const text = groupDays(lessons.map((sessions) => (sessions.length > 0 ? sessions.map(formatHours).join(", ") : null)));
+  return text || "none";
+}
+
+// Days grouped by what they say, leaving out the ones with nothing to say.
+function groupDays(texts: (string | null)[]) {
+  const groups = new Map<string, string[]>();
+  texts.forEach((text, index) => {
+    if (text !== null) groups.set(text, [...(groups.get(text) ?? []), DAY_SHORT[index]]);
+  });
+  return [...groups].map(([text, days]) => `${days.join(", ")}: ${text}`).join(" · ");
+}
+
+// How far ahead the Hours card lists closures and hours changes.
+const UPCOMING_DAYS = 90;
 
 function getMonthGrid(year: number, month: number): (number | null)[] {
   // Date.getDay() is 0=Sun..6=Sat - shift it to a Monday-first index so the
@@ -154,7 +150,7 @@ function isBookable(date: Date, today: Date, slots: SlotsState) {
   const daysAhead = Math.round((date.getTime() - startOfToday.getTime()) / ONE_DAY_MS);
   if (daysAhead < 0 || daysAhead >= BOOKABLE_DAYS) return false;
   if (slots instanceof Map) return (slots.get(dateKey(date))?.length ?? 0) > 0;
-  return WEEKLY_HOURS[(date.getDay() + 6) % 7] !== null;
+  return hoursOn(dateKey(date)) !== null;
 }
 
 // A booking system time ("...T16:00") split into "4:00" and "PM".
@@ -239,8 +235,8 @@ function UpdateSlide({ update }: { update: ScheduleUpdate }) {
 
 // The lesson times as chips - what today shows if the booking system can't
 // be reached.
-function LessonTimes({ weekday }: { weekday: number }) {
-  const lessonSlots = getLessonSlots(weekday);
+function LessonTimes({ date }: { date: Date }) {
+  const lessonSlots = getLessonSlots(date);
   if (!lessonSlots) return <p className="text-sm text-neutral-600">No lessons today - drop-ins only.</p>;
   return (
     <div className="flex flex-col gap-2">
@@ -252,7 +248,7 @@ function LessonTimes({ weekday }: { weekday: number }) {
             className="inline-flex w-fit items-center gap-1.5 rounded-full bg-secondary/15 px-2.5 py-1 text-xs font-semibold text-primary"
           >
             <ClockIcon />
-            {`${slot.open} – ${slot.close}`}
+            {formatHours(slot)}
           </span>
         ))}
       </div>
@@ -261,7 +257,7 @@ function LessonTimes({ weekday }: { weekday: number }) {
 }
 
 // Today's sessions and how many online spots each has left.
-function TodaySlots({ weekday, slots }: { weekday: number; slots: BookingSlot[] }) {
+function TodaySlots({ date, slots }: { date: Date; slots: BookingSlot[] }) {
   if (slots.length === 0) {
     return <p className="text-sm text-neutral-600">No sessions left to book online today.</p>;
   }
@@ -274,17 +270,22 @@ function TodaySlots({ weekday, slots }: { weekday: number; slots: BookingSlot[] 
       {lessons.length > 0 ? (
         <SlotSection title="Lessons" slots={lessons} />
       ) : (
-        getLessonSlots(weekday) === null && <p className="text-xs text-neutral-500">No lessons today.</p>
+        getLessonSlots(date) === null && <p className="text-xs text-neutral-500">No lessons today.</p>
       )}
       <p className="text-[11px] text-neutral-400">Spots shown are for online booking.</p>
     </div>
   );
 }
 
+function Skeleton({ className }: { className: string }) {
+  return <div aria-hidden="true" className={`animate-pulse rounded bg-neutral-200/70 ${className}`} />;
+}
+
 // Today's hours and sessions up front - or when the wall opens next.
-function TodayCard({ weekday, today, slots }: { weekday: number; today: Date; slots: SlotsState }) {
-  const hours = WEEKLY_HOURS[weekday];
-  const next = hours ? null : nextOpenDay(weekday);
+function TodayCard({ weekday, today, slots, ready }: { weekday: number; today: Date; slots: SlotsState; ready: boolean }) {
+  const closure = closureOn(dateKey(today));
+  const hours = hoursOn(dateKey(today));
+  const next = hours ? null : nextOpenDay(today);
 
   return (
     <article className="relative flex h-full flex-col gap-4 overflow-hidden rounded-xl border border-neutral-200 bg-white p-6 shadow-sm sm:p-8">
@@ -294,7 +295,12 @@ function TodayCard({ weekday, today, slots }: { weekday: number; today: Date; sl
         <span className="text-sm font-semibold text-neutral-500">{DAY_NAMES[weekday]}</span>
       </div>
 
-      {hours ? (
+      {!ready ? (
+        <div className="flex flex-col gap-3" aria-label="Loading today's hours">
+          <Skeleton className="h-9 w-3/4" />
+          <Skeleton className="h-4 w-full" />
+        </div>
+      ) : hours ? (
         <>
           <h2 className="font-serif text-3xl leading-tight font-bold text-primary sm:text-4xl">
             Drop-ins run {formatHours(hours)}
@@ -307,20 +313,26 @@ function TodayCard({ weekday, today, slots }: { weekday: number; today: Date; sl
             </div>
           ) : slots === "error" ? (
             <>
-              <LessonTimes weekday={weekday} />
+              <LessonTimes date={today} />
               <p className="text-xs text-neutral-500">Couldn&apos;t load available slots right now.</p>
             </>
           ) : (
-            <TodaySlots weekday={weekday} slots={slots.get(dateKey(today)) ?? []} />
+            <TodaySlots date={today} slots={slots.get(dateKey(today)) ?? []} />
           )}
         </>
       ) : (
         <>
           <h2 className="font-serif text-3xl leading-tight font-bold text-primary sm:text-4xl">Closed today</h2>
+          {closure && <p className="text-sm font-semibold text-amber-800">{closure.reason}</p>}
           {next && (
             <p className="text-sm text-neutral-600">
-              Open again {next.ahead === 1 ? "tomorrow" : DAY_NAMES[next.day]},{" "}
-              <span className="font-semibold text-neutral-800">{formatHours(WEEKLY_HOURS[next.day])}</span>.
+              Open again{" "}
+              {next.ahead === 1
+                ? "tomorrow"
+                : next.ahead < 7
+                  ? DAY_NAMES[(next.date.getDay() + 6) % 7]
+                  : next.date.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}
+              , <span className="font-semibold text-neutral-800">{formatHours(next.hours)}</span>.
             </p>
           )}
         </>
@@ -421,7 +433,7 @@ function BeforeYouClimb() {
   );
 }
 
-function PriceCard({ audience, items }: { audience: string; items: PriceItem[] }) {
+function PriceCard({ audience, items, prices }: { audience: string; items: PriceListItem[]; prices: Prices }) {
   return (
     <article className="flex flex-col gap-3 rounded-xl border border-neutral-200 bg-white p-5 shadow-sm">
       <h3 className="font-serif text-xl font-bold text-primary">{audience}</h3>
@@ -433,13 +445,13 @@ function PriceCard({ audience, items }: { audience: string; items: PriceItem[] }
                 {item.label}
                 {item.needsBelayTest && <InfoTip text={BELAY_TEST_NOTE} size={14} />}
               </span>
-              {item.price && <span className="font-semibold text-primary tabular-nums">{item.price}</span>}
+              {item.key && <span className="font-semibold text-primary tabular-nums">{formatCents(prices[item.key])}</span>}
             </div>
             {item.note && <span className="text-xs text-neutral-500">{item.note}</span>}
             {item.tiers?.map((tier) => (
               <div key={tier.label} className="flex items-center justify-between pl-4 text-neutral-600">
                 <span>{tier.label}</span>
-                <span className="font-semibold text-primary tabular-nums">{tier.price}</span>
+                <span className="font-semibold text-primary tabular-nums">{formatCents(prices[tier.key])}</span>
               </div>
             ))}
           </div>
@@ -464,13 +476,38 @@ function ViewToggle({ active, label, onClick }: { active: boolean; label: string
   );
 }
 
+type DetailsState = ReturnType<typeof useDetails>;
+
+// The closures and hours changes coming up soon, soonest first.
+function upcomingChanges(details: DetailsState, today: Date) {
+  if (!details) return [];
+  const todayText = dateKey(today);
+  const until = dateKey(new Date(today.getFullYear(), today.getMonth(), today.getDate() + UPCOMING_DAYS));
+  const closures = details.closures.entries
+    .filter((entry) => entryStatus("closures", entry, todayText) !== "past" && entry.startDate <= until)
+    .map((entry) => ({ id: entry.id, start: entry.startDate, when: formatEntryDates("closures", entry), what: `Closed - ${entry.reason}` }));
+  const hours = details.hours.entries
+    .filter((entry) => entryStatus("hours", entry, todayText) === "upcoming" && entry.startDate <= until)
+    .map((entry) => ({ id: entry.id, start: entry.startDate, when: formatEntryDates("hours", entry), what: `New hours - ${describeWeek(entry.week)}. Lessons - ${describeLessons(lessonsOf(entry))}` }));
+  return [...closures, ...hours].sort((a, b) => a.start.localeCompare(b.start));
+}
+
 export default function SchedulePage() {
   const [view, setView] = useState<"weekly" | "calendar">("weekly");
+  const [priceView, setPriceView] = useState<"now" | "next">("now");
+  // Hours, closures and prices - the built-in ones stand in if they can't load.
+  const details = useDetails();
+  const ready = details !== undefined;
 
   const today = useMemo(() => new Date(), []);
   // Date.getDay() is 0=Sun..6=Sat - shift it to match the Monday-first
-  // DAY_NAMES/DAY_SHORT/WEEKLY_HOURS ordering used throughout this page.
+  // DAY_NAMES/DAY_SHORT ordering used throughout this page.
   const todayIndex = (today.getDay() + 6) % 7;
+  // This week, Monday to Sunday, so the weekly view shows its closures.
+  const weekDates = useMemo(
+    () => DAY_NAMES.map((_, i) => new Date(today.getFullYear(), today.getMonth(), today.getDate() - todayIndex + i)),
+    [today, todayIndex],
+  );
   const [calendarCursor, setCalendarCursor] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1));
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [slots, setSlots] = useState<SlotsState>("loading");
@@ -482,6 +519,9 @@ export default function SchedulePage() {
   }, []);
 
   const activeUpdates = useMemo(() => getActiveUpdates(SCHEDULE_UPDATES, today), [today]);
+  const changes = upcomingChanges(details, today);
+  const nextPricing = details?.pricing.entries.find((entry) => entryStatus("pricing", entry, dateKey(today)) === "upcoming");
+  const prices = pricesOn(priceView === "next" && nextPricing ? nextPricing.startDate : dateKey(today));
 
   const monthGrid = useMemo(
     () => getMonthGrid(calendarCursor.getFullYear(), calendarCursor.getMonth()),
@@ -515,7 +555,7 @@ export default function SchedulePage() {
         )}
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
-          <TodayCard weekday={todayIndex} today={today} slots={slots} />
+          <TodayCard weekday={todayIndex} today={today} slots={slots} ready={ready} />
           <BeforeYouClimb />
         </div>
 
@@ -530,11 +570,20 @@ export default function SchedulePage() {
               </div>
             </div>
 
-            {view === "weekly" ? (
+            {!ready ? (
+              <div className="flex flex-col gap-3" aria-label="Loading hours">
+                {DAY_NAMES.map((name) => (
+                  <Skeleton key={name} className="h-5 w-full" />
+                ))}
+              </div>
+            ) : view === "weekly" ? (
               <div className="flex flex-col divide-y divide-neutral-100">
                 {DAY_NAMES.map((name, i) => {
                   const isToday = i === todayIndex;
-                  const lessonSlots = getLessonSlots(i);
+                  const date = weekDates[i];
+                  const hours = hoursOn(dateKey(date));
+                  const closure = closureOn(dateKey(date));
+                  const lessonSlots = getLessonSlots(date);
                   return (
                     <div
                       key={name}
@@ -545,20 +594,24 @@ export default function SchedulePage() {
                       <div className={`flex items-center justify-between ${isToday ? "font-semibold" : ""}`}>
                         <span className="flex items-center gap-2">
                           {name}
+                          <span className="text-xs font-normal text-neutral-400">
+                            {date.toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                          </span>
                           {isToday && (
                             <span className="rounded-full bg-primary px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">
                               Today
                             </span>
                           )}
                         </span>
-                        <span className="tabular-nums">{formatHours(WEEKLY_HOURS[i])}</span>
+                        <span className="tabular-nums">{formatHours(hours)}</span>
                       </div>
+                      {closure && <p className="text-xs font-semibold text-amber-800">Closure: {closure.reason}</p>}
                       {lessonSlots && (
                         <div className="flex items-start justify-between text-xs text-neutral-500">
                           <span>Learn-to-Climb</span>
                           <span className="flex flex-col items-end tabular-nums">
                             {lessonSlots.map((slot) => (
-                              <span key={slot.open}>{`${slot.open} – ${slot.close}`}</span>
+                              <span key={slot.open}>{formatHours(slot)}</span>
                             ))}
                           </span>
                         </div>
@@ -602,10 +655,10 @@ export default function SchedulePage() {
                 <div className="grid grid-cols-7 gap-1">
                   {monthGrid.map((day, i) => {
                     if (day === null) return <div key={i} />;
-                    const weekday = (i % 7) as number;
                     const date = new Date(calendarCursor.getFullYear(), calendarCursor.getMonth(), day);
                     const isToday = isCurrentMonth && day === today.getDate();
-                    const hours = WEEKLY_HOURS[weekday];
+                    const hours = hoursOn(dateKey(date));
+                    const closure = closureOn(dateKey(date));
                     const bookable = isBookable(date, today, slots);
                     const daySlots = slots instanceof Map ? slots.get(dateKey(date)) : undefined;
                     let slotText: string | null = null;
@@ -628,8 +681,16 @@ export default function SchedulePage() {
                         }`}
                       >
                         <span className="text-sm font-semibold">{day}</span>
-                        <span className={`text-[10px] leading-tight ${isToday ? "text-white/80" : "text-neutral-500"}`}>
-                          {hours ? hours.open.replace(" AM", "a").replace(" PM", "p") : "Closed"}
+                        <span
+                          className={`text-[10px] leading-tight ${
+                            closure
+                              ? `font-semibold ${isToday ? "text-white" : "text-amber-700"}`
+                              : isToday
+                                ? "text-white/80"
+                                : "text-neutral-500"
+                          }`}
+                        >
+                          {hours ? formatShortClock(hours.open) : "Closed"}
                         </span>
                         {slotText && (
                           <span
@@ -644,13 +705,33 @@ export default function SchedulePage() {
                 </div>
 
                 <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-neutral-500">
-                  <span className="flex items-center gap-1.5">
-                    <span className="h-3 w-3 rounded-sm border border-secondary bg-secondary/15" />
-                    Bookable online
+                  <span className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                    <span className="flex items-center gap-1.5">
+                      <span className="h-3 w-3 rounded-sm border border-secondary bg-secondary/15" />
+                      Bookable online
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <span className="font-semibold text-amber-700">Closed</span>
+                      Special closure
+                    </span>
                   </span>
                   {slots === "loading" && <span>Checking available slots…</span>}
                   {slots === "error" && <span>Couldn&apos;t load available slots right now.</span>}
                 </div>
+              </div>
+            )}
+
+            {changes.length > 0 && (
+              <div className="flex flex-col gap-2 border-t border-neutral-100 pt-4">
+                <Kicker className="text-neutral-500">Coming up</Kicker>
+                <ul className="flex flex-col gap-1.5 text-sm">
+                  {changes.map((change) => (
+                    <li key={change.id} className="flex flex-col gap-x-3 sm:flex-row">
+                      <span className="shrink-0 font-semibold text-primary">{change.when}</span>
+                      <span className="text-neutral-600">{change.what}</span>
+                    </li>
+                  ))}
+                </ul>
               </div>
             )}
           </div>
@@ -658,18 +739,31 @@ export default function SchedulePage() {
 
         <section className="flex flex-col gap-6">
           <SectionRule title="Prices" />
+          {nextPricing && (
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-secondary/40 bg-secondary/10 px-4 py-3 text-sm text-primary">
+              <span>Prices change {formatEntryDates("pricing", nextPricing).replace(/^From /, "from ")}.</span>
+              <div className="flex gap-1 rounded-full bg-white p-1 ring-1 ring-neutral-200">
+                <ViewToggle active={priceView === "now"} label="Current" onClick={() => setPriceView("now")} />
+                <ViewToggle active={priceView === "next"} label="Upcoming" onClick={() => setPriceView("next")} />
+              </div>
+            </div>
+          )}
           <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
-            {PRICE_GROUPS.map((group) => (
-              <PriceCard key={group.audience} audience={group.audience} items={group.items} />
-            ))}
+            {PRICE_LIST.map((group) =>
+              ready ? (
+                <PriceCard key={group.audience} audience={group.audience} items={group.items} prices={prices} />
+              ) : (
+                <Skeleton key={group.audience} className="h-56 w-full rounded-xl" />
+              ),
+            )}
           </div>
         </section>
       </div>
 
       {selectedDate && (() => {
-        const weekday = (selectedDate.getDay() + 6) % 7;
-        const hours = WEEKLY_HOURS[weekday];
-        const lessonSlots = getLessonSlots(weekday);
+        const hours = hoursOn(dateKey(selectedDate));
+        const closure = closureOn(dateKey(selectedDate));
+        const lessonSlots = getLessonSlots(selectedDate);
         const bookable = isBookable(selectedDate, today, slots);
         const daySlots = slots instanceof Map ? slots.get(dateKey(selectedDate)) : undefined;
         // Anything that isn't a lesson is booked like a drop-in.
@@ -689,6 +783,7 @@ export default function SchedulePage() {
                 {selectedDate.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}
               </p>
               <p className="mt-1 text-sm text-neutral-600">{formatHours(hours)}</p>
+              {closure && <p className="mt-1 text-sm font-semibold text-amber-800">Closure: {closure.reason}</p>}
 
               {bookable && daySlots ? (
                 <div className="mt-4 flex flex-col gap-3">
@@ -700,7 +795,7 @@ export default function SchedulePage() {
                 <div className="mt-4 flex flex-col gap-1 text-sm text-neutral-600">
                   <Kicker className="text-neutral-500">Lessons</Kicker>
                   {lessonSlots.map((slot) => (
-                    <p key={slot.open}>{`${slot.open} – ${slot.close}`}</p>
+                    <p key={slot.open}>{formatHours(slot)}</p>
                   ))}
                 </div>
               )}

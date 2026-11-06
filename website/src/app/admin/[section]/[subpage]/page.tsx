@@ -11,6 +11,7 @@ import AdminAttendanceImport from "@/components/AdminAttendanceImport";
 import AdminClimbExport from "@/components/AdminClimbExport";
 import AdminClimbImport from "@/components/AdminClimbImport";
 import { AdminActiveClimbs, AdminPastClimbs } from "@/components/AdminClimbs";
+import { AdminClosures, AdminHours, AdminPricing } from "@/components/AdminOperations";
 import AdminSectionView from "@/components/AdminSectionView";
 import AdminUserPermissions from "@/components/AdminUserPermissions";
 import { AdminUserList } from "@/components/AdminUsers";
@@ -31,6 +32,9 @@ const TOOLS: Record<string, ComponentType> = {
   "attendance/new": AdminAttendanceForm,
   "attendance/import": AdminAttendanceImport,
   "attendance/export": AdminAttendanceExport,
+  "operations/pricing": AdminPricing,
+  "operations/hours": AdminHours,
+  "operations/closures": AdminClosures,
   "users/all": AdminUserList,
   "users/permissions": AdminUserPermissions,
 };

@@ -49,6 +49,16 @@ export const ADMIN_SECTIONS: AdminSection[] = [
     ],
   },
   {
+    slug: "operations",
+    title: "Operations",
+    description: "Closures, opening hours and prices - what the schedule page, attendance and earnings go by.",
+    subpages: [
+      { slug: "closures", label: "Set closures" },
+      { slug: "hours", label: "Set operational hours" },
+      { slug: "pricing", label: "Set pricing" },
+    ],
+  },
+  {
     slug: "equipment",
     title: "Equipment (WIP)",
     description: "Track the gear on hand and retire what's worn out.",

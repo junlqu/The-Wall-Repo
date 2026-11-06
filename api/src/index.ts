@@ -9,6 +9,7 @@ import "./functions/authMe";
 import "./functions/authRegister";
 import "./functions/avatars";
 import "./functions/dashboard";
+import "./functions/details";
 import "./functions/health";
 import "./functions/profiles";
 import "./functions/routeActivity";
