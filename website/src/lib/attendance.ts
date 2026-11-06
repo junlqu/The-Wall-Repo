@@ -12,7 +12,7 @@ import {
   formatForDate,
   formatForMonth,
 } from "@/lib/attendanceFormats";
-import { parseTimeString, WEEKLY_HOURS } from "@/lib/schedule";
+import { type ClosureEntry, closureOn, type DayHours, DEFAULT_WEEK, regularHoursOn } from "@/lib/details";
 
 // Tallies for one hour. Columns nobody was counted in are left out.
 export type AttendanceCounts = Partial<Record<AttendanceColumnKey, number>>;
@@ -242,23 +242,24 @@ export type WeekDay = {
   hours: number[];
 };
 
-// The schedule's hours as one-hour slots - 12:00-4:00 PM is 12, 13, 14, 15.
-function slotsFor(weekday: number) {
-  const hours = WEEKLY_HOURS[weekday];
+// A day's hours as one-hour slots - 12:00-4:00 PM is 12, 13, 14, 15.
+export function slotsOf(hours: DayHours | null) {
   if (!hours) return [];
-  const open = parseTimeString(hours.open);
-  const close = parseTimeString(hours.close);
-  const last = close.minutes > 0 ? close.hours : close.hours - 1;
-  return Array.from({ length: Math.max(0, last - open.hours + 1) }, (_, index) => open.hours + index);
+  const [openHour] = hours.open.split(":").map(Number);
+  const [closeHour, closeMinutes] = hours.close.split(":").map(Number);
+  const last = closeMinutes > 0 ? closeHour : closeHour - 1;
+  return Array.from({ length: Math.max(0, last - openHour + 1) }, (_, index) => openHour + index);
 }
 
-// WEEKLY_HOURS is Monday-first; the wall's week starts on Saturday.
+// The week arrays are Monday-first; the wall's week starts on Saturday.
 const SATURDAY_FIRST = [5, 6, 0, 1, 2, 3, 4];
 const NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
-// The days the wall opens, in the order the week runs: Sat, Sun, Mon, Wed, Fri.
+// The days the wall opens on its regular (built-in) schedule, in the order the
+// week runs: Sat, Sun, Mon, Wed, Fri. The charts measure summer hours against
+// it; the hours of an actual date come from scheduledDatesOf.
 export const OPEN_DAYS: WeekDay[] = SATURDAY_FIRST.flatMap((weekday, offset) => {
-  const hours = slotsFor(weekday);
+  const hours = slotsOf(DEFAULT_WEEK[weekday]);
   if (hours.length === 0) return [];
   return [{ offset, short: NAMES[weekday].slice(0, 3), name: NAMES[weekday], weekend: weekday >= 5, hours }];
 });
@@ -277,9 +278,21 @@ export function weekDayOf(date: string): WeekDay {
   return weekDayAt(daysBetween(addDays(weekEndingFor(date), -6), date));
 }
 
-// The dates of the open days in the week ending on `weekEnding`.
-export function openDatesOf(weekEnding: string) {
-  return OPEN_DAYS.map((day) => ({ day, date: addDays(weekEnding, day.offset - 6) }));
+export type ScheduledDate = {
+  date: string;
+  // The hour slots it's scheduled to open for, by the hours in effect that day.
+  hours: number[];
+  // Set when an admin closed it.
+  closure?: ClosureEntry;
+};
+
+// The days the wall is scheduled to open in the week ending on `weekEnding`,
+// going by the opening hours in effect on each, with any closure on them.
+export function scheduledDatesOf(weekEnding: string): ScheduledDate[] {
+  return Array.from({ length: 7 }, (_, offset) => addDays(weekEnding, offset - 6)).flatMap((date) => {
+    const hours = slotsOf(regularHoursOn(date));
+    return hours.length > 0 ? [{ date, hours, closure: closureOn(date) }] : [];
+  });
 }
 
 // The months as a monthly sheet's title writes them.
@@ -316,13 +329,14 @@ export function monthsBefore(today: string, count: number) {
 }
 
 // The Fridays of weeks that have reached a month but have no weekly sheet on
-// record, oldest first. They could be weeks not entered yet, or weeks the wall
-// was closed.
+// record, oldest first. Weeks closed all through by the schedule or closures
+// are left out; the rest could be weeks not entered yet, or closures nobody set.
 export function unrecordedWeeks(weeks: AttendanceWeek[], startDay: string, endDay: string, today = dateKey(new Date())) {
   const missing: string[] = [];
   for (let friday = weekEndingFor(startDay); addDays(friday, -6) <= endDay; friday = addDays(friday, 7)) {
     const started = addDays(friday, -6) <= today && startDay <= today;
-    if (started && !weeks.some((week) => week.weekEnding === friday)) missing.push(friday);
+    const opens = scheduledDatesOf(friday).some((day) => !day.closure);
+    if (started && opens && !weeks.some((week) => week.weekEnding === friday)) missing.push(friday);
   }
   return missing;
 }

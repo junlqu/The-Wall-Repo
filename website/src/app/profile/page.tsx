@@ -1,19 +1,31 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
-import { Suspense } from "react";
-import AccountSettings from "./AccountSettings";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect } from "react";
+import { settingsHref } from "@/lib/settings";
 import PublicProfile from "./PublicProfile";
 
-// ?username= shows that person's profile; without it, the visitor's own
-// settings. &view=public shows someone their own profile as others see it.
+const BLANK = <div className="min-h-[calc(100vh-4rem)] bg-neutral-50" />;
+
+// Settings used to live at /profile without a username - send old links on.
+function ToSettings() {
+  const router = useRouter();
+  useEffect(() => router.replace(settingsHref()), [router]);
+  return BLANK;
+}
+
+// ?username= shows that person's profile. &view=public shows someone their
+// own profile as others see it.
 function ProfileRoute() {
   const params = useSearchParams();
   const username = params.get("username")?.trim();
+  const asOthers = params.get("view") === "public";
+  // Keyed on the view too: the two are fetched separately, so switching
+  // starts afresh rather than showing the other one until it loads.
   return username ? (
-    <PublicProfile key={username} username={username} asOthers={params.get("view") === "public"} />
+    <PublicProfile key={`${username}:${asOthers}`} username={username} asOthers={asOthers} />
   ) : (
-    <AccountSettings />
+    <ToSettings />
   );
 }
 
@@ -21,7 +33,7 @@ function ProfileRoute() {
 // the browser - hence the Suspense boundary.
 export default function ProfilePage() {
   return (
-    <Suspense fallback={<div className="min-h-[calc(100vh-4rem)] bg-neutral-50" />}>
+    <Suspense fallback={BLANK}>
       <ProfileRoute />
     </Suspense>
   );

@@ -29,11 +29,13 @@ function tones(onDark: boolean) {
   };
 }
 
+// One part of a Climber of the Week post. Its heading is in the sky blue of
+// the post's tab, so the parts stand apart.
 function Section({ heading, text, onDark }: { heading: string; text: string; onDark: boolean }) {
   const tone = tones(onDark);
   return (
     <div className="flex flex-col gap-1">
-      <h4 className={tone.heading}>{heading}</h4>
+      <h4 className={`${HEADING_CLASS} font-bold ${onDark ? "text-secondary" : "text-sky-700"}`}>{heading}</h4>
       <p className={tone.text}>{text}</p>
     </div>
   );

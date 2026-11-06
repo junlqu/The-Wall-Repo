@@ -1,5 +1,7 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from "@azure/functions";
 import { corsHeaders } from "../authUtils";
+import { ClosureEntry } from "../models/Detail";
+import { readDetail } from "./details";
 
 // TPASC books the wall through EZFacility. Its sessions page has no public
 // API, so this asks it the same way the page's calendar does: load the page
@@ -120,17 +122,33 @@ async function fetchDay(cookie: string, date: string): Promise<EzSession[]> {
   return (await res.json()) as EzSession[];
 }
 
+// The closures admins have set, so a closed day shows nothing to book even if
+// the booking system still lists sessions. Losing them only loses that - the
+// slots still load.
+async function loadClosures(): Promise<ClosureEntry[]> {
+  try {
+    return ((await readDetail("closures"))?.entries ?? []) as ClosureEntry[];
+  } catch {
+    return [];
+  }
+}
+
+function isClosed(date: string, closures: ClosureEntry[]) {
+  return closures.some((closure) => closure.startDate <= date && date <= (closure.endDate ?? closure.startDate));
+}
+
 // The wall's sessions for each bookable day, leaving out any that have
-// already started.
+// already started and every one on a day the wall is closed.
 async function loadSlots(): Promise<SlotsResponse> {
   const now = new Date();
   const { date: today, time } = torontoParts(now);
   const nowStamp = `${today}T${time}`;
-  const cookie = await openSession();
+  const [cookie, closures] = await Promise.all([openSession(), loadClosures()]);
   const dates = Array.from({ length: BOOKABLE_DAYS }, (_, i) => addDays(today, i));
 
   const days = await Promise.all(
     dates.map(async (date) => {
+      if (isClosed(date, closures)) return { date, slots: [] };
       const sessions = await fetchDay(cookie, date);
       const slots = sessions
         .filter((session) => session.venues.some((venue) => venue.ScheduleGroup === WALL_SCHEDULE_GROUP))

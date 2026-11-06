@@ -14,8 +14,8 @@ import {
   formatMoney,
   formatPrice,
   hoursOf,
-  openDatesOf,
   saveAttendance,
+  scheduledDatesOf,
   weekDayOf,
   weekEndingFor,
 } from "@/lib/attendance";
@@ -27,6 +27,7 @@ import {
   isColumnGroup,
 } from "@/lib/attendanceFormats";
 import { formatDate, todayDate } from "@/lib/climbs";
+import { closureOn } from "@/lib/details";
 
 // Far more than fit on the wall in an hour - matches the API's limit.
 const MAX_DIGITS = 3;
@@ -78,20 +79,23 @@ const COUNT_INPUT_CLASS =
 type DayDraft = { closed: boolean; hours: Record<string, AttendanceCounts>; turnedAway: number };
 type WeekDraft = Record<string, DayDraft>;
 
-// The week's open days with the schedule's hours, filled in from what was
-// saved. A saved week that's missing an open day had it closed, and a saved day
-// keeps the hours it was recorded with - older weeks kept different hours, and
-// sometimes opened on other days.
+// The week's scheduled days with the hours in effect on each (the Operations
+// pages' opening hours), filled in from what was saved. A day an admin closed
+// starts out ticked closed. A saved week that's missing a scheduled day had it
+// closed, and a saved day keeps the hours it was recorded with - older weeks
+// kept different hours, and sometimes opened on other days.
 function draftFor(weekEnding: string, saved: AttendanceWeek | undefined): WeekDraft {
-  const dates = [...new Set([...openDatesOf(weekEnding).map(({ date }) => date), ...(saved?.days ?? []).map(({ date }) => date)])];
+  const scheduled = scheduledDatesOf(weekEnding);
+  const dates = [...new Set([...scheduled.map(({ date }) => date), ...(saved?.days ?? []).map(({ date }) => date)])];
   return Object.fromEntries(
     dates.map((date) => {
       const savedDay = saved?.days.find((item) => item.date === date);
-      const hours = savedDay && hoursOf(savedDay).length > 0 ? hoursOf(savedDay) : weekDayOf(date).hours;
+      const planned = scheduled.find((item) => item.date === date);
+      const hours = savedDay && hoursOf(savedDay).length > 0 ? hoursOf(savedDay) : (planned?.hours ?? weekDayOf(date).hours);
       return [
         date,
         {
-          closed: !!saved && !savedDay,
+          closed: saved ? !savedDay : !!planned?.closure,
           hours: Object.fromEntries(hours.map((hour) => [String(hour), { ...savedDay?.hours[String(hour)] }])),
           turnedAway: savedDay?.turnedAway ?? 0,
         },
@@ -140,6 +144,7 @@ function DayTable({
   onChange: (draft: DayDraft) => void;
 }) {
   const day = weekDayOf(date);
+  const closure = closureOn(date);
   // The sheet's columns and prices on this date.
   const format = formatForDate(date);
   const { depth, rows, names } = headerOf(format);
@@ -155,6 +160,11 @@ function DayTable({
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-neutral-100 bg-neutral-50 px-4 py-2.5">
         <h2 className="font-bold text-primary">
           {day.name} <span className="font-normal text-neutral-500">· {formatDate(date)}</span>
+          {closure && (
+            <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
+              Closure: {closure.reason}
+            </span>
+          )}
         </h2>
         <div className="flex flex-wrap items-center gap-4 text-xs text-neutral-500">
           {!draft.closed && (

@@ -1,13 +1,14 @@
 import { PatchOperation, SqlParameter } from "@azure/cosmos";
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from "@azure/functions";
 import { isDateTime, toPublicAnnouncement } from "../announcementFields";
-import { corsHeaders, readCurrentUser, readSessionUser } from "../authUtils";
+import { corsHeaders, readCurrentUser } from "../authUtils";
 import { PublicPerson, readPeople, toPublicComment } from "../commentFields";
 import { getContainer } from "../cosmosClient";
+import { readFollowing } from "../follows";
 import { Announcement, ANNOUNCEMENT_CONTAINER } from "../models/Announcement";
 import { Comment, COMMENT_CONTAINER } from "../models/Comment";
 import { Route, ROUTE_CONTAINER } from "../models/Route";
-import { USER_CONTAINER } from "../models/User";
+import { User, USER_CONTAINER } from "../models/User";
 import { computeMetrics, metricsPatch } from "../userMetrics";
 
 // How many older updates sit under the new ones, so the column isn't empty
@@ -62,23 +63,68 @@ function announcementSource(now: string): UpdateSource {
   };
 }
 
-// What other people have said on the climbs they follow that are still up, as
-// `read` picks them out. Nothing to look through for someone who follows nothing.
-async function readFollowedComments(userID: string, read: (source: UpdateSource) => Promise<Comment[]>) {
-  const { resources: routeIDs } = await getContainer(ROUTE_CONTAINER)
-    .items.query<string>({
-      query: "SELECT VALUE c.routeID FROM c WHERE ARRAY_CONTAINS(c.follows, @userID) AND c.removedAt = 0",
-      parameters: [{ name: "@userID", value: userID }],
-    })
-    .fetchAll();
-  if (routeIDs.length === 0) return [];
+// Why a comment is in someone's updates: it's on a climb they follow, or by
+// someone they follow - or by a friend, someone they follow who follows them
+// back. For now all three show the same; they're told apart so settings can
+// treat them differently later.
+type FollowedVia = "climb" | "user" | "friend";
+
+// Who and what they follow, to pick their updates out with.
+type Follows = { routeIDs: string[]; following: string[]; friends: Set<string> };
+
+async function readFollows(user: Pick<User, "userID" | "following">): Promise<Follows> {
+  const [{ resources: routeIDs }, { following, friends }] = await Promise.all([
+    getContainer(ROUTE_CONTAINER)
+      .items.query<string>({
+        query: "SELECT VALUE c.routeID FROM c WHERE ARRAY_CONTAINS(c.follows, @userID) AND c.removedAt = 0",
+        parameters: [{ name: "@userID", value: user.userID }],
+      })
+      .fetchAll(),
+    readFollowing(user),
+  ]);
+  return { routeIDs, following, friends };
+}
+
+function followedVia(comment: Comment, follows: Follows): FollowedVia {
+  if (follows.friends.has(comment.userID)) return "friend";
+  return follows.following.includes(comment.userID) ? "user" : "climb";
+}
+
+// Which updates to show: everything, or only announcements, what the people
+// they follow have said and sent, or what's been said and sent on the climbs
+// they've saved.
+const UPDATE_FILTERS = ["all", "announcements", "following", "climbs"] as const;
+type UpdateFilter = (typeof UPDATE_FILTERS)[number];
+
+function readUpdateFilter(value: string | null): UpdateFilter | null {
+  if (value === null) return "all";
+  return UPDATE_FILTERS.includes(value as UpdateFilter) ? (value as UpdateFilter) : null;
+}
+
+// Other people's comments and sends on the climbs they follow that are still
+// up, and everything the people they follow have said and sent, as `read`
+// picks them out - or only one of the two, with "following" or "climbs". A
+// send without text counts; a bare grade or rating doesn't. Nothing to look
+// through for someone who follows nothing.
+async function readFollowedComments(
+  userID: string,
+  follows: Follows,
+  read: (source: UpdateSource) => Promise<Comment[]>,
+  filter: UpdateFilter = "all",
+) {
+  const matches = [
+    ...(filter !== "following" && follows.routeIDs.length > 0 ? ["ARRAY_CONTAINS(@routeIDs, c.routeID)"] : []),
+    ...(filter !== "climbs" && follows.following.length > 0 ? ["ARRAY_CONTAINS(@following, c.userID)"] : []),
+  ];
+  if (filter === "announcements" || matches.length === 0) return [];
 
   return read({
     container: COMMENT_CONTAINER,
     timeField: "commentedAt",
-    filter: `ARRAY_CONTAINS(@routeIDs, c.routeID) AND c.userID != @userID AND c.comment != ""`,
+    filter: `(${matches.join(" OR ")}) AND c.userID != @userID AND (c.comment != "" OR c.send = true)`,
     parameters: [
-      { name: "@routeIDs", value: routeIDs },
+      { name: "@routeIDs", value: follows.routeIDs },
+      { name: "@following", value: follows.following },
       { name: "@userID", value: userID },
     ],
   });
@@ -136,12 +182,13 @@ function toPublicUpdate(
   request: HttpRequest,
   people: Map<string, PublicPerson>,
   routes: Map<string, Route>,
+  follows: Follows,
 ) {
   return {
     at: item.at,
     isNew,
     ...("comment" in item
-      ? { kind: "comment", ...withClimb(item.comment, people, routes) }
+      ? { kind: "comment", via: followedVia(item.comment, follows), ...withClimb(item.comment, people, routes) }
       : { kind: "announcement", announcement: toPublicAnnouncement(item.announcement, request) }),
   };
 }
@@ -162,9 +209,10 @@ export async function openDashboard(request: HttpRequest, context: InvocationCon
     const since = user.lastOnline ?? user.createdAt;
 
     const savedMetrics = user.settings?.metrics;
+    const follows = await readFollows(user);
     const [announcements, followedComments, myComments, metrics] = await Promise.all([
       readAround<Announcement>(announcementSource(now), since),
-      readFollowedComments(user.userID, (source) => readAround<Comment>(source, since)),
+      readFollowedComments(user.userID, follows, (source) => readAround<Comment>(source, since)),
       readMyRecentComments(user.userID),
       savedMetrics ?? computeMetrics(user.userID),
     ]);
@@ -199,8 +247,11 @@ export async function openDashboard(request: HttpRequest, context: InvocationCon
       status: 200,
       headers,
       jsonBody: {
-        updates: shown.map((item) => toPublicUpdate(item, isNew(item), request, people, routes)),
+        updates: shown.map((item) => toPublicUpdate(item, isNew(item), request, people, routes, follows)),
         hasMoreUpdates: items.length > shown.length,
+        // Their visit before this one - anything from then on is new. Passed
+        // back to /dashboard/updates so filtered updates can say so too.
+        since,
         metrics,
         latestSendClimb: (latestSendID && routes.get(latestSendID)) || null,
         recentComments: myComments.map((comment) => withClimb(comment, people, routes)),
@@ -212,24 +263,39 @@ export async function openDashboard(request: HttpRequest, context: InvocationCon
   }
 }
 
-// GET /dashboard/updates?before= - the next few updates from before the given
-// moment, and whether there are more. All the new ones came with the
-// dashboard, so none of these are, and asking leaves lastOnline alone.
+// GET /dashboard/updates?before=&only=&since= - the next few updates from
+// before the given moment (from the newest, without one), and whether there
+// are more. `only` is announcements, following or climbs to keep to one kind.
+// An update from `since` on - the visit before this one, which came with the
+// dashboard - is new. Asking leaves lastOnline alone.
 export async function getOlderUpdates(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
   const headers = corsHeaders(request);
 
   try {
-    const session = readSessionUser(request);
-    if (!session) return { status: 401, headers, jsonBody: { error: "You need to be logged in." } };
-
-    const before = request.query.get("before");
-    if (!isDateTime(before)) {
+    // Past anything that could have been posted yet.
+    const before = request.query.get("before") ?? "9999-12-31T23:59:59.999Z";
+    const since = request.query.get("since");
+    const filter = readUpdateFilter(request.query.get("only"));
+    if (!isDateTime(before) || (since !== null && !isDateTime(since)) || !filter) {
       return { status: 400, headers, jsonBody: { error: "That isn't a valid page of updates." } };
     }
 
+    // Their account, for who they follow.
+    const user = await readCurrentUser(request);
+    if (!user) return { status: 401, headers, jsonBody: { error: "You need to be logged in." } };
+
+    const follows = await readFollows(user);
+    const showsAnnouncements = filter === "all" || filter === "announcements";
     const [announcements, comments] = await Promise.all([
-      readOlder<Announcement>(announcementSource(new Date().toISOString()), before, OLDER_UPDATES),
-      readFollowedComments(session.userID, (source) => readOlder<Comment>(source, before, OLDER_UPDATES)),
+      showsAnnouncements
+        ? readOlder<Announcement>(announcementSource(new Date().toISOString()), before, OLDER_UPDATES)
+        : [],
+      readFollowedComments(
+        user.userID,
+        follows,
+        (source) => readOlder<Comment>(source, before, OLDER_UPDATES),
+        filter,
+      ),
     ]);
     const items = mergeUpdates(announcements, comments);
     const shown = firstUpdates(items, OLDER_UPDATES);
@@ -243,7 +309,9 @@ export async function getOlderUpdates(request: HttpRequest, context: InvocationC
       status: 200,
       headers,
       jsonBody: {
-        updates: shown.map((item) => toPublicUpdate(item, false, request, people, routes)),
+        updates: shown.map((item) =>
+          toPublicUpdate(item, since !== null && item.at >= since, request, people, routes, follows),
+        ),
         hasMoreUpdates: items.length > shown.length,
       },
     };

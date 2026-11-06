@@ -50,6 +50,8 @@ export type Climb = {
   sends: number;
   // Who sent it, in order - so a list can tell the visitor which they have.
   senderIDs: string[];
+  // Who follows (has saved) it - see useClimbSaved in lib/follows.ts.
+  followerIDs: string[];
   comments: number;
   // Average of its comments' ratings as stars out of 5, or null when nobody
   // has rated it.
@@ -204,6 +206,7 @@ export function toClimb(route: ApiRoute): Climb {
     leadable: route.leadable ?? "?",
     sends: route.ascents?.length ?? 0,
     senderIDs: route.ascents ?? [],
+    followerIDs: route.follows ?? [],
     comments: route.comments ?? 0,
     stars: toStars(route.rating),
     ratings: Math.max(0, route.rating?.count ?? 0),

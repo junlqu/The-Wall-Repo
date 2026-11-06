@@ -12,6 +12,7 @@ import {
   CommentItem,
   Person,
   Placeholder,
+  SaveClimbButton,
   Stars,
 } from "@/components/ClimbCards";
 import CommentForm from "@/components/CommentForm";
@@ -163,7 +164,7 @@ function PostCard({ climb, lastSend }: { climb: Climb; lastSend: LastSend }) {
           </Kicker>
 
           <div className="flex min-w-0 flex-col gap-4">
-            <div className="flex items-center gap-4 pr-12 sm:gap-5 sm:pr-16">
+            <div className="flex items-center gap-4 pr-20 sm:gap-5 sm:pr-28">
               <ColourCircle climb={climb} />
               <div className="flex min-w-0 flex-col gap-1">
                 <h1 className="font-serif text-4xl leading-tight font-black tracking-tight text-primary sm:text-6xl">
@@ -221,13 +222,16 @@ function PostCard({ climb, lastSend }: { climb: Climb; lastSend: LastSend }) {
       </div>
 
       {/* Tucked into the corner rather than given a column, so the title keeps
-          its width - it only needs to clear the grade box. */}
+          its width - it only needs to clear the grade box and save button. */}
       <div className="absolute top-4 right-3 flex flex-col items-end gap-2 sm:top-5 sm:right-5 sm:gap-3">
         <div className="flex gap-1.5 sm:gap-2">
           <Tally icon={<SendIcon />} count={climb.sends} label={climb.sends === 1 ? "Send" : "Sends"} />
           <Tally icon={<CommentIcon className="h-4 w-4" />} count={climb.comments} label={climb.comments === 1 ? "Comment" : "Comments"} />
         </div>
-        <GradeBox grade={climb.grade} />
+        <div className="flex items-center gap-1.5 sm:gap-2">
+          <GradeBox grade={climb.grade} />
+          <SaveClimbButton climb={climb} large />
+        </div>
       </div>
     </article>
   );

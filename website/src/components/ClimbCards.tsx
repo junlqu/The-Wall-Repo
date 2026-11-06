@@ -22,6 +22,7 @@ import {
   MAX_STARS,
   ratingStars,
 } from "@/lib/climbs";
+import { setClimbSaved, useClimbSaved } from "@/lib/follows";
 import { BOULDER_GRADES, compareGrades, ROUTE_GRADES } from "@/lib/grades";
 import { profileHref } from "@/lib/profiles";
 import { useSessionUser } from "@/lib/session";
@@ -222,6 +223,104 @@ export function ChevronIcon({ open }: { open: boolean }) {
         clipRule="evenodd"
       />
     </svg>
+  );
+}
+
+// Filled when the climb is saved, an outline when it isn't.
+export function BookmarkIcon({ filled, className = "h-4 w-4" }: { filled: boolean; className?: string }) {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 20 20"
+      fill={filled ? "currentColor" : "none"}
+      stroke="currentColor"
+      strokeWidth={filled ? 0 : 1.5}
+      strokeLinejoin="round"
+      className={`shrink-0 ${className}`}
+    >
+      <path d="M10 2.75c-1.69 0-3.36.1-5 .31-.73.09-1.25.72-1.25 1.46v12.73l6.25-3 6.25 3V4.52c0-.74-.52-1.37-1.25-1.46-1.64-.2-3.31-.31-5-.31z" />
+    </svg>
+  );
+}
+
+// A small ribbon hanging from the top-left corner of a climb that links to its
+// page, showing the visitor has saved it. In the corner's padding, so it
+// doesn't make the row any wider or taller. Its parent needs to be relative.
+function SavedRibbon({ className }: { className: string }) {
+  return (
+    <>
+      <svg aria-hidden="true" viewBox="0 0 8 12" fill="currentColor" className={`pointer-events-none absolute top-0 text-secondary ${className}`}>
+        <path d="M0 0h8v12L4 9 0 12z" />
+      </svg>
+      <span className="sr-only">Saved</span>
+    </>
+  );
+}
+
+// Where a climb's dropdown arrow goes: the arrow, or a bookmark in its place
+// once the visitor has saved the climb.
+function DropdownMarker({ climb, open }: { climb: Climb; open: boolean }) {
+  if (!useClimbSaved(climb)) return <ChevronIcon open={open} />;
+  return (
+    <>
+      <BookmarkIcon filled className="h-4 w-4 text-secondary" />
+      <span className="sr-only">Saved</span>
+    </>
+  );
+}
+
+// Saves or unsaves the climb for the logged-in visitor, so its new comments
+// and sends show on their dashboard. Nothing for visitors who aren't logged
+// in. A climb that's come down can only be unsaved. `large` is for a climb's
+// own page.
+export function SaveClimbButton({ climb, large = false }: { climb: Climb; large?: boolean }) {
+  const userID = useSessionUser()?.userID;
+  const saved = useClimbSaved(climb);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (!userID || (!saved && climb.status === "past")) return null;
+
+  async function toggle() {
+    setBusy(true);
+    setError(null);
+    try {
+      await setClimbSaved(userID!, climb.id, !saved);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong. Try again.");
+    }
+    setBusy(false);
+  }
+
+  const size = large ? "h-7 w-7 rounded-md sm:h-9 sm:w-9 sm:rounded-lg" : "h-7 w-7 rounded-full";
+  return (
+    <>
+      <button
+        type="button"
+        onClick={toggle}
+        disabled={busy}
+        aria-pressed={saved}
+        aria-label={saved ? "Saved - unsave this climb" : "Save this climb"}
+        title={
+          error ??
+          (saved
+            ? "Saved - its new comments and sends show on your dashboard. Click to unsave."
+            : "Save it to see its new comments and sends on your dashboard")
+        }
+        className={`inline-flex shrink-0 items-center justify-center border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-secondary disabled:cursor-wait disabled:opacity-60 ${size} ${
+          saved
+            ? "border-secondary bg-secondary/15 text-primary hover:bg-secondary/25"
+            : "border-neutral-300 bg-white text-neutral-500 hover:border-primary hover:text-primary"
+        }`}
+      >
+        <BookmarkIcon filled={saved} className={large ? "h-4 w-4 sm:h-5 sm:w-5" : "h-4 w-4"} />
+      </button>
+      {error && (
+        <span role="alert" className="sr-only">
+          {error}
+        </span>
+      )}
+    </>
   );
 }
 
@@ -432,15 +531,18 @@ function ClimbActivityPanel({ climb }: { climb: Climb }) {
             </>
           )}
         </dl>
-        <Link
-          href={climbHref(climb.id)}
-          className="group inline-flex shrink-0 items-center gap-1 rounded-full border border-primary px-2.5 py-1 font-semibold text-primary transition-colors hover:bg-primary hover:text-white"
-        >
-          Open climb
-          <span aria-hidden="true" className="transition-transform group-hover:translate-x-0.5">
-            →
-          </span>
-        </Link>
+        <div className="flex shrink-0 items-center gap-2">
+          <SaveClimbButton climb={climb} />
+          <Link
+            href={climbHref(climb.id)}
+            className="group inline-flex shrink-0 items-center gap-1 rounded-full border border-primary px-2.5 py-1 font-semibold text-primary transition-colors hover:bg-primary hover:text-white"
+          >
+            Open climb
+            <span aria-hidden="true" className="transition-transform group-hover:translate-x-0.5">
+              →
+            </span>
+          </Link>
+        </div>
       </div>
 
       <section className="flex flex-col gap-2">
@@ -470,18 +572,23 @@ function ClimbActivityPanel({ climb }: { climb: Climb }) {
 
 // A row with the tape on a line of its own is a little taller.
 function rowClass(tapeRow: boolean) {
-  return `-mx-2 flex w-[calc(100%+1rem)] items-center justify-between gap-3 rounded-lg px-2 ${
+  return `relative -mx-2 flex w-[calc(100%+1rem)] items-center justify-between gap-3 rounded-lg px-2 ${
     tapeRow ? "py-3" : "py-2"
   } text-left text-sm transition-colors hover:bg-neutral-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-secondary`;
 }
 const CARD_CLASS =
-  "flex min-h-24 flex-col gap-3 rounded-lg p-4 text-left transition-colors hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-secondary";
+  "relative flex min-h-24 flex-col gap-3 rounded-lg p-4 text-left transition-colors hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-secondary";
 
+// `open` is whether its dropdown is open - left out for a row linking to the
+// climb's page, which has no dropdown arrow and shows it's saved with a ribbon
+// instead.
 function RowContent({ climb, open, tapeRow }: { climb: Climb; open?: boolean; tapeRow: boolean }) {
+  const saved = useClimbSaved(climb);
   return (
     <>
+      {open === undefined && saved && <SavedRibbon className="left-0.5 h-2.5 w-1.5" />}
       <span className="flex min-w-0 items-center gap-2 font-medium text-neutral-800">
-        {open !== undefined && <ChevronIcon open={open} />}
+        {open !== undefined && <DropdownMarker climb={climb} open={open} />}
         <ClimbColour climb={climb} tapeRow={tapeRow} />
       </span>
       <span className="flex shrink-0 items-center gap-3">
@@ -493,11 +600,13 @@ function RowContent({ climb, open, tapeRow }: { climb: Climb; open?: boolean; ta
 }
 
 function CardContent({ climb, open }: { climb: Climb; open?: boolean }) {
+  const saved = useClimbSaved(climb);
   return (
     <>
+      {open === undefined && saved && <SavedRibbon className="left-1.5 h-3.5 w-2.5" />}
       <span className="flex w-full items-start justify-between gap-2">
         <span className="flex min-w-0 items-start gap-1.5 font-medium text-neutral-800">
-          {open !== undefined && <ChevronIcon open={open} />}
+          {open !== undefined && <DropdownMarker climb={climb} open={open} />}
           <ClimbColour climb={climb} stacked />
         </span>
         <GradeTag grade={climb.grade} />

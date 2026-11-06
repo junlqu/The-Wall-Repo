@@ -4,8 +4,10 @@ import { type ReactNode, useCallback, useEffect, useRef, useState } from "react"
 import AccessNotice from "@/components/AccessNotice";
 import AnnouncementDetails, { EyeIcon } from "@/components/AnnouncementDetails";
 import { LikeButton, useToggleLike } from "@/components/AnnouncementLike";
-import { ClimbBox, RecentComment } from "@/components/ClimbActivity";
+import { ClimbBox, CommentTags, RecentComment } from "@/components/ClimbActivity";
 import { Person, Placeholder } from "@/components/ClimbCards";
+import ReadMore from "@/components/ReadMore";
+import SlidingTabs from "@/components/SlidingTabs";
 import { type Announcement, formatShortDate } from "@/lib/announcements";
 import { type Climb, formatDate } from "@/lib/climbs";
 import {
@@ -13,10 +15,11 @@ import {
   type DashboardMetrics,
   type DashboardUpdate,
   favouriteLineLabel,
-  fetchOlderUpdates,
+  fetchUpdates,
   hardestSendLabel,
   openDashboard,
   totalSends,
+  type UpdateFilter,
 } from "@/lib/dashboard";
 import { withReturnTo } from "@/lib/returnTo";
 import { useSessionUser } from "@/lib/session";
@@ -29,13 +32,15 @@ const UPDATE_TABS = {
   update: { colour: "bg-red-300", label: "Update" },
   sets: { colour: "bg-green-300", label: "Route setting" },
   cotw: { colour: "bg-sky-300", label: "Climber of the Week" },
-  followedClimb: { colour: "bg-purple-300", label: "Comment on a climb you follow" },
-  // Kept for updates from followed users, once people can follow each other.
-  followedUser: { colour: "bg-orange-300", label: "From someone you follow" },
+  climb: { colour: "bg-purple-300", label: "On a climb you saved" },
+  // Friends' updates show the same as anyone else they follow for now - kept
+  // apart so settings can treat them differently later.
+  user: { colour: "bg-orange-300", label: "From someone you follow" },
+  friend: { colour: "bg-orange-300", label: "From a friend" },
 };
 
 function updateTab(update: DashboardUpdate) {
-  if (update.kind === "comment") return UPDATE_TABS.followedClimb;
+  if (update.kind === "comment") return UPDATE_TABS[update.via];
   const { type } = update.announcement;
   return type === "sets" || type === "cotw" ? UPDATE_TABS[type] : UPDATE_TABS.update;
 }
@@ -78,7 +83,9 @@ function UpdateItem({
           <h3 className="font-semibold text-neutral-900">{announcement.title}</h3>
           <PostedAt at={update.at} />
         </div>
-        <AnnouncementDetails announcement={announcement} />
+        <ReadMore fade="from-white">
+          <AnnouncementDetails announcement={announcement} />
+        </ReadMore>
         <div className="flex items-center justify-between gap-4 text-xs text-neutral-500">
           <span className="flex min-w-0 items-center gap-1.5">
             <span className="shrink-0">Posted by</span>
@@ -103,58 +110,141 @@ function UpdateItem({
         <Person person={update.comment.author} />
         <PostedAt at={update.at} />
       </div>
-      <p className="whitespace-pre-line break-words text-sm text-neutral-700">{update.comment.comment}</p>
+      {update.comment.comment && (
+        <ReadMore fade="from-white">
+          <p className="whitespace-pre-line break-words text-sm text-neutral-700">{update.comment.comment}</p>
+        </ReadMore>
+      )}
+      <CommentTags comment={update.comment} sentOn />
       {update.climb && <ClimbBox climb={update.climb} />}
     </UpdateCard>
   );
 }
 
-// The updates that came with the dashboard, and any more they ask for.
-function UpdatesList({ dashboard }: { dashboard: Dashboard }) {
-  const [updates, setUpdates] = useState(dashboard.updates);
-  const [hasMore, setHasMore] = useState(dashboard.hasMoreUpdates);
-  const [status, setStatus] = useState<"idle" | "more" | "error">("idle");
+const UPDATE_FILTERS: { id: UpdateFilter; label: string; short: string; empty: string }[] = [
+  { id: "all", label: "All", short: "All", empty: "No updates yet." },
+  { id: "announcements", label: "Announcements", short: "News", empty: "No announcements right now." },
+  {
+    id: "following",
+    label: "Following",
+    short: "Following",
+    empty: "Nothing from the people you follow yet. Follow climbers from their profiles.",
+  },
+  {
+    id: "climbs",
+    label: "Saved climbs",
+    short: "Saved",
+    empty: "Nothing on your saved climbs yet. Save climbs with the bookmark on each one.",
+  },
+];
 
+// One filter's updates so far. `status` is "loading" until its first page is in.
+type Feed = { updates: DashboardUpdate[]; hasMore: boolean; status: "loading" | "idle" | "more" | "error" };
+
+// The updates, with a slider to keep to one kind. "All" starts with what came
+// with the dashboard; each other kind is fetched the first time it's picked.
+function UpdatesList({ dashboard }: { dashboard: Dashboard }) {
+  const [filter, setFilter] = useState<UpdateFilter>("all");
+  const [feeds, setFeeds] = useState<Partial<Record<UpdateFilter, Feed>>>({
+    all: { updates: dashboard.updates, hasMore: dashboard.hasMoreUpdates, status: "idle" },
+  });
+  const feed = feeds[filter];
+  const { since } = dashboard;
+
+  const setFeed = useCallback(
+    (id: UpdateFilter, change: (feed: Feed | undefined) => Feed) =>
+      setFeeds((current) => ({ ...current, [id]: change(current[id]) })),
+    [],
+  );
+
+  // A like shows in every feed the announcement is in.
   const replaceAnnouncement = useCallback(
     (updated: Announcement) =>
-      setUpdates((current) =>
-        current.map((update) =>
-          update.kind === "announcement" && update.announcement.id === updated.id
-            ? { ...update, announcement: updated }
-            : update,
+      setFeeds((current) =>
+        Object.fromEntries(
+          Object.entries(current).map(([id, each]) => [
+            id,
+            {
+              ...each,
+              updates: each.updates.map((update) =>
+                update.kind === "announcement" && update.announcement.id === updated.id
+                  ? { ...update, announcement: updated }
+                  : update,
+              ),
+            },
+          ]),
         ),
       ),
     [],
   );
   const toggleLike = useToggleLike(replaceAnnouncement);
 
-  function loadMore() {
-    setStatus("more");
-    fetchOlderUpdates(updates[updates.length - 1].at)
-      .then((page) => {
-        setUpdates((current) => [...current, ...page.updates]);
-        setHasMore(page.hasMoreUpdates);
-        setStatus("idle");
-      })
-      .catch(() => setStatus("error"));
+  function pick(id: UpdateFilter) {
+    setFilter(id);
+    if (feeds[id]) return;
+    setFeed(id, () => ({ updates: [], hasMore: false, status: "loading" }));
+    fetchUpdates({ only: id, since })
+      .then((page) => setFeed(id, () => ({ updates: page.updates, hasMore: page.hasMoreUpdates, status: "idle" })))
+      .catch(() => setFeed(id, () => ({ updates: [], hasMore: false, status: "error" })));
   }
 
-  if (updates.length === 0) return <p className="py-6 text-center text-sm text-neutral-500">No updates yet.</p>;
+  function loadMore() {
+    if (!feed) return;
+    const id = filter;
+    setFeed(id, (current) => ({ ...current!, status: "more" }));
+    fetchUpdates({ before: feed.updates[feed.updates.length - 1].at, only: id, since })
+      .then((page) =>
+        setFeed(id, (current) => ({
+          updates: [...(current?.updates ?? []), ...page.updates],
+          hasMore: page.hasMoreUpdates,
+          status: "idle",
+        })),
+      )
+      .catch(() => setFeed(id, (current) => ({ ...current!, status: "error" })));
+  }
+
+  const { empty } = UPDATE_FILTERS.find((item) => item.id === filter)!;
 
   return (
     <div className="mt-4 flex flex-col gap-3">
+      <SlidingTabs label="Show updates" tabs={UPDATE_FILTERS} active={filter} onChange={pick} className="w-full max-w-md" />
+      {!feed || feed.status === "loading" ? (
+        <Placeholder className="h-64" />
+      ) : feed.updates.length === 0 ? (
+        <p className="py-6 text-center text-sm text-neutral-500">
+          {feed.status === "error" ? "Couldn't load these updates right now." : empty}
+        </p>
+      ) : (
+        <UpdateFeed feed={feed} onToggleLike={toggleLike} onLoadMore={loadMore} />
+      )}
+    </div>
+  );
+}
+
+function UpdateFeed({
+  feed,
+  onToggleLike,
+  onLoadMore,
+}: {
+  feed: Feed;
+  onToggleLike: (announcement: Announcement) => void;
+  onLoadMore: () => void;
+}) {
+  const { updates, hasMore, status } = feed;
+  return (
+    <div role="tabpanel" className="flex flex-col gap-3">
       {updates.map((update) => (
         <UpdateItem
           key={update.kind === "announcement" ? update.announcement.id : update.comment.commentID}
           update={update}
-          onToggleLike={toggleLike}
+          onToggleLike={onToggleLike}
         />
       ))}
       {status === "error" && <p className="text-center text-sm text-neutral-500">Couldn&apos;t load more updates right now.</p>}
       {hasMore && (
         <button
           type="button"
-          onClick={loadMore}
+          onClick={onLoadMore}
           disabled={status === "more"}
           className="self-center rounded-full border border-primary px-5 py-2 text-sm font-semibold text-primary transition-colors hover:bg-primary hover:text-white disabled:cursor-wait disabled:opacity-60"
         >
