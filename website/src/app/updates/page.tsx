@@ -6,6 +6,7 @@ import { LikeButton, useToggleLike } from "@/components/AnnouncementLike";
 import Carousel, { SLIDE_PADDING } from "@/components/Carousel";
 import { Kicker, Masthead, SectionRule } from "@/components/Masthead";
 import ProfileLink from "@/components/ProfileLink";
+import ReadMore from "@/components/ReadMore";
 import {
   type Announcement,
   ANNOUNCEMENT_TYPES,
@@ -185,7 +186,9 @@ function UrgentSlide({ announcement, now }: { announcement: Announcement; now: D
       </div>
       <h3 className="max-w-3xl font-serif text-3xl leading-tight font-bold sm:text-5xl">{announcement.title}</h3>
       <TargetChip announcement={announcement} light />
-      <AnnouncementDetails announcement={announcement} onDark />
+      <ReadMore fade="from-primary" onDark>
+        <AnnouncementDetails announcement={announcement} onDark />
+      </ReadMore>
       <div className="mt-auto flex flex-wrap items-center justify-between gap-4 border-t border-white/15 pt-5">
         <Byline announcement={announcement} now={now} light />
         <Counts announcement={announcement} className="text-white/70" light />
@@ -210,7 +213,9 @@ function CotwCard({ cotw, friday, now }: { cotw: Announcement | undefined; frida
       {cotw ? (
         <>
           <h2 className="font-serif text-2xl leading-tight font-bold text-primary sm:text-3xl">{cotw.title}</h2>
-          <AnnouncementDetails announcement={cotw} />
+          <ReadMore fade="from-white">
+            <AnnouncementDetails announcement={cotw} />
+          </ReadMore>
           <div className="mt-auto flex flex-wrap items-center justify-between gap-4 border-t border-neutral-100 pt-4">
             <Byline announcement={cotw} now={now} />
             <Counts announcement={cotw} className="text-neutral-500" />
@@ -238,7 +243,9 @@ function HighSlide({ announcement, now }: { announcement: Announcement; now: Dat
       </div>
       <h3 className="font-serif text-3xl leading-tight font-bold text-neutral-900 sm:text-4xl">{announcement.title}</h3>
       <TargetChip announcement={announcement} />
-      <AnnouncementDetails announcement={announcement} />
+      <ReadMore fade="from-amber-50">
+        <AnnouncementDetails announcement={announcement} />
+      </ReadMore>
       <div className="mt-auto flex flex-wrap items-center justify-between gap-3 border-t border-amber-200/70 pt-4">
         <Byline announcement={announcement} now={now} />
         <Counts announcement={announcement} className="text-amber-800/70" />
@@ -260,7 +267,9 @@ function FeedCard({ announcement, now }: { announcement: Announcement; now: Date
       </div>
       <h3 className="text-lg font-bold text-neutral-900">{announcement.title}</h3>
       <TargetChip announcement={announcement} />
-      <AnnouncementDetails announcement={announcement} />
+      <ReadMore fade="from-white">
+        <AnnouncementDetails announcement={announcement} />
+      </ReadMore>
       <div className="border-t border-neutral-100 pt-3">
         <Counts announcement={announcement} className="text-neutral-500" />
       </div>

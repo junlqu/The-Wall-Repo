@@ -6,6 +6,7 @@ import AnnouncementDetails, { EyeIcon } from "@/components/AnnouncementDetails";
 import { LikeButton, useToggleLike } from "@/components/AnnouncementLike";
 import { ClimbBox, CommentTags, RecentComment } from "@/components/ClimbActivity";
 import { Person, Placeholder } from "@/components/ClimbCards";
+import ReadMore from "@/components/ReadMore";
 import SlidingTabs from "@/components/SlidingTabs";
 import { type Announcement, formatShortDate } from "@/lib/announcements";
 import { type Climb, formatDate } from "@/lib/climbs";
@@ -82,7 +83,9 @@ function UpdateItem({
           <h3 className="font-semibold text-neutral-900">{announcement.title}</h3>
           <PostedAt at={update.at} />
         </div>
-        <AnnouncementDetails announcement={announcement} />
+        <ReadMore fade="from-white">
+          <AnnouncementDetails announcement={announcement} />
+        </ReadMore>
         <div className="flex items-center justify-between gap-4 text-xs text-neutral-500">
           <span className="flex min-w-0 items-center gap-1.5">
             <span className="shrink-0">Posted by</span>
@@ -108,7 +111,9 @@ function UpdateItem({
         <PostedAt at={update.at} />
       </div>
       {update.comment.comment && (
-        <p className="whitespace-pre-line break-words text-sm text-neutral-700">{update.comment.comment}</p>
+        <ReadMore fade="from-white">
+          <p className="whitespace-pre-line break-words text-sm text-neutral-700">{update.comment.comment}</p>
+        </ReadMore>
       )}
       <CommentTags comment={update.comment} sentOn />
       {update.climb && <ClimbBox climb={update.climb} />}
