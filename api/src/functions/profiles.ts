@@ -10,9 +10,10 @@ import { isVisibleToOthers, privacyOf, ProfileSection } from "../profilePrivacy"
 import { computeMetrics } from "../userMetrics";
 
 // Anyone's profile: their picture, username, first name and the first letter
-// of their last, how many people follow them and they follow, and - unless
-// they've hidden them - their numbers and what they've said and sent lately.
-// Nothing else of their account.
+// of their last, and - unless they've hidden them - their numbers, how many
+// people follow them and they follow, and what they've said and sent lately.
+// Each can be shown to everyone, only friends (people they follow who follow
+// them back) or nobody. Nothing else of their account.
 
 const RECENT_COMMENTS = 5;
 const RECENT_SENDS = 3;
@@ -86,20 +87,30 @@ export async function getProfile(request: HttpRequest, context: InvocationContex
 
     const viewerID = readSessionUser(request)?.userID;
     const isOwner = viewerID === user.userID && request.query.get("view") !== "public";
+    // Someone logged in looking at somebody else's profile - a friend when
+    // the two of them follow each other. The owner seeing their profile as
+    // others do sees it as someone who isn't.
+    const otherID = viewerID !== user.userID ? viewerID : undefined;
+    const viewer = otherID ? await readViewer(otherID) : undefined;
+    const relation = otherID
+      ? {
+          follows: viewer ? followingIDs(viewer).includes(user.userID) : false,
+          followedBy: followingIDs(user).includes(otherID),
+        }
+      : undefined;
+    const isFriend = Boolean(relation?.follows && relation.followedBy);
+
     const privacy = privacyOf(user);
-    const shows = (section: ProfileSection) => isOwner || isVisibleToOthers(privacy[section]);
+    const shows = (section: ProfileSection) => isOwner || isVisibleToOthers(privacy[section], isFriend);
     const showsStats = (["sends", "comments", "hardestSend", "favouriteLine"] as const).some(shows);
 
-    // Someone logged in looking at somebody else's profile.
-    const otherID = viewerID !== user.userID ? viewerID : undefined;
     // Only what's shown is read.
-    const [metrics, comments, sends, followers, { following }, viewer] = await Promise.all([
+    const [metrics, comments, sends, followers, following] = await Promise.all([
       showsStats ? (user.settings?.metrics ?? computeMetrics(user.userID)) : undefined,
       shows("recentComments") ? readRecentComments(user.userID) : [],
       shows("recentSends") ? readSends(user.userID) : [],
-      countFollowers(user.userID),
-      readFollowing(user),
-      otherID ? readViewer(otherID) : undefined,
+      shows("followers") ? countFollowers(user.userID) : undefined,
+      shows("following") ? readFollowing(user).then((follows) => follows.following.length) : undefined,
     ]);
     const routes = await readClimbs([...new Set([...comments, ...sends].map((comment) => comment.routeID))]);
 
@@ -117,17 +128,14 @@ export async function getProfile(request: HttpRequest, context: InvocationContex
         ...person,
         fname: user.fname,
         lastInitial: user.lname.trim().charAt(0).toUpperCase(),
+        // How many people follow them and they follow - each left out when
+        // hidden.
         followers,
-        following: following.length,
+        following,
         // Whether the logged-in visitor follows them and they follow the
         // visitor back - left out for visitors who aren't logged in, and on
         // their own profile.
-        relation: otherID
-          ? {
-              follows: viewer ? followingIDs(viewer).includes(user.userID) : false,
-              followedBy: followingIDs(user).includes(otherID),
-            }
-          : undefined,
+        relation,
         // Each number is left out when it's hidden.
         stats: metrics
           ? {

@@ -1,7 +1,7 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from "@azure/functions";
 import { corsHeaders, readCurrentUser, readSessionUser } from "../authUtils";
 import { getContainer } from "../cosmosClient";
-import { countFollowers, listFollowers, listFollowing, setFollowsRoute, setFollowsUser } from "../follows";
+import { listFollowers, listFollowing, setFollowsRoute, setFollowsUser } from "../follows";
 import { Route, ROUTE_CONTAINER } from "../models/Route";
 import { followingIDs, User, USER_CONTAINER } from "../models/User";
 import { readByUsername } from "./profiles";
@@ -42,7 +42,8 @@ export async function followRoute(request: HttpRequest, context: InvocationConte
 
 // PUT /profiles/{username}/follow follows them, so their comments and sends
 // show on the visitor's dashboard; DELETE unfollows them. Answers with where
-// the two of them now stand, and their follower count.
+// the two of them now stand. Becoming (or no longer being) friends can change
+// what their profile shows, so the page loads it again after.
 export async function followUser(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
   const headers = corsHeaders(request);
   const follow = request.method === "PUT";
@@ -63,10 +64,7 @@ export async function followUser(request: HttpRequest, context: InvocationContex
     return {
       status: 200,
       headers,
-      jsonBody: {
-        followers: await countFollowers(them.userID),
-        relation: { follows: follow, followedBy: followingIDs(them).includes(me.userID) },
-      },
+      jsonBody: { relation: { follows: follow, followedBy: followingIDs(them).includes(me.userID) } },
     };
   } catch (error) {
     context.error("Failed to change a user follow", error);

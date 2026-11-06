@@ -17,9 +17,10 @@ export type Profile = ClimbPerson & {
   fname: string;
   // Just the first letter of their last name.
   lastInitial: string;
-  // How many people follow them, and how many they follow.
-  followers: number;
-  following: number;
+  // How many people follow them, and how many they follow - each missing
+  // when hidden.
+  followers?: number;
+  following?: number;
   // Where the logged-in visitor stands with them - missing for visitors who
   // aren't logged in, and on their own profile.
   relation?: FollowRelation;

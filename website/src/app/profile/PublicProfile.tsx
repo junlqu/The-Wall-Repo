@@ -66,7 +66,7 @@ function FollowControl({
   onChanged,
 }: {
   profile: Profile;
-  onChanged: (change: { followers: number; relation: FollowRelation }) => void;
+  onChanged: (relation: FollowRelation) => void;
 }) {
   const user = useSessionUser();
   const [status, setStatus] = useState<"idle" | "confirm" | "busy">("idle");
@@ -87,7 +87,7 @@ function FollowControl({
     setStatus("busy");
     setError(null);
     try {
-      onChanged(await setUserFollowed(username, follow));
+      onChanged((await setUserFollowed(username, follow)).relation);
       setStatus("idle");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong. Try again.");
@@ -140,12 +140,14 @@ function FollowControl({
   );
 }
 
-// Side by side, each taking half the width, with the number above its label.
-// On their own profile, each opens a popup listing the people in it.
+// Side by side, each taking half the width, with the number above its label
+// - a dash in its place when it's hidden from the visitor. On their own
+// profile, each opens a popup listing the people in it, with a badge under any
+// they've hidden from others.
 function FollowCounts({ profile, isOwner }: { profile: Profile; isOwner: boolean }) {
   const [open, setOpen] = useState<FollowList | null>(null);
   const { followers, following } = profile;
-  const counts: { list: FollowList; label: string; value: number }[] = [
+  const counts: { list: FollowList; label: string; value: number | undefined }[] = [
     { list: "followers", label: followers === 1 ? "Follower" : "Followers", value: followers },
     { list: "following", label: "Following", value: following },
   ];
@@ -155,7 +157,12 @@ function FollowCounts({ profile, isOwner }: { profile: Profile; isOwner: boolean
         {counts.map((count) => {
           const content = (
             <>
-              <span className="block text-lg font-bold text-primary tabular-nums">{count.value}</span>
+              <span
+                className={`block text-lg font-bold tabular-nums ${count.value === undefined ? "text-neutral-400" : "text-primary"}`}
+                title={count.value === undefined ? "Hidden" : undefined}
+              >
+                {count.value ?? "-"}
+              </span>
               <span className="block text-sm text-neutral-600">{count.label}</span>
             </>
           );
@@ -177,7 +184,10 @@ function FollowCounts({ profile, isOwner }: { profile: Profile; isOwner: boolean
                     {content}
                   </span>
                 )}
-                {!isOwner && <span className="sr-only">{count.value}</span>}
+                {!isOwner && <span className="sr-only">{count.value ?? "Hidden"}</span>}
+                <span className="mt-1 flex justify-center empty:hidden">
+                  <HiddenBadge profile={profile} section={count.list} />
+                </span>
               </dd>
             </div>
           );
@@ -195,7 +205,7 @@ function Header({
 }: {
   profile: Profile;
   isOwner: boolean;
-  onFollowChanged: (change: { followers: number; relation: FollowRelation }) => void;
+  onFollowChanged: (relation: FollowRelation) => void;
 }) {
   return (
     <section
@@ -405,7 +415,14 @@ export default function PublicProfile({ username, asOthers }: { username: string
             <Header
               profile={profile}
               isOwner={sessionUserID === profile.userID && !asOthers}
-              onFollowChanged={(change) => setProfile({ ...profile, ...change })}
+              onFollowChanged={(relation) => {
+                setProfile({ ...profile, relation });
+                // Counts change, and becoming (or no longer being) friends can
+                // show or hide parts of it. Not fatal: the button's already right.
+                fetchProfile(username, asOthers)
+                  .then((fresh) => fresh && setProfile(fresh))
+                  .catch(() => {});
+              }}
             />
             <Stats profile={profile} />
             <Activity profile={profile} />

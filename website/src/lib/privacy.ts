@@ -8,6 +8,8 @@ export const PROFILE_SECTIONS = [
   { id: "favouriteLine", label: "Favourite line" },
   { id: "recentComments", label: "Most recent comments" },
   { id: "recentSends", label: "Most recent sends" },
+  { id: "followers", label: "Number of followers" },
+  { id: "following", label: "Number of people you follow" },
 ] as const;
 export type ProfileSection = (typeof PROFILE_SECTIONS)[number]["id"];
 

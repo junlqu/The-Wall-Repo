@@ -10,6 +10,10 @@ export const PROFILE_SECTIONS = [
   "favouriteLine",
   "recentComments",
   "recentSends",
+  // How many people follow them.
+  "followers",
+  // How many people they follow.
+  "following",
 ] as const;
 export type ProfileSection = (typeof PROFILE_SECTIONS)[number];
 
@@ -24,16 +28,18 @@ export const DEFAULT_PRIVACY = Object.fromEntries(
 ) as ProfilePrivacy;
 
 // Anything they haven't chosen is left as the default. Older accounts may not
-// have chosen anything.
+// have chosen anything. Choices for parts that no longer exist are dropped.
 export function privacyOf(user: User): ProfilePrivacy {
-  return { ...DEFAULT_PRIVACY, ...user.settings?.privacy };
+  const saved = user.settings?.privacy ?? {};
+  return Object.fromEntries(
+    PROFILE_SECTIONS.map((section) => [section, saved[section] ?? DEFAULT_PRIVACY[section]]),
+  ) as ProfilePrivacy;
 }
 
-// Whether someone other than the owner can see a part. Friends (people who
-// follow each other - see follows.ts) aren't let through yet, so "friends"
-// hides it from everyone for now.
-export function isVisibleToOthers(visibility: Visibility) {
-  return visibility === "everyone";
+// Whether someone other than the owner can see a part. `isFriend` when they
+// and the owner follow each other - see follows.ts.
+export function isVisibleToOthers(visibility: Visibility, isFriend: boolean) {
+  return visibility === "everyone" || (visibility === "friends" && isFriend);
 }
 
 // Checks a full set of choices from a request body.

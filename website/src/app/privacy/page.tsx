@@ -49,8 +49,13 @@ const COLLECTED: [string, string, string][] = [
   ],
   [
     "Climbing activity",
-    "Comments, suggested grades, ratings (0-10), sends and the send dates you enter, and the climbs you follow.",
-    "To publish your contributions on each climb, maintain ascent lists and ratings, and notify you of new comments on followed climbs.",
+    "Comments, suggested grades, ratings (0-10), sends and the send dates you enter, and the climbs you save.",
+    "To publish your contributions on each climb, maintain ascent lists and ratings, and show new comments and sends on climbs you save on your dashboard.",
+  ],
+  [
+    "Follows",
+    "The members you follow, and the date and time you started following each one.",
+    "To show their comments and sends on your dashboard, show follower counts, let you see who follows you, and identify your friends (members you follow who also follow you) when applying your visibility choices.",
   ],
   [
     "Announcement activity",
@@ -75,6 +80,10 @@ const COOKIES: [string, string, string, string][] = [
 
 const RETENTION: [string, string][] = [
   ["Account information and profile picture", "Until you delete your account."],
+  [
+    "Follows",
+    "The list of members you follow is deleted when you delete your account, so you no longer count as anyone's follower. Climbs you saved stay linked to your de-identified record.",
+  ],
   [
     "Comments, grades, ratings and sends",
     "Retained after account deletion in de-identified form, no longer linked to your name or username, so that climb histories remain accurate.",
@@ -242,7 +251,10 @@ export default function PrivacyPage() {
             <List>
               <li>create, maintain and authenticate your account;</li>
               <li>display your profile and your contributions to climbs and updates;</li>
-              <li>personalize your dashboard, including activity totals and new comments on climbs you follow;</li>
+              <li>
+                personalize your dashboard, including activity totals and new comments and sends on climbs you save and
+                from members you follow;
+              </li>
               <li>apply the visibility and cookie preferences you choose;</li>
               <li>allow authorized staff to administer accounts and access levels;</li>
               <li>keep the Site secure and diagnose technical problems; and</li>
@@ -262,12 +274,18 @@ export default function PrivacyPage() {
                 comments, grades, ratings and sends you post on climbs.
               </li>
               <li>
-                <Term>Visible at your choice:</Term> the statistics and recent activity on your profile. You control each
-                of these in your{" "}
+                <Term>Visible at your choice:</Term> the statistics, recent activity, and follower and following counts on
+                your profile. For each, you choose in your{" "}
                 <Link href={settingsHref("privacy")} className={LINK_CLASS}>
                   privacy settings
-                </Link>
-                .
+                </Link>{" "}
+                whether it is shown to everyone, only to your friends (members you follow who also follow you), or to no
+                one.
+              </li>
+              <li>
+                <Term>Visible to the members involved:</Term> when you follow a member, they can see that you follow them,
+                both on your profile and in their list of followers. Only you can see the full lists of who you follow and
+                who follows you.
               </li>
               <li>
                 <Term>Never publicly visible:</Term> your email address, phone number and password.
@@ -368,7 +386,8 @@ export default function PrivacyPage() {
             <p>You can exercise the following rights directly from your account settings:</p>
             <List>
               <li>
-                <Term>Access:</Term> download a copy of your account information and all of your comments, grades,
+                <Term>Access:</Term> download a copy of your account information, including the members you follow, and
+                all of your comments, grades,
                 ratings and sends from{" "}
                 <Link href={settingsHref("data-privacy")} className={LINK_CLASS}>
                   Data Privacy
@@ -383,7 +402,8 @@ export default function PrivacyPage() {
                 .
               </li>
               <li>
-                <Term>Visibility:</Term> choose which parts of your profile others can see in your{" "}
+                <Term>Visibility:</Term> choose whether each part of your profile is seen by everyone, only your
+                friends, or no one in your{" "}
                 <Link href={settingsHref("privacy")} className={LINK_CLASS}>
                   privacy settings
                 </Link>

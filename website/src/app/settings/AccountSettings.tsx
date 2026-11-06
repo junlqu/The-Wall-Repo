@@ -611,7 +611,7 @@ function PrivacyCard({ account, onSaved }: { account: Account; onSaved: (account
           ))}
         </div>
         <p className="text-xs text-neutral-500">
-          You can&apos;t add friends yet, so for now Friends means only you can see it.{" "}
+          Friends are people you follow who follow you back.{" "}
           <Link href={profileHref(account.username, true)} className="font-medium text-primary hover:underline">
             See how others see you
           </Link>

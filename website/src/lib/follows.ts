@@ -63,12 +63,10 @@ export function isFriend(relation: FollowRelation) {
   return relation.follows && relation.followedBy;
 }
 
-// Follows or unfollows them, answering with where the two of them now stand
-// and how many followers they have.
-export async function setUserFollowed(
-  username: string,
-  follow: boolean,
-): Promise<{ followers: number; relation: FollowRelation }> {
+// Follows or unfollows them, answering with where the two of them now stand.
+// Becoming (or no longer being) friends can change what their profile shows,
+// so load it again after.
+export async function setUserFollowed(username: string, follow: boolean): Promise<{ relation: FollowRelation }> {
   return adminRequest(`/profiles/${encodeURIComponent(username)}/follow`, { method: follow ? "PUT" : "DELETE" });
 }
 
