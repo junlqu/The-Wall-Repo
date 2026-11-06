@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { CLIMBS_LINKS, EXTRAS_LINKS, type NavLink } from "@/lib/navLinks";
+import { CLIMBS_LINKS, EXTRAS_LINKS, type NavLink, PRIVACY_POLICY_HREF } from "@/lib/navLinks";
 import { canUseAdminTools, useSessionUser } from "@/lib/session";
 import logo from "@/static/logo.svg";
 
@@ -61,6 +61,9 @@ export default function Footer() {
         <p className="text-center text-white/60">
           &copy; {new Date().getFullYear()} TPASC Climbing Wall Community. All rights reserved.
         </p>
+        <Link href={PRIVACY_POLICY_HREF} className="text-white/60 transition-colors hover:text-secondary">
+          Privacy Policy
+        </Link>
         <p className="text-white/40 tabular-nums sm:absolute sm:right-6 sm:bottom-5 lg:right-8">
           v{process.env.NEXT_PUBLIC_APP_VERSION}
         </p>

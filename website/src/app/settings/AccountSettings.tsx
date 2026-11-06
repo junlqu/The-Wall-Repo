@@ -24,6 +24,7 @@ import {
   uploadAvatar,
 } from "@/lib/account";
 import { AVATAR_SIZE, avatarUrl } from "@/lib/avatar";
+import { PRIVACY_POLICY_HREF } from "@/lib/navLinks";
 import { PROFILE_SECTIONS, type ProfilePrivacy, VISIBILITIES } from "@/lib/privacy";
 import { profileHref } from "@/lib/profiles";
 import { withReturnTo } from "@/lib/returnTo";
@@ -709,6 +710,13 @@ function CookiesCard({ account, onSaved }: { account: Account; onSaved: (account
             in, and the site can&apos;t work without them.
           </span>
         </p>
+        <p className="text-xs text-neutral-500">
+          See every cookie the site uses in the{" "}
+          <Link href={`${PRIVACY_POLICY_HREF}#cookies`} className="font-medium text-primary hover:underline">
+            privacy policy
+          </Link>
+          .
+        </p>
       </div>
     </section>
   );
@@ -773,7 +781,11 @@ function PersonalDataCard({ username }: { username: string }) {
         Personal data
       </h3>
       <p className="mt-1 text-sm text-neutral-500">
-        Everything is exactly as it&apos;s saved, except your password, which is never included.
+        Everything is exactly as it&apos;s saved, except your password, which is never included. The{" "}
+        <Link href={`${PRIVACY_POLICY_HREF}#data`} className="font-medium text-primary hover:underline">
+          privacy policy
+        </Link>{" "}
+        explains what each part is and why it&apos;s kept.
       </p>
       <ul className="mt-4 flex flex-col divide-y divide-neutral-100">
         {DOWNLOADS.map((option) => (

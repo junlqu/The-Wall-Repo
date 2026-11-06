@@ -23,6 +23,9 @@ export const EXTRAS_LINKS: NavLink[] = [
   { label: "Speed Climbing", href: "/extras/speedclimbing" },
 ];
 
+// The privacy policy. #cookies and #data jump to those sections.
+export const PRIVACY_POLICY_HREF = "/privacy";
+
 // Their own profile, as it shows by ?username=, and the page where they
 // change their details.
 export function accountLinks(username: string): NavLink[] {
