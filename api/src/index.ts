@@ -12,6 +12,7 @@ import "./functions/dashboard";
 import "./functions/details";
 import "./functions/follows";
 import "./functions/health";
+import "./functions/moderation";
 import "./functions/profiles";
 import "./functions/routeActivity";
 import "./functions/routeComments";

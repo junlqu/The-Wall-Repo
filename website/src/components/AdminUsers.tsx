@@ -134,7 +134,7 @@ const ACTIVITY_METRICS: { id: ActivityMetric; label: string; noun: string; empty
   { id: "sends", label: "Sends", noun: "send", emptyText: "No sends" },
 ];
 
-type ActivityScale = "week" | "month" | "year";
+export type ActivityScale = "week" | "month" | "year";
 
 const ACTIVITY_SCALES: { id: ActivityScale; label: string }[] = [
   { id: "week", label: "Week" },
@@ -144,7 +144,7 @@ const ACTIVITY_SCALES: { id: ActivityScale; label: string }[] = [
 
 // One bar of the activity chart: the day (YYYY-MM-DD) or, for a year, the
 // month (YYYY-MM) it counts.
-type Bucket = { key: string; label: string };
+export type Bucket = { key: string; label: string };
 
 function addDays(date: string, days: number) {
   const day = parseDate(date);
@@ -154,7 +154,7 @@ function addDays(date: string, days: number) {
 
 // The past seven days ending today, every day of this month, or every month
 // of this year - a year is counted by month, as 365 bars wouldn't fit.
-function bucketsFor(scale: ActivityScale, today: string): Bucket[] {
+export function bucketsFor(scale: ActivityScale, today: string): Bucket[] {
   const [year, month] = today.split("-").map(Number);
   if (scale === "week") {
     return Array.from({ length: 7 }, (_, i) => {
@@ -178,11 +178,11 @@ function bucketsFor(scale: ActivityScale, today: string): Bucket[] {
 
 // The day something happened in the admin's own timezone. Sends dated by
 // their climber are already a day.
-function dayOf(value: string) {
+export function dayOf(value: string) {
   return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : localDate(new Date(value));
 }
 
-function describeScale(scale: ActivityScale, buckets: Bucket[]) {
+export function describeScale(scale: ActivityScale, buckets: Bucket[]) {
   const first = parseDate(buckets[0].key.length === 7 ? `${buckets[0].key}-01` : buckets[0].key);
   if (scale === "year") return `Per month · ${first.getFullYear()}`;
   if (scale === "month") return `Per day · ${first.toLocaleDateString(undefined, { month: "long", year: "numeric" })}`;

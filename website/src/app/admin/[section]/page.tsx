@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import AdminAnnouncements from "@/components/AdminAnnouncements";
 import AdminAttendance from "@/components/AdminAttendance";
 import AdminClimbs from "@/components/AdminClimbs";
+import AdminModeration from "@/components/AdminModeration";
 import AdminOperations from "@/components/AdminOperations";
 import AdminSectionView from "@/components/AdminSectionView";
 import AdminUsers from "@/components/AdminUsers";
@@ -32,6 +33,8 @@ export default async function AdminSectionPage({ params }: PageProps<"/admin/[se
       <AdminClimbs section={section} />
     ) : section.slug === "attendance" ? (
       <AdminAttendance section={section} />
+    ) : section.slug === "moderation" ? (
+      <AdminModeration section={section} />
     ) : section.slug === "operations" ? (
       <AdminOperations section={section} />
     ) : section.slug === "users" ? (

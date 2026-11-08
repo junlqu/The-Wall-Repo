@@ -36,7 +36,7 @@ function gradeRank(climb: Climb) {
   return index === -1 ? scale.length : index;
 }
 
-function byGrade(a: Climb, b: Climb) {
+export function byGrade(a: Climb, b: Climb) {
   return gradeRank(a) - gradeRank(b) || a.grade.localeCompare(b.grade) || a.setAt.localeCompare(b.setAt);
 }
 
