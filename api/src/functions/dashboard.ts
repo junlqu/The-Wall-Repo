@@ -9,14 +9,14 @@ import { Announcement, ANNOUNCEMENT_CONTAINER } from "../models/Announcement";
 import { Comment, COMMENT_CONTAINER } from "../models/Comment";
 import { Route, ROUTE_CONTAINER } from "../models/Route";
 import { User, USER_CONTAINER } from "../models/User";
-import { computeMetrics, metricsPatch } from "../userMetrics";
+import { computeMetrics, metricsPatch, readSends, savedMetricsOf } from "../userMetrics";
 
 // How many older updates sit under the new ones, so the column isn't empty
 // when nothing has happened since the last visit.
 const EARLIER_UPDATES = 5;
 // How many more each "Load more" adds.
 const OLDER_UPDATES = 10;
-const RECENT_COMMENTS = 3;
+const RECENT_SENDS = 5;
 
 // Where one kind of update is kept, and which of them count.
 type UpdateSource = { container: string; timeField: string; filter: string; parameters: SqlParameter[] };
@@ -130,17 +130,10 @@ async function readFollowedComments(
   });
 }
 
-async function readMyRecentComments(userID: string): Promise<Comment[]> {
-  const { resources } = await getContainer(COMMENT_CONTAINER)
-    .items.query<Comment>({
-      query: `SELECT TOP @limit * FROM c WHERE c.userID = @userID AND c.comment != "" ORDER BY c.commentedAt DESC`,
-      parameters: [
-        { name: "@limit", value: RECENT_COMMENTS },
-        { name: "@userID", value: userID },
-      ],
-    })
-    .fetchAll();
-  return resources;
+// Their most recent sends. Sorted by when they sent the climb, not when they
+// logged it, so it's all of them that are read and sorted here.
+async function readMyRecentSends(userID: string): Promise<Comment[]> {
+  return (await readSends(userID)).slice(0, RECENT_SENDS);
 }
 
 // One point read each. Climbs that are gone are left out.
@@ -208,12 +201,12 @@ export async function openDashboard(request: HttpRequest, context: InvocationCon
     const now = new Date().toISOString();
     const since = user.lastOnline ?? user.createdAt;
 
-    const savedMetrics = user.settings?.metrics;
+    const savedMetrics = savedMetricsOf(user);
     const follows = await readFollows(user);
-    const [announcements, followedComments, myComments, metrics] = await Promise.all([
+    const [announcements, followedComments, mySends, metrics] = await Promise.all([
       readAround<Announcement>(announcementSource(now), since),
       readFollowedComments(user.userID, follows, (source) => readAround<Comment>(source, since)),
-      readMyRecentComments(user.userID),
+      readMyRecentSends(user.userID),
       savedMetrics ?? computeMetrics(user.userID),
     ]);
 
@@ -228,7 +221,7 @@ export async function openDashboard(request: HttpRequest, context: InvocationCon
       readPeople([user.userID, ...shownComments.map((comment) => comment.userID)]),
       readRoutes([
         ...shownComments.map((comment) => comment.routeID),
-        ...myComments.map((comment) => comment.routeID),
+        ...mySends.map((comment) => comment.routeID),
         ...(latestSendID ? [latestSendID] : []),
       ]),
     ]);
@@ -254,7 +247,9 @@ export async function openDashboard(request: HttpRequest, context: InvocationCon
         since,
         metrics,
         latestSendClimb: (latestSendID && routes.get(latestSendID)) || null,
-        recentComments: myComments.map((comment) => withClimb(comment, people, routes)),
+        // A climb that's gone takes its comments with it, so each send's climb
+        // is there - bar one deleted mid-read, which comes back as null.
+        recentSends: mySends.map((comment) => withClimb(comment, people, routes)),
       },
     };
   } catch (error) {

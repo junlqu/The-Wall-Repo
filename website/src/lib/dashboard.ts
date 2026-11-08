@@ -7,8 +7,13 @@ import { type ApiRoute, type Climb, type ClimbComment, type ClimbType, toClimb }
 // Mirrors UserMetrics in api/src/models/User.ts.
 export type DashboardMetrics = {
   sends: Record<ClimbType, number>;
-  hardestSend: { route?: string; boulder?: string };
+  // By type of climb - combos apart from routes, though on the same scale.
+  hardestSend: Partial<Record<ClimbType, string>>;
   lineSends: Record<string, number>;
+  // By the climb's grade - route and boulder grades together.
+  gradeSends: Record<string, number>;
+  // How many comments gave each rating, by the rating (0-10).
+  ratingsGiven: Record<string, number>;
   commentsPosted: number;
   latestSend: { routeID: string; date: string } | null;
 };
@@ -34,8 +39,8 @@ export type Dashboard = {
   metrics: DashboardMetrics;
   // Null when they haven't sent anything, or the climb is gone.
   latestSendClimb: Climb | null;
-  // Their own, newest first.
-  recentComments: DashboardComment[];
+  // Their own sends, most recently sent first.
+  recentSends: DashboardComment[];
   // Their visit before this one - updates from then on are new.
   since: string;
 };
@@ -50,12 +55,15 @@ type ApiUpdate = { at: string; isNew: boolean } & (
   | { kind: "announcement"; announcement: ApiAnnouncement }
   | ({ kind: "comment"; via: FollowedVia } & ApiComment)
 );
+// The charts' numbers and recent sends are missing from an API from before
+// they were added.
+type NewerMetrics = "gradeSends" | "ratingsGiven";
 type ApiDashboard = {
   updates: ApiUpdate[];
   hasMoreUpdates: boolean;
-  metrics: DashboardMetrics;
+  metrics: Omit<DashboardMetrics, NewerMetrics> & Partial<Pick<DashboardMetrics, NewerMetrics>>;
   latestSendClimb: ApiRoute | null;
-  recentComments: ApiComment[];
+  recentSends?: ApiComment[];
   since: string;
 };
 
@@ -79,9 +87,9 @@ export async function openDashboard(): Promise<Dashboard> {
   return {
     updates: body.updates.map(toUpdate),
     hasMoreUpdates: body.hasMoreUpdates,
-    metrics: body.metrics,
+    metrics: { ...body.metrics, gradeSends: body.metrics.gradeSends ?? {}, ratingsGiven: body.metrics.ratingsGiven ?? {} },
     latestSendClimb: body.latestSendClimb && toClimb(body.latestSendClimb),
-    recentComments: body.recentComments.map(toDashboardComment),
+    recentSends: (body.recentSends ?? []).map(toDashboardComment),
     since: body.since,
   };
 }
@@ -110,9 +118,11 @@ export function totalSends({ sends }: Pick<DashboardMetrics, "sends">) {
   return sends.route + sends.boulder + sends.combo;
 }
 
-// "5.11b · V4-5" - routes and boulders are on different scales.
+// "5.11b · V4-5 · 5.10a combo" - routes and boulders are on different scales,
+// and a combo's grade would pass for a route's without saying so.
 export function hardestSendLabel({ hardestSend }: Pick<DashboardMetrics, "hardestSend">) {
-  return [hardestSend.route, hardestSend.boulder].filter(Boolean).join(" · ") || "—";
+  const { route, boulder, combo } = hardestSend;
+  return [route, boulder, combo && `${combo} combo`].filter(Boolean).join(" · ") || "—";
 }
 
 // The line they've sent the most on, the lower line on a tie.

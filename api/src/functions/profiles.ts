@@ -7,7 +7,7 @@ import { countFollowers, readFollowing } from "../follows";
 import { Comment, COMMENT_CONTAINER } from "../models/Comment";
 import { followingIDs, User, USER_CONTAINER, UserMetrics } from "../models/User";
 import { isVisibleToOthers, privacyOf, ProfileSection } from "../profilePrivacy";
-import { computeMetrics } from "../userMetrics";
+import { computeMetrics, readSends, savedMetricsOf } from "../userMetrics";
 
 // Anyone's profile: their picture, username, first name and the first letter
 // of their last, and - unless they've hidden them - their numbers, how many
@@ -50,22 +50,6 @@ async function readViewer(userID: string): Promise<User | undefined> {
   return resource;
 }
 
-// When a climb was sent, to sort by - the day, then when it was logged to
-// settle two on one day. Mirrors sentWhen in userMetrics.ts.
-function sentWhen({ sentAt, commentedAt }: Comment) {
-  return `${sentAt ?? commentedAt.slice(0, 10)} ${commentedAt}`;
-}
-
-async function readSends(userID: string): Promise<Comment[]> {
-  const { resources } = await getContainer(COMMENT_CONTAINER)
-    .items.query<Comment>({
-      query: "SELECT * FROM c WHERE c.userID = @userID AND c.send = true",
-      parameters: [{ name: "@userID", value: userID }],
-    })
-    .fetchAll();
-  return resources.sort((a, b) => sentWhen(b).localeCompare(sentWhen(a)));
-}
-
 // The line they've sent the most on, the lower line on a tie - or null when
 // they haven't sent anything on one. Only the line, so it doesn't give away
 // how many sends they have.
@@ -106,7 +90,7 @@ export async function getProfile(request: HttpRequest, context: InvocationContex
 
     // Only what's shown is read.
     const [metrics, comments, sends, followers, following] = await Promise.all([
-      showsStats ? (user.settings?.metrics ?? computeMetrics(user.userID)) : undefined,
+      showsStats ? (savedMetricsOf(user) ?? computeMetrics(user.userID)) : undefined,
       shows("recentComments") ? readRecentComments(user.userID) : [],
       shows("recentSends") ? readSends(user.userID) : [],
       shows("followers") ? countFollowers(user.userID) : undefined,

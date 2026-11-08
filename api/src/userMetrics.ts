@@ -11,7 +11,9 @@ import { settingsPatch, User, USER_CONTAINER, UserMetrics } from "./models/User"
 // leave a stale hardest grade behind, and any miss is put right by the next
 // change.
 
-export type MetricComment = Pick<Comment, "routeID" | "send" | "sentAt" | "commentedAt"> & { hasText?: boolean };
+export type MetricComment = Pick<Comment, "routeID" | "send" | "sentAt" | "commentedAt" | "rating"> & {
+  hasText?: boolean;
+};
 export type SentRoute = Pick<Route, "routeID" | "type" | "line" | "proposedGrade">;
 
 // Easiest to hardest. Mirrors website/src/lib/grades.ts - Dyno isn't a
@@ -35,32 +37,69 @@ function boulderGradeValue(grade: string) {
   return index === -1 ? null : index;
 }
 
+// When a climb was sent, to sort sends by - the day, then when it was logged
+// to settle two on one day. Sends from before the day was asked for use when
+// they were logged.
+export function sentWhen({ sentAt, commentedAt }: Pick<Comment, "sentAt" | "commentedAt">) {
+  return `${sentAt ?? commentedAt.slice(0, 10)} ${commentedAt}`;
+}
+
+// Everything they've sent, most recently sent first.
+export async function readSends(userID: string): Promise<Comment[]> {
+  const { resources } = await getContainer(COMMENT_CONTAINER)
+    .items.query<Comment>({
+      query: "SELECT * FROM c WHERE c.userID = @userID AND c.send = true",
+      parameters: [{ name: "@userID", value: userID }],
+    })
+    .fetchAll();
+  return resources.sort((a, b) => sentWhen(b).localeCompare(sentWhen(a)));
+}
+
+// Moved on whenever what's worked out changes, so metrics saved before then
+// are worked out afresh: 2 added gradeSends and ratingsGiven, and took combos'
+// hardest send apart from routes'.
+const METRICS_VERSION = 2;
+
+// Their saved metrics, or undefined when there are none or they're from an
+// older version - to be worked out afresh either way.
+export function savedMetricsOf(user: User): UserMetrics | undefined {
+  const metrics = user.settings?.metrics;
+  return metrics?.version === METRICS_VERSION ? metrics : undefined;
+}
+
 // The sum of someone's comments and the climbs they've sent. A climb counts
 // once however many comments say it was sent, and a sent climb that's since
 // been deleted isn't counted at all.
 export function buildMetrics(comments: MetricComment[], routes: SentRoute[]): UserMetrics {
   const metrics: UserMetrics = {
+    version: METRICS_VERSION,
     sends: { route: 0, boulder: 0, combo: 0 },
     hardestSend: {},
     lineSends: {},
+    gradeSends: {},
+    ratingsGiven: {},
     commentsPosted: comments.filter((comment) => comment.hasText).length,
     latestSend: null,
   };
 
-  // When each climb was sent - the day, then when it was logged to settle two
-  // on one day. Sends from before the day was asked for use when they were
-  // logged.
-  const sentWhen = new Map<string, string>();
-  for (const { routeID, send, sentAt, commentedAt } of comments) {
-    if (!send) continue;
-    const when = `${sentAt ?? commentedAt.slice(0, 10)} ${commentedAt}`;
-    if (when > (sentWhen.get(routeID) ?? "")) sentWhen.set(routeID, when);
+  for (const { rating } of comments) {
+    if (rating !== undefined && rating !== null) {
+      metrics.ratingsGiven[rating] = (metrics.ratingsGiven[rating] ?? 0) + 1;
+    }
   }
 
-  const hardestValue = { route: -Infinity, boulder: -Infinity };
+  // When each climb was sent.
+  const sentOn = new Map<string, string>();
+  for (const comment of comments) {
+    if (!comment.send) continue;
+    const when = sentWhen(comment);
+    if (when > (sentOn.get(comment.routeID) ?? "")) sentOn.set(comment.routeID, when);
+  }
+
+  const hardestValue = { route: -Infinity, boulder: -Infinity, combo: -Infinity };
   let latest = "";
   for (const route of routes) {
-    const when = sentWhen.get(route.routeID);
+    const when = sentOn.get(route.routeID);
     if (!when) continue;
 
     // Climbs from before types existed are routes.
@@ -70,10 +109,13 @@ export function buildMetrics(comments: MetricComment[], routes: SentRoute[]): Us
 
     // Combos are graded on the route scale. Ungraded climbs are left out.
     const scale = type === "boulder" ? "boulder" : "route";
-    const value = (scale === "boulder" ? boulderGradeValue : routeGradeValue)(route.proposedGrade);
-    if (value !== null && value > hardestValue[scale]) {
-      hardestValue[scale] = value;
-      metrics.hardestSend[scale] = route.proposedGrade.trim();
+    const grade = route.proposedGrade.trim();
+    const value = (scale === "boulder" ? boulderGradeValue : routeGradeValue)(grade);
+    // A dyno isn't a difficulty, but it's still a grade they've sent.
+    if (value !== null || grade === "Dyno") metrics.gradeSends[grade] = (metrics.gradeSends[grade] ?? 0) + 1;
+    if (value !== null && value > hardestValue[type]) {
+      hardestValue[type] = value;
+      metrics.hardestSend[type] = grade;
     }
 
     if (when > latest) {
@@ -87,7 +129,7 @@ export function buildMetrics(comments: MetricComment[], routes: SentRoute[]): Us
 export async function computeMetrics(userID: string): Promise<UserMetrics> {
   const { resources: comments } = await getContainer(COMMENT_CONTAINER)
     .items.query<MetricComment>({
-      query: `SELECT c.routeID, c.comment != "" AS hasText, c.send, c.sentAt, c.commentedAt FROM c
+      query: `SELECT c.routeID, c.comment != "" AS hasText, c.send, c.sentAt, c.commentedAt, c.rating FROM c
               WHERE c.userID = @userID`,
       parameters: [{ name: "@userID", value: userID }],
     })

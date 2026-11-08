@@ -4,7 +4,7 @@ import { type ReactNode, useCallback, useEffect, useRef, useState } from "react"
 import AccessNotice from "@/components/AccessNotice";
 import AnnouncementDetails, { EyeIcon } from "@/components/AnnouncementDetails";
 import { LikeButton, useToggleLike } from "@/components/AnnouncementLike";
-import { ClimbBox, CommentTags, RecentComment } from "@/components/ClimbActivity";
+import { ClimbBox, CommentTags, RecentSend } from "@/components/ClimbActivity";
 import { Person, Placeholder } from "@/components/ClimbCards";
 import ReadMore from "@/components/ReadMore";
 import SlidingTabs from "@/components/SlidingTabs";
@@ -16,13 +16,13 @@ import {
   type DashboardUpdate,
   favouriteLineLabel,
   fetchUpdates,
-  hardestSendLabel,
   openDashboard,
   totalSends,
   type UpdateFilter,
 } from "@/lib/dashboard";
 import { withReturnTo } from "@/lib/returnTo";
 import { useSessionUser } from "@/lib/session";
+import DashboardStats from "./DashboardStats";
 
 const PANEL_CLASS = "rounded-lg border border-neutral-200 bg-white p-6 shadow-sm";
 const PANEL_HEADING_CLASS = "text-sm font-semibold uppercase tracking-wide text-neutral-500";
@@ -206,7 +206,7 @@ function UpdatesList({ dashboard }: { dashboard: Dashboard }) {
   const { empty } = UPDATE_FILTERS.find((item) => item.id === filter)!;
 
   return (
-    <div className="mt-4 flex flex-col gap-3">
+    <div className="flex flex-col gap-3">
       <SlidingTabs label="Show updates" tabs={UPDATE_FILTERS} active={filter} onChange={pick} className="w-full max-w-md" />
       {!feed || feed.status === "loading" ? (
         <Placeholder className="h-64" />
@@ -255,6 +255,48 @@ function UpdateFeed({
   );
 }
 
+const COLUMN_TABS = [
+  { id: "updates", label: "Updates" },
+  { id: "stats", label: "Stats" },
+] as const;
+type ColumnTab = (typeof COLUMN_TABS)[number]["id"];
+
+// Tabs along the top of the column like a browser's, the open one joined to
+// the panel under it.
+function ColumnTabs({ active, onChange }: { active: ColumnTab; onChange: (tab: ColumnTab) => void }) {
+  return (
+    <div role="tablist" aria-label="Dashboard" className="flex items-end gap-1">
+      {COLUMN_TABS.map((tab) => {
+        const selected = tab.id === active;
+        return (
+          <button
+            key={tab.id}
+            id={`${tab.id}-tab`}
+            type="button"
+            role="tab"
+            aria-selected={selected}
+            aria-controls={`${tab.id}-panel`}
+            onClick={() => onChange(tab.id)}
+            className={`relative -mb-px min-w-28 rounded-t-lg border px-5 text-sm font-semibold uppercase tracking-wide transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-secondary ${
+              selected
+                ? "z-10 border-neutral-200 border-b-white bg-white py-2.5 text-primary"
+                : "border-transparent border-b-neutral-200 bg-neutral-200/60 py-2 text-neutral-500 hover:bg-neutral-200 hover:text-neutral-800"
+            }`}
+          >
+            {tab.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+const HARDEST_SEND_TYPES = [
+  { type: "route", label: "Route" },
+  { type: "boulder", label: "Boulder" },
+  { type: "combo", label: "Combo" },
+] as const;
+
 function ClimbingPanel({ metrics, latestSendClimb }: { metrics: DashboardMetrics; latestSendClimb: Climb | null }) {
   const counts = [
     { label: "Total sends", value: totalSends(metrics) },
@@ -263,7 +305,6 @@ function ClimbingPanel({ metrics, latestSendClimb }: { metrics: DashboardMetrics
     { label: "Combos", value: metrics.sends.combo },
   ];
   const details = [
-    { label: "Hardest send", value: hardestSendLabel(metrics) },
     { label: "Favourite line", value: favouriteLineLabel(metrics) },
     { label: "Comments posted", value: metrics.commentsPosted },
   ];
@@ -279,6 +320,17 @@ function ClimbingPanel({ metrics, latestSendClimb }: { metrics: DashboardMetrics
         ))}
       </div>
       <dl className="mt-4 flex flex-col divide-y divide-neutral-100 text-sm">
+        <div className="flex flex-col gap-2 px-1 py-2.5">
+          <dt className="text-neutral-600">Hardest send</dt>
+          <dd className="grid grid-cols-3 gap-2">
+            {HARDEST_SEND_TYPES.map(({ type, label }) => (
+              <div key={type} className="rounded-md bg-neutral-50 px-2.5 py-1.5">
+                <p className="text-[11px] font-medium uppercase tracking-wide text-neutral-500">{label}</p>
+                <p className="font-semibold text-neutral-800">{metrics.hardestSend[type] ?? "—"}</p>
+              </div>
+            ))}
+          </dd>
+        </div>
         {details.map((detail) => (
           <div key={detail.label} className="flex items-center justify-between gap-4 px-1 py-2.5">
             <dt className="text-neutral-600">{detail.label}</dt>
@@ -309,6 +361,7 @@ export default function DashboardPage() {
   // Below md (where the header switches to the hamburger) only one column
   // shows at a time, picked by the switch at the bottom of the page.
   const [showActivity, setShowActivity] = useState(false);
+  const [columnTab, setColumnTab] = useState<ColumnTab>("updates");
   const [dashboard, setDashboard] = useState<Dashboard | "error" | null>(null);
   // Opening the dashboard moves their last visit on, so a second ask would find
   // nothing new - only ask once, even when Strict Mode runs the effect twice.
@@ -330,7 +383,7 @@ export default function DashboardPage() {
     return (
       <AccessNotice
         title="Your dashboard"
-        message="Log in to see updates, your climbing stats, and your recent comments."
+        message="Log in to see updates, your climbing stats, and your recent sends."
         actionLabel="Log in"
         actionHref={withReturnTo("/login", "/dashboard")}
       />
@@ -354,12 +407,28 @@ export default function DashboardPage() {
         ) : (
           <>
             <div className="grid grid-cols-1 gap-6 md:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-              <section aria-labelledby="updates-heading" className={`${PANEL_CLASS} ${showActivity ? "hidden md:block" : ""}`}>
-                <h2 id="updates-heading" className={PANEL_HEADING_CLASS}>
-                  Updates
-                </h2>
-                {loaded ? <UpdatesList dashboard={loaded} /> : <Placeholder className="mt-4 h-64" />}
-              </section>
+              <div className={`min-w-0 ${showActivity ? "hidden md:block" : ""}`}>
+                <ColumnTabs active={columnTab} onChange={setColumnTab} />
+                {/* Both stay mounted, so the updates keep their place and filter. */}
+                <section
+                  id="updates-panel"
+                  role="tabpanel"
+                  aria-labelledby="updates-tab"
+                  hidden={columnTab !== "updates"}
+                  className={`${PANEL_CLASS} rounded-tl-none`}
+                >
+                  {loaded ? <UpdatesList dashboard={loaded} /> : <Placeholder className="h-64" />}
+                </section>
+                <section
+                  id="stats-panel"
+                  role="tabpanel"
+                  aria-labelledby="stats-tab"
+                  hidden={columnTab !== "stats"}
+                  className={`${PANEL_CLASS} rounded-tl-none`}
+                >
+                  {loaded ? <DashboardStats metrics={loaded.metrics} /> : <Placeholder className="h-64" />}
+                </section>
+              </div>
 
               <div className={`flex flex-col gap-6 ${showActivity ? "" : "hidden md:flex"}`}>
                 <section aria-labelledby="climbing-heading" className={PANEL_CLASS}>
@@ -373,18 +442,18 @@ export default function DashboardPage() {
                   )}
                 </section>
 
-                <section aria-labelledby="comments-heading" className={PANEL_CLASS}>
-                  <h2 id="comments-heading" className={PANEL_HEADING_CLASS}>
-                    Recent comments
+                <section aria-labelledby="sends-heading" className={PANEL_CLASS}>
+                  <h2 id="sends-heading" className={PANEL_HEADING_CLASS}>
+                    Recent sends
                   </h2>
                   {!loaded ? (
                     <Placeholder className="mt-4 h-40" />
-                  ) : loaded.recentComments.length === 0 ? (
-                    <p className="py-6 text-center text-sm text-neutral-500">You haven&apos;t commented on a climb yet.</p>
+                  ) : loaded.recentSends.length === 0 ? (
+                    <p className="py-6 text-center text-sm text-neutral-500">You haven&apos;t logged a send yet.</p>
                   ) : (
                     <div className="mt-2 flex flex-col divide-y divide-neutral-100">
-                      {loaded.recentComments.map(({ comment, climb }) => (
-                        <RecentComment key={comment.commentID} comment={comment} climb={climb} />
+                      {loaded.recentSends.map(({ comment, climb }) => (
+                        <RecentSend key={comment.commentID} comment={comment} climb={climb} />
                       ))}
                     </div>
                   )}
@@ -405,7 +474,7 @@ export default function DashboardPage() {
                   type="button"
                   role="switch"
                   aria-checked={showActivity}
-                  aria-label="Show your climbing and comments"
+                  aria-label="Show your climbing and sends"
                   onClick={() => setShowActivity((show) => !show)}
                   className="relative h-6 w-11 shrink-0 rounded-full bg-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-secondary"
                 >

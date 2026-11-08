@@ -22,13 +22,22 @@ export function canUseAdminTools(level: number) {
 
 // The numbers on someone's dashboard, kept up to date by userMetrics.ts.
 export type UserMetrics = {
+  // Which shape they were worked out in - see METRICS_VERSION in userMetrics.ts.
+  version?: number;
   // Climbs they've sent, by type.
   sends: Record<ClimbType, number>;
-  // The hardest grade they've sent on each scale - combos are on the route
-  // scale. A scale they haven't sent anything graded on is left out.
-  hardestSend: { route?: string; boulder?: string };
+  // The hardest grade they've sent of each type of climb - combos on the
+  // route scale, but apart from routes. A type they haven't sent anything
+  // graded of is left out.
+  hardestSend: Partial<Record<ClimbType, string>>;
   // Climbs they've sent on each line, by line number. Boulders aren't on one.
   lineSends: Record<string, number>;
+  // Climbs they've sent at each grade, by the climb's grade - routes, combos
+  // and boulders together, as the two scales share no grades. Ungraded climbs
+  // are left out.
+  gradeSends: Record<string, number>;
+  // How many of their comments gave each rating, by the rating (0-10).
+  ratingsGiven: Record<string, number>;
   // Comments with text, as on the climbs.
   commentsPosted: number;
   // Their most recent send, or null when they haven't sent anything. `date` is
