@@ -86,12 +86,16 @@ export default function CommentForm({
   // Today, the day the comment is posted, unless they already gave one.
   const [today] = useState(todayDate);
   const [sentAt, setSentAt] = useState((initial && commentSentAt(initial)) ?? today);
-  const [grade, setGrade] = useState(initial?.grade ?? "");
+  const scale = GRADE_SCALES[climb.type === "boulder" ? "boulder" : "route"];
+  // A new comment starts at the climb's listed grade, when it's one on the
+  // scale (not "New"). An edit keeps what they gave, even no grade.
+  const [grade, setGrade] = useState(
+    initial ? (initial.grade ?? "") : scale.includes(climb.grade) ? climb.grade : "",
+  );
   const [rating, setRating] = useState<number | undefined>(initial?.rating);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const scale = GRADE_SCALES[climb.type === "boulder" ? "boulder" : "route"];
   // Keeps a grade from before the scale changed choosable.
   const grades = grade && !scale.includes(grade) ? [grade, ...scale] : scale;
   const sendDateValid = !send || (sentAt !== "" && sentAt <= today);
