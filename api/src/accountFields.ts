@@ -3,6 +3,8 @@ import { User } from "./models/User";
 // The rules for what someone can put on their account, shared by sign-up and
 // the profile page. Keep in sync with website/src/lib/account.ts.
 const MAX_NAME_LENGTH = 128;
+// Mirrors the cap GET /profiles/{username} looks up to.
+export const MAX_USERNAME_LENGTH = 128;
 const MAX_EMAIL_LENGTH = 512;
 // Digits only, up to 15 - the longest number E.164 allows.
 const PHONE_PATTERN = /^\d{1,15}$/;

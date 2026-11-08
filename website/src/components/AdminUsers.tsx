@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { type LiHTMLAttributes, type ReactNode, useEffect, useState } from "react";
+import AdminUserPanel from "@/components/AdminUserPanel";
 import { FIELD_CLASS } from "@/components/ClimbForm";
 import CountChart from "@/components/CountChart";
 import ProfileLink from "@/components/ProfileLink";
@@ -19,6 +20,7 @@ import {
   type SearchMatch,
   USER_PAGE_SIZES,
   type UserPageSize,
+  type UserDetails,
   type UserStats,
   type UserSummary,
 } from "@/lib/users";
@@ -364,13 +366,36 @@ function appendUsers(users: UserSummary[], more: UserSummary[]) {
 
 // Every user, newest first, in one long list that grows a batch at a time,
 // with a search across username, first and last name, email and phone. Each
-// card shows where the search matched it. Also the body of /admin/users/all.
+// card shows where the search matched it, and opens their account in a side
+// panel. Also the body of /admin/users/all.
 export function AdminUserList() {
   const [input, setInput] = useState("");
   const [search, setSearch] = useState("");
   const [batchSize, setBatchSize] = useState<UserPageSize>(USER_PAGE_SIZES[0]);
   const [data, setData] = useState<LoadedUsers>();
   const [loadingMore, setLoadingMore] = useState(false);
+  // Whose account is open in the side panel.
+  const [viewing, setViewing] = useState<string | null>(null);
+
+  // An edit shows on their card straight away. Where the search matched them
+  // stays as it was until the list next loads.
+  const showSaved = (saved: UserDetails) =>
+    setData((last) =>
+      last && {
+        ...last,
+        users: last.users.map((user) =>
+          user.userID === saved.userID
+            ? {
+                ...user,
+                username: saved.username,
+                fname: saved.fname,
+                lname: saved.lname,
+                avatarUpdatedAt: saved.avatarUpdatedAt,
+              }
+            : user,
+        ),
+      },
+    );
   const list = JSON.stringify([search, batchSize]);
   // A new search or batch size starts the list over; the old one stays up,
   // dimmed, until the first batch arrives.
@@ -466,10 +491,20 @@ export function AdminUserList() {
           {data.users.map((user) => (
             <UserCard key={user.userID} user={user}>
               {user.match && <MatchBadge match={user.match} />}
+              <button
+                type="button"
+                onClick={() => setViewing(user.userID)}
+                aria-label={`View @${user.username}`}
+                className="shrink-0 rounded-full border border-primary bg-white px-3 py-1 text-xs font-semibold text-primary transition-colors hover:bg-primary hover:text-white"
+              >
+                View
+              </button>
             </UserCard>
           ))}
         </ul>
       )}
+
+      {viewing && <AdminUserPanel userID={viewing} onClose={() => setViewing(null)} onSaved={showSaved} />}
 
       {hasMore && (
         <button

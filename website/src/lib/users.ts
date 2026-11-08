@@ -1,7 +1,7 @@
 // User data for the admin User center. Mirrors api/src/functions/users.ts.
 
 import { adminRequest } from "@/lib/api";
-import { USER_LEVEL } from "@/lib/session";
+import { type SessionUser, USER_LEVEL } from "@/lib/session";
 
 // Mirrors PAGE_SIZES in api/src/functions/users.ts.
 export const USER_PAGE_SIZES = [10, 25, 50, 100] as const;
@@ -74,6 +74,41 @@ export async function fetchUsers(
   return (await adminRequest(`/users?${query}`, {})) as UserPage;
 }
 
+// Someone's whole account, for the admin user panel. Email and phone are ""
+// when they haven't given one. Mirrors toUserDetails in
+// api/src/functions/users.ts.
+export type UserDetails = ListedUser & { email: string; phone: string; deletedAt?: string };
+
+// What the panel's edit form sends. `resetAvatar` puts their picture back to
+// their starter.
+export type UserEdit = Pick<UserDetails, "username" | "fname" | "lname" | "email" | "phone"> & {
+  resetAvatar: boolean;
+};
+
+// Mirrors MAX_USERNAME_LENGTH in api/src/accountFields.ts.
+export const MAX_USERNAME_LENGTH = 128;
+
+export async function fetchUser(userID: string): Promise<UserDetails> {
+  return (await adminRequest(`/users/${encodeURIComponent(userID)}`, {})) as UserDetails;
+}
+
+// Returns them as saved.
+export async function updateUser(userID: string, edit: UserEdit): Promise<UserDetails> {
+  return (await adminRequest(`/users/${encodeURIComponent(userID)}`, {
+    method: "PUT",
+    body: JSON.stringify(edit),
+  })) as UserDetails;
+}
+
+// Why `me` can't edit `user`'s account, or null when they can. Mirrors
+// editRefusal in api/src/functions/users.ts, which makes the same checks.
+export function editLockedReason(me: SessionUser, user: UserDetails): string | null {
+  if (user.userID === me.userID) return "Change your own account from Settings.";
+  if (user.level >= me.level) return "You can only edit people below your own level.";
+  if (user.deletedAt) return "This account has been deleted.";
+  return null;
+}
+
 // The levels the permissions page lays out, highest first. Members - where
 // every account starts - aren't listed.
 export const PERMISSION_LEVELS = [
@@ -82,6 +117,11 @@ export const PERMISSION_LEVELS = [
   { level: USER_LEVEL.moderator, label: "Moderator" },
   { level: USER_LEVEL.executive, label: "Executive" },
 ];
+
+// Members are the one level the permissions page has no box for.
+export function levelLabel(level: number) {
+  return PERMISSION_LEVELS.find((item) => item.level === level)?.label ?? "Member";
+}
 
 // Everyone above member.
 export async function fetchPermissionUsers(): Promise<ListedUser[]> {

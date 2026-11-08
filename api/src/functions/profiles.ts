@@ -1,4 +1,5 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from "@azure/functions";
+import { MAX_USERNAME_LENGTH } from "../accountFields";
 import { corsHeaders, readSessionUser } from "../authUtils";
 import { readClimbs } from "../climbLinks";
 import { toPublicComment } from "../commentFields";
@@ -17,7 +18,6 @@ import { computeMetrics, readSends, savedMetricsOf } from "../userMetrics";
 
 const RECENT_COMMENTS = 5;
 const RECENT_SENDS = 3;
-const MAX_USERNAME_LENGTH = 128;
 
 export async function readByUsername(username: string): Promise<User | undefined> {
   const { resources } = await getContainer(USER_CONTAINER)

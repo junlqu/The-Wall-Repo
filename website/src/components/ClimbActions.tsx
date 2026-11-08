@@ -174,6 +174,9 @@ function Modal({
       aria-labelledby={titleId}
       onCancel={(event) => {
         event.preventDefault();
+        // A dialog opened from inside another (a confirmation over a side
+        // panel) closes on its own.
+        event.stopPropagation();
         if (!busy) onClose();
       }}
       onClick={(event) => {
@@ -207,9 +210,10 @@ export function Dialog({ title, children, ...props }: ModalProps) {
 
 // A full-height panel on the right, or the whole screen below `md` - the same
 // point the header switches to its hamburger menu. Children fill the space
-// under the title bar, so they manage their own scrolling. Shared with the
-// announcement actions.
-export function SidePanel({ title, busy = false, onClose, children }: ModalProps) {
+// under the title bar, so they manage their own scrolling. `actions` sit in
+// the title bar, before the close button. Shared with the announcement
+// actions and the admin user panel.
+export function SidePanel({ title, busy = false, onClose, actions, children }: ModalProps & { actions?: ReactNode }) {
   const titleId = useId();
   return (
     <Modal
@@ -220,18 +224,21 @@ export function SidePanel({ title, busy = false, onClose, children }: ModalProps
     >
       <div className="flex h-full flex-col">
         <div className="flex items-center justify-between gap-3 border-b border-neutral-200 px-6 py-4">
-          <h2 id={titleId} className="min-w-0 text-lg font-bold text-primary">
+          <h2 id={titleId} className="min-w-0 truncate text-lg font-bold text-primary">
             {title}
           </h2>
-          <button
-            type="button"
-            aria-label="Close"
-            disabled={busy}
-            onClick={onClose}
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xl leading-none text-neutral-500 transition-colors hover:bg-neutral-200/70 hover:text-neutral-900 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            <span aria-hidden="true">×</span>
-          </button>
+          <div className="flex shrink-0 items-center gap-1">
+            {actions}
+            <button
+              type="button"
+              aria-label="Close"
+              disabled={busy}
+              onClick={onClose}
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xl leading-none text-neutral-500 transition-colors hover:bg-neutral-200/70 hover:text-neutral-900 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <span aria-hidden="true">×</span>
+            </button>
+          </div>
         </div>
         {children}
       </div>

@@ -1,11 +1,15 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from "@azure/functions";
+import { MAX_USERNAME_LENGTH, readAccountDetails } from "../accountFields";
 import { corsHeaders, readCurrentUser, rejectUnlessAdmin } from "../authUtils";
+import { getStarterAvatar } from "../avatarUtils";
 import { isNotFound, PublicPerson, readPeople } from "../commentFields";
 import { getContainer } from "../cosmosClient";
+import { Avatar, AVATAR_CONTAINER } from "../models/Avatar";
 import { COMMENT_CONTAINER } from "../models/Comment";
 import { isUserLevel, User, USER_CONTAINER, USER_LEVEL } from "../models/User";
 
 const FORBIDDEN = "Only staff and admins can look up users.";
+const NOT_FOUND = "That account doesn't exist any more.";
 const LEADERBOARD_SIZE = 10;
 // Mirrors USER_PAGE_SIZES in website/src/lib/users.ts.
 const PAGE_SIZES = [10, 25, 50, 100];
@@ -326,6 +330,137 @@ export async function setUserLevel(request: HttpRequest, context: InvocationCont
   }
 }
 
+// Everything the admin user panel shows of someone - their listing plus
+// their email and phone ("" when they haven't given one), and when the
+// account was deleted, if it was. Never their password hash.
+function toUserDetails(user: User) {
+  return {
+    ...toListedUser(user),
+    email: user.email ?? "",
+    phone: user.phone ?? "",
+    deletedAt: user.deletedAt,
+  };
+}
+
+// Why `actor` can't edit `user`'s account, or null when they can. As with
+// levels, only people below your own level - your own account is changed
+// from Settings. Mirrors editLockedReason in website/src/lib/users.ts.
+function editRefusal(actor: User, user: User): string | null {
+  if (user.userID === actor.userID) return "Change your own account from Settings.";
+  if ((user.level ?? USER_LEVEL.member) >= actor.level) {
+    return "You can only edit people below your own level.";
+  }
+  if (user.deletedAt) return "That account has been deleted.";
+  return null;
+}
+
+// GET /users/{userID} - one person's account, for the admin user panel.
+export async function getUser(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
+  const headers = corsHeaders(request);
+
+  try {
+    const rejection = await rejectUnlessAdmin(request, headers, FORBIDDEN);
+    if (rejection) return rejection;
+
+    const { userID } = request.params;
+    const { resource: user } = await getContainer(USER_CONTAINER).item(userID, userID).read<User>();
+    if (!user) return { status: 404, headers, jsonBody: { error: NOT_FOUND } };
+    return { status: 200, headers, jsonBody: toUserDetails(user) };
+  } catch (error) {
+    context.error("Failed to read a user", error);
+    return { status: 500, headers, jsonBody: { error: "Failed to load their account." } };
+  }
+}
+
+// PUT /users/{userID} { username, fname, lname, email, phone, resetAvatar } -
+// changes someone's account for them. The same rules as sign-up and Settings
+// apply: names are required, email and phone are optional, and username,
+// email and phone can't be one another account already has. `resetAvatar`
+// puts their picture back to their starter. See editRefusal for who can be
+// edited.
+export async function updateUser(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
+  const headers = corsHeaders(request);
+
+  try {
+    const rejection = await rejectUnlessAdmin(request, headers, FORBIDDEN);
+    if (rejection) return rejection;
+    const actor = (await readCurrentUser(request))!;
+
+    const { userID } = request.params;
+    const item = getContainer(USER_CONTAINER).item(userID, userID);
+    const { resource: user } = await item.read<User>();
+    if (!user) return { status: 404, headers, jsonBody: { error: NOT_FOUND } };
+    const refusal = editRefusal(actor, user);
+    if (refusal) return { status: 403, headers, jsonBody: { error: refusal } };
+
+    const body = ((await request.json().catch(() => null)) ?? {}) as Record<string, unknown>;
+    // Kept as typed, as at sign-up - usernames can mix upper and lowercase.
+    const username = typeof body.username === "string" ? body.username.trim() : "";
+    if (!username) return { status: 400, headers, jsonBody: { error: "Username is required." } };
+    if (username.length > MAX_USERNAME_LENGTH) {
+      return { status: 400, headers, jsonBody: { error: `Username must be ${MAX_USERNAME_LENGTH} characters or fewer.` } };
+    }
+    const details = readAccountDetails(body);
+    if ("error" in details) return { status: 400, headers, jsonBody: { error: details.error } };
+    const { email, phone } = details;
+    const resetAvatar = body.resetAvatar === true;
+
+    // Ignoring case for username and email, as sign-up does - profile links
+    // ignore case, so two usernames differing only by it would clash there.
+    const conditions = ["STRINGEQUALS(c.username, @username, true)"];
+    const parameters = [
+      { name: "@userID", value: userID },
+      { name: "@username", value: username },
+    ];
+    if (email) {
+      conditions.push("STRINGEQUALS(c.email, @email, true)");
+      parameters.push({ name: "@email", value: email });
+    }
+    if (phone) {
+      conditions.push("c.phone = @phone");
+      parameters.push({ name: "@phone", value: phone });
+    }
+    const { resources: taken } = await getContainer(USER_CONTAINER)
+      .items.query<{ username: string; email?: string; phone?: string }>({
+        query: `SELECT c.username, c.email, c.phone FROM c WHERE c.userID != @userID AND (${conditions.join(" OR ")})`,
+        parameters,
+      })
+      .fetchAll();
+    if (taken.length > 0) {
+      const what = taken.some((other) => other.username.toLowerCase() === username.toLowerCase())
+        ? "username"
+        : taken.some((other) => email && other.email?.toLowerCase() === email)
+          ? "email"
+          : "phone number";
+      return { status: 409, headers, jsonBody: { error: `Another account already uses that ${what}.` } };
+    }
+
+    // The picture goes first, as when an account is deleted: if the account
+    // then fails to save, trying again resets it again and moves the
+    // version, so nobody is left with the old one cached under a new URL.
+    const now = new Date().toISOString();
+    if (resetAvatar) {
+      const avatar: Avatar = { id: userID, userID, avatar: getStarterAvatar(userID), updatedAt: now };
+      await getContainer(AVATAR_CONTAINER).items.upsert(avatar);
+    }
+
+    // Blank email and phone are dropped from the document, as in Settings.
+    // Only saved if nothing else changed the account since it was read. Their
+    // session picks up the change on its next GET /auth/me.
+    const next: User = { ...user, username, ...details, ...(resetAvatar ? { avatarUpdatedAt: now } : {}) };
+    const { resource: updated } = await item.replace<User>(next, {
+      accessCondition: { type: "IfMatch", condition: user._etag },
+    });
+    return { status: 200, headers, jsonBody: toUserDetails(updated ?? next) };
+  } catch (error) {
+    if ((error as { code?: number }).code === 412) {
+      return { status: 409, headers, jsonBody: { error: "Their account changed while saving - refresh and try again." } };
+    }
+    context.error("Failed to update a user", error);
+    return { status: 500, headers, jsonBody: { error: "Failed to save their account." } };
+  }
+}
+
 app.http("users", {
   methods: ["GET", "OPTIONS"],
   authLevel: "anonymous",
@@ -359,6 +494,20 @@ app.http("userLevel", {
       return { status: 204, headers: corsHeaders(request) };
     }
     return setUserLevel(request, context);
+  },
+});
+
+// After users/permissions and users/stats in precedence - the host matches
+// literal segments before {userID}.
+app.http("userItem", {
+  methods: ["GET", "PUT", "OPTIONS"],
+  authLevel: "anonymous",
+  route: "users/{userID}",
+  handler: async (request, context) => {
+    if (request.method === "OPTIONS") {
+      return { status: 204, headers: corsHeaders(request) };
+    }
+    return request.method === "PUT" ? updateUser(request, context) : getUser(request, context);
   },
 });
 

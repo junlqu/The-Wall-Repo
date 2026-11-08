@@ -8,6 +8,7 @@ import { type SessionUser, USER_LEVEL, useSessionUser } from "@/lib/session";
 import {
   fetchPermissionUsers,
   fetchUsers,
+  levelLabel,
   type ListedUser,
   PERMISSION_LEVELS,
   setUserLevel,
@@ -16,11 +17,6 @@ import {
 
 const SECTION_CLASS = "flex flex-col gap-3 rounded-xl border p-5 shadow-sm transition";
 const CARD_GRID_CLASS = "grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3";
-
-// Members are the one level without a box of their own.
-function levelLabel(level: number) {
-  return PERMISSION_LEVELS.find((item) => item.level === level)?.label ?? "Member";
-}
 
 // Why `me` can't change `user`'s level at all, or null when they can. Only
 // people below your own level can be moved. The API makes the same checks
