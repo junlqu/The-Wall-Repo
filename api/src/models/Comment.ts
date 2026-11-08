@@ -12,6 +12,9 @@ export type Comment = {
   commentedAt: string;
   // When it was last edited, if it has been.
   editedAt?: string;
+  // Who last changed its text from the moderation tools, if anyone - the
+  // author's own next edit clears it.
+  moderatedBy?: string;
   // "" when they only sent, graded or rated the climb.
   comment: string;
   // Optional so someone can leave a plain comment without rating or grading.

@@ -1,6 +1,7 @@
 import { adminRequest } from "@/lib/api";
 import { type ApiRoute, type Climb, type ClimbComment, type ClimbType, toClimb } from "@/lib/climbs";
 import { compareGrades, difficultyScale, gradeIndex } from "@/lib/grades";
+import { type ApiComment, type DashboardComment, toDashboardComment } from "@/lib/dashboard";
 
 // How many comments proposed `grade` for climb `routeID`. Mirrors GradeTally
 // in api/src/functions/moderation.ts.
@@ -111,4 +112,57 @@ export async function fetchClimbGradeComments(id: string): Promise<ClimbComment[
 // the query rather than the path.
 export function gradingReportHref(id: string) {
   return `/admin/moderation/grading-reports/climb?id=${encodeURIComponent(id)}`;
+}
+
+// Mirrors PAGE_SIZES in api/src/functions/moderationComments.ts.
+export const MODERATION_PAGE_SIZES = [10, 25, 50] as const;
+export type ModerationPageSize = (typeof MODERATION_PAGE_SIZES)[number];
+
+// What the comments can be narrowed to: people whose username contains
+// `user`, and climbs on `line`, in `colour` and at `grade`. Blank (or null)
+// ones don't narrow anything.
+export type CommentFilters = { user: string; line: number | null; colour: string; grade: string };
+
+// A comment with text, its climb, and its author's userID - there even once
+// their account is deleted, so it can still be opened.
+export type ModerationComment = DashboardComment & { userID: string };
+
+// One page of every comment with text that matches `filters`, newest first,
+// and how many match in all.
+export async function fetchModerationComments(
+  filters: CommentFilters,
+  page: number,
+  pageSize: ModerationPageSize,
+): Promise<{ comments: ModerationComment[]; total: number }> {
+  const query = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+  if (filters.user) query.set("user", filters.user);
+  if (filters.line !== null) query.set("line", String(filters.line));
+  if (filters.colour) query.set("colour", filters.colour);
+  if (filters.grade) query.set("grade", filters.grade);
+  const body = (await adminRequest(`/moderation/comments?${query}`, {})) as {
+    comments: (ApiComment & { userID: string })[];
+    total: number;
+  };
+  return {
+    comments: body.comments.map((item) => ({ ...toDashboardComment(item), userID: item.userID })),
+    total: body.total,
+  };
+}
+
+function moderationCommentPath(commentID: string) {
+  return `/moderation/comments/${encodeURIComponent(commentID)}`;
+}
+
+// Changes what a comment says, keeping its send, grade and rating.
+export async function editModerationComment(commentID: string, text: string): Promise<ClimbComment> {
+  const body = (await adminRequest(moderationCommentPath(commentID), {
+    method: "PUT",
+    body: JSON.stringify({ comment: text }),
+  })) as { comment: ClimbComment };
+  return body.comment;
+}
+
+// Deletes a comment, with the send, grade and rating that came with it.
+export async function deleteModerationComment(commentID: string): Promise<void> {
+  await adminRequest(moderationCommentPath(commentID), { method: "DELETE" });
 }
