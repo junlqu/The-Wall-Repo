@@ -215,7 +215,7 @@ export async function listUsers(request: HttpRequest, context: InvocationContext
       container.items
         .query<Partial<User>>({
           query: `SELECT c.userID, c.username, c.fname, c.lname, c.email, c.phone, c.createdAt, c.avatarUpdatedAt,
-                    c.level
+                    c.level, c.ban, c.timeout
                   FROM c ${where} ORDER BY c.createdAt DESC OFFSET @offset LIMIT @limit`,
           parameters: [
             ...parameters,
@@ -245,8 +245,17 @@ export async function listUsers(request: HttpRequest, context: InvocationContext
   }
 }
 
+// The ban or timeout running now, for their card: a ban if they have one,
+// as it's the stronger. `endAt` is null for a permanent ban.
+function restrictionOf(user: Partial<User>): { kind: "ban" | "timeout"; endAt: string | null } | null {
+  const ban = activeBan(user);
+  if (ban) return { kind: "ban", endAt: ban.endAt };
+  const timeout = activeTimeout(user);
+  return timeout ? { kind: "timeout", endAt: timeout.endAt } : null;
+}
+
 // What the admin pages show of someone - never their email, phone or
-// password hash.
+// password hash. `restriction` needs their `ban` and `timeout` read.
 function toListedUser(user: Partial<User>) {
   return {
     userID: user.userID,
@@ -256,6 +265,7 @@ function toListedUser(user: Partial<User>) {
     createdAt: user.createdAt,
     avatarUpdatedAt: user.avatarUpdatedAt,
     level: user.level ?? USER_LEVEL.member,
+    restriction: restrictionOf(user),
   };
 }
 
@@ -273,7 +283,8 @@ export async function listPermissionUsers(
 
     const { resources } = await getContainer(USER_CONTAINER)
       .items.query<Partial<User>>({
-        query: `SELECT c.userID, c.username, c.fname, c.lname, c.createdAt, c.avatarUpdatedAt, c.level
+        query: `SELECT c.userID, c.username, c.fname, c.lname, c.createdAt, c.avatarUpdatedAt, c.level, c.ban,
+                  c.timeout
                 FROM c WHERE c.level > @member ORDER BY c.createdAt DESC`,
         parameters: [{ name: "@member", value: USER_LEVEL.member }],
       })

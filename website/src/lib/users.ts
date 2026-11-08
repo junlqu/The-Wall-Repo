@@ -49,6 +49,9 @@ export type ListedUser = {
   createdAt: string;
   avatarUpdatedAt?: string;
   level: number;
+  // The ban - or, if not banned, timeout - running now, if any. `endAt` is
+  // null for a permanent ban.
+  restriction: { kind: "ban" | "timeout"; endAt: string | null } | null;
 };
 
 export type UserSummary = ListedUser & {

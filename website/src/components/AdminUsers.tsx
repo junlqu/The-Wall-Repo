@@ -6,6 +6,7 @@ import AdminUserPanel from "@/components/AdminUserPanel";
 import { FIELD_CLASS } from "@/components/ClimbForm";
 import CountChart from "@/components/CountChart";
 import ProfileLink from "@/components/ProfileLink";
+import RestrictionBadge from "@/components/RestrictionBadge";
 import SlidingTabs from "@/components/SlidingTabs";
 import { type AdminSection, adminSubpageHref } from "@/lib/adminSections";
 import { avatarUrl } from "@/lib/avatar";
@@ -319,9 +320,10 @@ export function MatchBadge({ match }: { match: SearchMatch }) {
   );
 }
 
-// One person: their picture, username, name and when they joined, with
-// `children` - a search match, buttons - on the right. `itemProps` go on the
-// card itself, to make it draggable; their className is added to the card's.
+// One person: their picture, username, name, when they joined and - in the
+// corner - whether they're banned or timed out, with `children` - a search
+// match, buttons - on the right. `itemProps` go on the card itself, to make it
+// draggable; their className is added to the card's.
 export function UserCard({
   user,
   children,
@@ -334,9 +336,11 @@ export function UserCard({
   return (
     <li
       {...itemProps}
-      className={`flex items-center gap-3 rounded-lg border border-neutral-200 bg-white p-3 shadow-sm ${
-        itemProps?.className ?? ""
-      }`}
+      // A ban or timeout's tag sits in the bottom right corner, with room
+      // made for it under whatever's on the right.
+      className={`relative flex items-center gap-3 rounded-lg border border-neutral-200 bg-white p-3 shadow-sm ${
+        user.restriction ? "pb-9" : ""
+      } ${itemProps?.className ?? ""}`}
     >
       <Avatar user={user} size="md" />
       <div className="min-w-0 flex-1">
@@ -349,6 +353,7 @@ export function UserCard({
         <p className="text-xs text-neutral-500">Joined {formatJoined(user.createdAt)}</p>
       </div>
       {children}
+      <RestrictionBadge restriction={user.restriction} className="absolute bottom-2 right-3 max-w-[calc(100%-1.5rem)]" />
     </li>
   );
 }
@@ -391,6 +396,7 @@ export function AdminUserList() {
                 fname: saved.fname,
                 lname: saved.lname,
                 avatarUpdatedAt: saved.avatarUpdatedAt,
+                restriction: saved.restriction,
               }
             : user,
         ),
