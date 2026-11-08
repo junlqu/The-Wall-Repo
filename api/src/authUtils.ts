@@ -3,14 +3,19 @@ import { Cookie, HttpRequest, HttpResponseInit } from "@azure/functions";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { getContainer } from "./cosmosClient";
-import { canUseAdminTools, User, USER_CONTAINER, UserLevel } from "./models/User";
+import { activeBan, activeTimeout, canUseAdminTools, User, USER_CONTAINER, UserLevel } from "./models/User";
 
+// `timedOutUntil` and `timeoutReason` are the timeout running when the token
+// was made, so pages can say what they can't do - the API checks the account
+// itself, and GET /auth/me reissues the token once it ends.
 export type SessionUser = {
   userID: string;
   username: string;
   fname: string;
   level: UserLevel;
   avatarUpdatedAt?: string;
+  timedOutUntil?: string;
+  timeoutReason?: string;
 };
 
 const SESSION_COOKIE_NAME = "wall_session";
@@ -68,22 +73,27 @@ export function readSessionUser(request: HttpRequest): SessionUser | null {
 
   const secret = getJwtSecret();
   try {
-    const { userID, username, fname, level, avatarUpdatedAt } = jwt.verify(token, secret) as SessionUser;
-    return { userID, username, fname, level, avatarUpdatedAt };
+    const { userID, username, fname, level, avatarUpdatedAt, timedOutUntil, timeoutReason } = jwt.verify(
+      token,
+      secret,
+    ) as SessionUser;
+    return { userID, username, fname, level, avatarUpdatedAt, timedOutUntil, timeoutReason };
   } catch {
     return null;
   }
 }
 
 // The signed-in user's account as it is now, or null when there's no valid
-// session or the account is gone or deleted. The session token carries the
+// session or the account is gone, deleted or banned. The session token carries the
 // level they had when they logged in, so anything that hangs on their level
 // reads this instead - a promotion or demotion counts from their next request.
 export async function readCurrentUser(request: HttpRequest): Promise<User | null> {
   const session = readSessionUser(request);
   if (!session) return null;
   const { resource } = await getContainer(USER_CONTAINER).item(session.userID, session.userID).read<User>();
-  return resource && !resource.deletedAt ? resource : null;
+  // A banned account counts as logged out, so a ban ends any session they
+  // already have - GET /auth/me then clears their cookie.
+  return resource && !resource.deletedAt && !activeBan(resource) ? resource : null;
 }
 
 // The 401/403 to send back when the request isn't from someone logged in who
@@ -105,12 +115,32 @@ export async function rejectUnlessAdmin(
 }
 
 export function toSessionUser(user: User): SessionUser {
+  const timeout = activeTimeout(user);
   return {
     userID: user.userID,
     username: user.username,
     fname: user.fname,
     level: user.level,
     avatarUpdatedAt: user.avatarUpdatedAt,
+    timedOutUntil: timeout?.endAt,
+    timeoutReason: timeout?.reason,
+  };
+}
+
+// The 403 to send back when `user` is timed out, or null when they aren't.
+// For anything a timeout stops: posting or editing a comment, liking an
+// update, adding a combo. `timeout` lets the page say when it ends in their
+// own timezone.
+export function rejectIfTimedOut(user: User, headers: Record<string, string>): HttpResponseInit | null {
+  const timeout = activeTimeout(user);
+  if (!timeout) return null;
+  return {
+    status: 403,
+    headers,
+    jsonBody: {
+      error: "You're timed out, so you can't do that until it ends.",
+      timeout: { endAt: timeout.endAt, reason: timeout.reason },
+    },
   };
 }
 

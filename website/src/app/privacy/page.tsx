@@ -8,7 +8,7 @@ export const metadata: Metadata = {
 };
 
 // Change whenever the policy does.
-const EFFECTIVE_DATE = "November 6, 2026";
+const EFFECTIVE_DATE = "November 8, 2026";
 
 const LINK_CLASS = "font-medium text-primary underline decoration-primary/30 underline-offset-2 hover:decoration-primary";
 
@@ -67,19 +67,24 @@ const COLLECTED: [string, string, string][] = [
     "Account creation date, the time you last opened your dashboard, account level, profile visibility choices, cookie preference, and activity totals derived from your contributions.",
     "To personalize your dashboard, apply your privacy choices and control access to administrative features.",
   ],
+  [
+    "Bans and timeouts",
+    "Any ban or timeout placed on your account: when it started and when it ends (or, for a ban, that it is permanent), the reason given, and the staff member who placed it.",
+    "To enforce the Site's rules: to stop a banned account from logging in, or a timed-out account from posting, until it ends, and to keep a record of past bans and timeouts.",
+  ],
 ];
 
 const COOKIES: [string, string, string, string][] = [
   [
     "wall_session",
-    "Keeps you logged in. Contains a signed token holding your user ID, username, first name, account level and the time your profile picture was last updated.",
+    "Keeps you logged in. Contains a signed token holding your user ID, username, first name, account level and the time your profile picture was last updated, and, while you are timed out, when your timeout ends and the reason given.",
     "Strictly necessary",
     "30 days, or until you log out",
   ],
 ];
 
 const RETENTION: [string, string][] = [
-  ["Account information and profile picture", "Until you delete your account."],
+  ["Account information and profile picture", "Until your account is deleted, by you or by staff."],
   [
     "Follows",
     "The list of members you follow is deleted when you delete your account, so you no longer count as anyone's follower. Climbs you saved stay linked to your de-identified record.",
@@ -90,8 +95,9 @@ const RETENTION: [string, string][] = [
   ],
   [
     "De-identified account record",
-    "After deletion, a record containing your internal identifier, settings and activity totals is retained so that existing contributions remain consistent. It contains no name, username, email, phone or usable password.",
+    "After deletion, a record containing your internal identifier, settings, activity totals, any ban and timeout history and, if staff deleted the account, which staff member did is retained so that existing contributions remain consistent. It contains no name, username, email, phone or usable password.",
   ],
+  ["Bans and timeouts", "Kept with your account record, including after they end and after account deletion."],
   ["Session cookie", "30 days from your last login, or until you log out."],
   ["Technical logs", "In line with our hosting provider's standard retention periods."],
   ["Data exports", "Generated when you request them and not stored by us."],
@@ -179,7 +185,7 @@ export default function PrivacyPage() {
         </div>
       </header>
 
-      <div className="mx-auto grid max-w-6xl gap-10 px-4 py-12 sm:px-6 lg:grid-cols-[15rem_minmax(0,1fr)] lg:px-8">
+      <div className="mx-auto grid max-w-6xl grid-cols-[minmax(0,1fr)] gap-10 px-4 py-12 sm:px-6 lg:grid-cols-[15rem_minmax(0,1fr)] lg:px-8">
         <nav aria-label="Contents" className="lg:sticky lg:top-24 lg:self-start print:hidden">
           <h2 className="text-xs font-semibold uppercase tracking-[0.2em] text-neutral-500">Contents</h2>
           <ol className="mt-4 flex flex-col gap-1 border-l border-neutral-200 text-sm">
@@ -256,7 +262,7 @@ export default function PrivacyPage() {
                 from members you follow;
               </li>
               <li>apply the visibility and cookie preferences you choose;</li>
-              <li>allow authorized staff to administer accounts and access levels;</li>
+              <li>allow authorized staff to administer accounts and access levels, and to ban or time out accounts that break the Site&apos;s rules;</li>
               <li>keep the Site secure and diagnose technical problems; and</li>
               <li>comply with applicable legal obligations.</li>
             </List>
@@ -294,8 +300,15 @@ export default function PrivacyPage() {
             <Subheading>4.2 Authorized staff</Subheading>
             <p>
               Members with staff or administrator access can view account details, including names, usernames, email
-              addresses, phone numbers, account creation dates and activity totals, for the purpose of administering
-              accounts. No one, including staff, can view your password.
+              addresses, phone numbers, account creation dates, activity totals and ban and timeout history, for the
+              purpose of administering accounts. They can correct those details, reset your profile picture to its
+              default, ban your account for a set time or permanently, and time it out for a set time, giving a reason
+              each time. While a ban is in effect you are logged out and cannot log in; the login page shows when it
+              ends and the reason given. While a timeout is in effect you stay logged in but cannot post or edit
+              comments, like updates or add combos; the Site shows when it ends and the reason given. Staff can also
+              delete your account, with the same effect as deleting it yourself (see Section {numberOf("retention")});
+              the record of who deleted it is kept with the de-identified account. No one, including staff, can view
+              your password.
             </p>
             <Subheading>4.3 Service providers</Subheading>
             <p>

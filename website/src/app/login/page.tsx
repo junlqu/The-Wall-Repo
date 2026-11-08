@@ -8,6 +8,17 @@ import { preloadAvatar } from "@/lib/avatar";
 import { useReturnTo, withReturnTo } from "@/lib/returnTo";
 import { setSessionUser, useSessionUser } from "@/lib/session";
 
+// What POST /auth/login sends back for a banned account - see authLogin in
+// api/src/functions/authLogin.ts. `endAt` is null for a permanent ban.
+type LoginBan = { endAt: string | null; reason: string };
+
+function describeBan({ endAt, reason }: LoginBan) {
+  const until = endAt
+    ? `banned until ${new Date(endAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}`
+    : "permanently banned";
+  return `This account is ${until}. Reason: ${reason}`;
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const user = useSessionUser();
@@ -32,7 +43,7 @@ export default function LoginPage() {
 
       const body = await res.json().catch(() => null);
       if (!res.ok) {
-        setError(body?.error ?? "Something went wrong. Please try again.");
+        setError(body?.ban ? describeBan(body.ban) : (body?.error ?? "Something went wrong. Please try again."));
         return;
       }
 

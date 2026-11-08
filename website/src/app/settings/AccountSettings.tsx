@@ -25,7 +25,15 @@ import {
 } from "@/lib/account";
 import { AVATAR_SIZE, avatarUrl } from "@/lib/avatar";
 import { PRIVACY_POLICY_HREF } from "@/lib/navLinks";
-import { PROFILE_SECTIONS, type ProfilePrivacy, VISIBILITIES } from "@/lib/privacy";
+import {
+  isWider,
+  narrower,
+  PROFILE_SECTIONS,
+  type ProfilePrivacy,
+  type ProfileSection,
+  VISIBILITIES,
+  type Visibility,
+} from "@/lib/privacy";
 import { profileHref } from "@/lib/profiles";
 import { withReturnTo } from "@/lib/returnTo";
 import { type SessionUser, setSessionUser, useSessionUser } from "@/lib/session";
@@ -158,7 +166,7 @@ function SettingsNav({ current }: { current: SettingsTabID }) {
   return (
     <nav
       aria-label="Settings"
-      className="-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0 md:sticky md:top-24 md:w-52 md:shrink-0 md:overflow-visible"
+      className="relative -mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0 md:sticky md:top-24 md:w-52 md:shrink-0 md:overflow-visible"
     >
       <div className="flex min-w-max border-b border-neutral-200 md:min-w-0 md:flex-col md:gap-6 md:border-b-0">
         {SETTINGS_CATEGORIES.map((category) => (
@@ -540,13 +548,86 @@ function PasswordCard() {
   );
 }
 
+type PrivacySection = (typeof PROFILE_SECTIONS)[number];
+
+// The parts with nothing above them, each with what's under it.
+const PRIVACY_GROUPS = PROFILE_SECTIONS.filter((section) => !("under" in section)).map((section) => ({
+  section,
+  parts: PROFILE_SECTIONS.filter((part) => "under" in part && part.under === section.id),
+}));
+
+// One part's row: its name and a choice of Everyone, Friends or No one. A part
+// under another can't be seen by more people than that one, so wider choices
+// are greyed out and it shows as the narrower of the two - keeping its own
+// for when the other widens again. While that one is hidden from everyone, the
+// whole row is greyed out.
+function PrivacyRow({
+  section,
+  privacy,
+  onChange,
+}: {
+  section: PrivacySection;
+  privacy: ProfilePrivacy;
+  onChange: (id: ProfileSection, visibility: Visibility) => void;
+}) {
+  const parent = "under" in section ? privacy[section.under] : null;
+  const shown = parent ? narrower(privacy[section.id], parent) : privacy[section.id];
+  const off = parent === "nobody";
+  return (
+    <div
+      aria-disabled={off || undefined}
+      className={`flex flex-col gap-2 transition-opacity sm:flex-row sm:items-center sm:justify-between sm:gap-4 ${
+        parent ? "py-2 pl-4 sm:pl-6" : "py-3"
+      } ${off ? "opacity-50" : ""}`}
+    >
+      <p id={`privacy-${section.id}`} className={parent ? "text-sm text-neutral-600" : LABEL_CLASS}>
+        {section.label}
+      </p>
+      <div
+        role="radiogroup"
+        aria-labelledby={`privacy-${section.id}`}
+        className="inline-flex shrink-0 self-start rounded-full border border-neutral-300 bg-neutral-50 p-0.5 sm:self-auto"
+      >
+        {VISIBILITIES.map((visibility) => {
+          const blocked = off || (parent !== null && isWider(visibility.id, parent));
+          return (
+            <label
+              key={visibility.id}
+              className={`rounded-full px-3 py-1 text-xs font-semibold text-neutral-600 transition-colors has-[:checked]:bg-primary has-[:checked]:text-white has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-secondary ${
+                blocked ? "cursor-not-allowed" : "cursor-pointer hover:text-neutral-900"
+              } ${blocked && shown !== visibility.id ? "opacity-40" : ""}`}
+            >
+              <input
+                type="radio"
+                name={`privacy-${section.id}`}
+                value={visibility.id}
+                checked={shown === visibility.id}
+                disabled={blocked}
+                onChange={() => onChange(section.id, visibility.id)}
+                className="sr-only"
+              />
+              {visibility.label}
+            </label>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // Who can see each part of their profile, one row each - a choice of
-// Everyone, Friends or No one. Saved together.
+// Everyone, Friends or No one. Saved together. The parts under one show
+// beneath it.
 function PrivacyCard({ account, onSaved }: { account: Account; onSaved: (account: Account) => void }) {
   const [privacy, setPrivacy] = useState<ProfilePrivacy>(account.privacy);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<SaveStatus>(null);
   const changed = PROFILE_SECTIONS.some(({ id }) => privacy[id] !== account.privacy[id]);
+
+  const choose = (id: ProfileSection, visibility: Visibility) => {
+    setPrivacy((current) => ({ ...current, [id]: visibility }));
+    setStatus(null);
+  };
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -573,40 +654,17 @@ function PrivacyCard({ account, onSaved }: { account: Account; onSaved: (account
         Choose who can see each part of your profile. Your picture, name and username are always shown.
       </p>
       <form onSubmit={submit} className="mt-4 flex flex-col gap-4">
-        <div className="flex flex-col divide-y divide-neutral-100">
-          {PROFILE_SECTIONS.map((section) => (
-            <div
-              key={section.id}
-              className="flex flex-col gap-2 py-3 first:pt-0 sm:flex-row sm:items-center sm:justify-between sm:gap-4"
-            >
-              <p id={`privacy-${section.id}`} className={LABEL_CLASS}>
-                {section.label}
-              </p>
-              <div
-                role="radiogroup"
-                aria-labelledby={`privacy-${section.id}`}
-                className="inline-flex shrink-0 self-start rounded-full border border-neutral-300 bg-neutral-50 p-0.5 sm:self-auto"
-              >
-                {VISIBILITIES.map((visibility) => (
-                  <label
-                    key={visibility.id}
-                    className="cursor-pointer rounded-full px-3 py-1 text-xs font-semibold text-neutral-600 transition-colors hover:text-neutral-900 has-[:checked]:bg-primary has-[:checked]:text-white has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-secondary"
-                  >
-                    <input
-                      type="radio"
-                      name={`privacy-${section.id}`}
-                      value={visibility.id}
-                      checked={privacy[section.id] === visibility.id}
-                      onChange={() => {
-                        setPrivacy((current) => ({ ...current, [section.id]: visibility.id }));
-                        setStatus(null);
-                      }}
-                      className="sr-only"
-                    />
-                    {visibility.label}
-                  </label>
-                ))}
-              </div>
+        <div className="-mt-3 flex flex-col divide-y divide-neutral-100">
+          {PRIVACY_GROUPS.map(({ section, parts }) => (
+            <div key={section.id}>
+              <PrivacyRow section={section} privacy={privacy} onChange={choose} />
+              {parts.length > 0 && (
+                <div className="mb-2 border-l-2 border-neutral-100">
+                  {parts.map((part) => (
+                    <PrivacyRow key={part.id} section={part} privacy={privacy} onChange={choose} />
+                  ))}
+                </div>
+              )}
             </div>
           ))}
         </div>

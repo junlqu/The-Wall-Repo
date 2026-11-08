@@ -1,6 +1,6 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from "@azure/functions";
 import { FORBIDDEN, isDateTime, readAnnouncementFields, toPublicAnnouncement } from "../announcementFields";
-import { corsHeaders, readSessionUser, rejectUnlessAdmin } from "../authUtils";
+import { corsHeaders, readCurrentUser, readSessionUser, rejectIfTimedOut, rejectUnlessAdmin } from "../authUtils";
 import { getContainer } from "../cosmosClient";
 import { Announcement, ANNOUNCEMENT_CONTAINER } from "../models/Announcement";
 
@@ -103,10 +103,13 @@ export async function likeAnnouncement(request: HttpRequest, context: Invocation
   const headers = corsHeaders(request);
 
   try {
-    const session = readSessionUser(request);
+    const session = await readCurrentUser(request);
     if (!session) {
       return { status: 401, headers, jsonBody: { error: "Log in to like announcements." } };
     }
+    // Taking a like back is a reaction too.
+    const timedOut = rejectIfTimedOut(session, headers);
+    if (timedOut) return timedOut;
 
     const item = announcementItem(request);
     if (request.method === "DELETE") {

@@ -22,13 +22,22 @@ export function canUseAdminTools(level: number) {
 
 // The numbers on someone's dashboard, kept up to date by userMetrics.ts.
 export type UserMetrics = {
+  // Which shape they were worked out in - see METRICS_VERSION in userMetrics.ts.
+  version?: number;
   // Climbs they've sent, by type.
   sends: Record<ClimbType, number>;
-  // The hardest grade they've sent on each scale - combos are on the route
-  // scale. A scale they haven't sent anything graded on is left out.
-  hardestSend: { route?: string; boulder?: string };
+  // The hardest grade they've sent of each type of climb - combos on the
+  // route scale, but apart from routes. A type they haven't sent anything
+  // graded of is left out.
+  hardestSend: Partial<Record<ClimbType, string>>;
   // Climbs they've sent on each line, by line number. Boulders aren't on one.
   lineSends: Record<string, number>;
+  // Climbs they've sent at each grade, by the climb's grade - routes, combos
+  // and boulders together, as the two scales share no grades. Ungraded climbs
+  // are left out.
+  gradeSends: Record<string, number>;
+  // How many of their comments gave each rating, by the rating (0-10).
+  ratingsGiven: Record<string, number>;
   // Comments with text, as on the climbs.
   commentsPosted: number;
   // Their most recent send, or null when they haven't sent anything. `date` is
@@ -95,7 +104,41 @@ export type User = {
   // still have someone to point at, but nobody can log in as them or open
   // their profile.
   deletedAt?: string;
+  // The userID of the admin who deleted the account, when it wasn't them.
+  deletedBy?: string;
+  // Every ban they've had, oldest first - see Ban. Missing until their first.
+  ban?: Ban[];
+  // Every timeout they've had, oldest first - see Timeout. Missing until
+  // their first.
+  timeout?: Timeout[];
 };
+
+// A ban, from POST /users/{userID}/ban. While one is running they can't log
+// in, and any session they already have stops working. ISO dates and times;
+// a ban with no `endAt` is permanent. `bannedBy` is the userID of whoever
+// banned them.
+export type Ban = { startAt: string; endAt: string | null; reason: string; bannedBy: string };
+
+// A timeout, from POST /users/{userID}/timeout. While one is running they
+// stay logged in but can't post or edit comments, like updates or add
+// combos - see rejectIfTimedOut in authUtils.ts. Always ends. `timedOutBy` is
+// the userID of whoever timed them out.
+export type Timeout = { startAt: string; endAt: string; reason: string; timedOutBy: string };
+
+// The one of `list` running at `now`, if any. Neither bans nor timeouts
+// overlap - a new one can only start once the last has ended - so there's at
+// most one.
+function running<T extends { startAt: string; endAt: string | null }>(list: T[] | undefined, now: string) {
+  return list?.find((item) => item.startAt <= now && (item.endAt === null || item.endAt > now));
+}
+
+export function activeBan(user: Pick<User, "ban">, now = new Date().toISOString()): Ban | undefined {
+  return running(user.ban, now);
+}
+
+export function activeTimeout(user: Pick<User, "timeout">, now = new Date().toISOString()): Timeout | undefined {
+  return running(user.timeout, now);
+}
 
 // Someone they follow, and when they started - an ISO date and time.
 export type Follow = { userID: string; followedAt: string };

@@ -7,8 +7,13 @@ import { type ApiRoute, type Climb, type ClimbComment, type ClimbType, toClimb }
 // Mirrors UserMetrics in api/src/models/User.ts.
 export type DashboardMetrics = {
   sends: Record<ClimbType, number>;
-  hardestSend: { route?: string; boulder?: string };
+  // By type of climb - combos apart from routes, though on the same scale.
+  hardestSend: Partial<Record<ClimbType, string>>;
   lineSends: Record<string, number>;
+  // By the climb's grade - route and boulder grades together.
+  gradeSends: Record<string, number>;
+  // How many comments gave each rating, by the rating (0-10).
+  ratingsGiven: Record<string, number>;
   commentsPosted: number;
   latestSend: { routeID: string; date: string } | null;
 };
@@ -34,8 +39,8 @@ export type Dashboard = {
   metrics: DashboardMetrics;
   // Null when they haven't sent anything, or the climb is gone.
   latestSendClimb: Climb | null;
-  // Their own, newest first.
-  recentComments: DashboardComment[];
+  // Their own sends, most recently sent first.
+  recentSends: DashboardComment[];
   // Their visit before this one - updates from then on are new.
   since: string;
 };
@@ -45,21 +50,25 @@ export type Dashboard = {
 export type UpdateFilter = "all" | "announcements" | "following" | "climbs";
 
 // Mirrors openDashboard in api/src/functions/dashboard.ts.
-type ApiComment = { comment: ClimbComment; climb: ApiRoute | null };
+// A comment as the API sends it, with its climb not yet turned into a Climb.
+export type ApiComment = { comment: ClimbComment; climb: ApiRoute | null };
 type ApiUpdate = { at: string; isNew: boolean } & (
   | { kind: "announcement"; announcement: ApiAnnouncement }
   | ({ kind: "comment"; via: FollowedVia } & ApiComment)
 );
+// The charts' numbers and recent sends are missing from an API from before
+// they were added.
+type NewerMetrics = "gradeSends" | "ratingsGiven";
 type ApiDashboard = {
   updates: ApiUpdate[];
   hasMoreUpdates: boolean;
-  metrics: DashboardMetrics;
+  metrics: Omit<DashboardMetrics, NewerMetrics> & Partial<Pick<DashboardMetrics, NewerMetrics>>;
   latestSendClimb: ApiRoute | null;
-  recentComments: ApiComment[];
+  recentSends?: ApiComment[];
   since: string;
 };
 
-function toDashboardComment({ comment, climb }: ApiComment): DashboardComment {
+export function toDashboardComment({ comment, climb }: ApiComment): DashboardComment {
   return { comment, climb: climb && toClimb(climb) };
 }
 
@@ -79,9 +88,9 @@ export async function openDashboard(): Promise<Dashboard> {
   return {
     updates: body.updates.map(toUpdate),
     hasMoreUpdates: body.hasMoreUpdates,
-    metrics: body.metrics,
+    metrics: { ...body.metrics, gradeSends: body.metrics.gradeSends ?? {}, ratingsGiven: body.metrics.ratingsGiven ?? {} },
     latestSendClimb: body.latestSendClimb && toClimb(body.latestSendClimb),
-    recentComments: body.recentComments.map(toDashboardComment),
+    recentSends: (body.recentSends ?? []).map(toDashboardComment),
     since: body.since,
   };
 }
@@ -106,13 +115,27 @@ export async function fetchUpdates({
   return { updates: body.updates.map(toUpdate), hasMoreUpdates: body.hasMoreUpdates };
 }
 
-export function totalSends({ sends }: Pick<DashboardMetrics, "sends">) {
-  return sends.route + sends.boulder + sends.combo;
+// Which of their own comments to show. Mirrors MY_COMMENT_FILTERS in
+// api/src/functions/dashboard.ts.
+export type MyCommentFilter = "all" | "sends";
+
+// A page of everything they've commented, newest first, starting `offset` in.
+export async function fetchMyComments({
+  offset,
+  only,
+}: {
+  offset: number;
+  only: MyCommentFilter;
+}): Promise<{ comments: DashboardComment[]; hasMore: boolean; total: number }> {
+  const query = new URLSearchParams({ offset: String(offset), only });
+  const res = await fetch(apiUrl(`/dashboard/comments?${query}`), { credentials: "include" });
+  if (!res.ok) throw new Error(`Failed to load your comments (${res.status})`);
+  const body = (await res.json()) as { comments: ApiComment[]; hasMore: boolean; total: number };
+  return { comments: body.comments.map(toDashboardComment), hasMore: body.hasMore, total: body.total };
 }
 
-// "5.11b · V4-5" - routes and boulders are on different scales.
-export function hardestSendLabel({ hardestSend }: Pick<DashboardMetrics, "hardestSend">) {
-  return [hardestSend.route, hardestSend.boulder].filter(Boolean).join(" · ") || "—";
+export function totalSends({ sends }: Pick<DashboardMetrics, "sends">) {
+  return sends.route + sends.boulder + sends.combo;
 }
 
 // The line they've sent the most on, the lower line on a tie.

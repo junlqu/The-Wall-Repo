@@ -13,14 +13,25 @@ export const USER_LEVEL = {
   admin: 4,
 } as const;
 
-// Mirrors SessionUser in api/src/authUtils.ts.
+// Mirrors SessionUser in api/src/authUtils.ts. `timedOutUntil` and
+// `timeoutReason` are their timeout, when they have one - see timeoutOf.
 export type SessionUser = {
   userID: string;
   username: string;
   fname: string;
   level: number;
   avatarUpdatedAt?: string;
+  timedOutUntil?: string;
+  timeoutReason?: string;
 };
+
+// Their timeout, if it's still running. While it is they can't post or edit
+// comments, like updates or add combos - the API refuses, so pages say so
+// up front instead.
+export function timeoutOf(user: SessionUser | null | undefined): { endAt: string; reason: string } | null {
+  if (!user?.timedOutUntil || user.timedOutUntil <= new Date().toISOString()) return null;
+  return { endAt: user.timedOutUntil, reason: user.timeoutReason ?? "" };
+}
 
 // The session cookie is httpOnly, so the browser can't read it - the API's
 // /auth/me tells us who is logged in. `undefined` means not checked yet.
@@ -56,17 +67,34 @@ export function useSessionUser(): SessionUser | null | undefined {
   useEffect(() => {
     if (sessionFetchStarted) return;
     sessionFetchStarted = true;
-    fetch(apiUrl("/auth/me"), { credentials: "include" })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((body) => body?.user ?? null)
-      .catch(() => null)
-      .then((user: SessionUser | null) => {
-        // A login/signup that finished first already knows better.
-        if (currentUser === undefined) setSessionUser(user);
-      });
+    fetchSession().then((user) => {
+      // A login/signup that finished first already knows better.
+      if (currentUser === undefined) setSessionUser(user ?? null);
+    });
+    // Checked again whenever they come back to the tab, so a ban - or a
+    // login or logout in another tab - shows without a reload.
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") refreshSession();
+    });
   }, []);
 
   return user;
+}
+
+// Who /auth/me says is logged in: null when nobody is, undefined when it
+// couldn't be reached.
+async function fetchSession(): Promise<SessionUser | null | undefined> {
+  const res = await fetch(apiUrl("/auth/me"), { credentials: "include" }).catch(() => null);
+  if (!res?.ok) return undefined;
+  const body = await res.json().catch(() => null);
+  return body ? (body.user ?? null) : undefined;
+}
+
+// Asks the API again who is logged in - a banned account comes back as
+// nobody. If it can't be reached, they're left as they were.
+export async function refreshSession() {
+  const user = await fetchSession();
+  if (user !== undefined && JSON.stringify(user) !== JSON.stringify(currentUser)) setSessionUser(user);
 }
 
 export async function logout() {

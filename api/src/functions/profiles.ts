@@ -1,4 +1,5 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from "@azure/functions";
+import { MAX_USERNAME_LENGTH } from "../accountFields";
 import { corsHeaders, readSessionUser } from "../authUtils";
 import { readClimbs } from "../climbLinks";
 import { toPublicComment } from "../commentFields";
@@ -6,8 +7,8 @@ import { getContainer } from "../cosmosClient";
 import { countFollowers, readFollowing } from "../follows";
 import { Comment, COMMENT_CONTAINER } from "../models/Comment";
 import { followingIDs, User, USER_CONTAINER, UserMetrics } from "../models/User";
-import { isVisibleToOthers, privacyOf, ProfileSection } from "../profilePrivacy";
-import { computeMetrics } from "../userMetrics";
+import { HARDEST_SEND_PARTS, isVisibleToOthers, privacyOf, ProfileSection, visibilityOf } from "../profilePrivacy";
+import { computeMetrics, readSends, savedMetricsOf } from "../userMetrics";
 
 // Anyone's profile: their picture, username, first name and the first letter
 // of their last, and - unless they've hidden them - their numbers, how many
@@ -17,7 +18,6 @@ import { computeMetrics } from "../userMetrics";
 
 const RECENT_COMMENTS = 5;
 const RECENT_SENDS = 3;
-const MAX_USERNAME_LENGTH = 128;
 
 export async function readByUsername(username: string): Promise<User | undefined> {
   const { resources } = await getContainer(USER_CONTAINER)
@@ -50,20 +50,15 @@ async function readViewer(userID: string): Promise<User | undefined> {
   return resource;
 }
 
-// When a climb was sent, to sort by - the day, then when it was logged to
-// settle two on one day. Mirrors sentWhen in userMetrics.ts.
-function sentWhen({ sentAt, commentedAt }: Comment) {
-  return `${sentAt ?? commentedAt.slice(0, 10)} ${commentedAt}`;
-}
-
-async function readSends(userID: string): Promise<Comment[]> {
-  const { resources } = await getContainer(COMMENT_CONTAINER)
-    .items.query<Comment>({
-      query: "SELECT * FROM c WHERE c.userID = @userID AND c.send = true",
-      parameters: [{ name: "@userID", value: userID }],
-    })
-    .fetchAll();
-  return resources.sort((a, b) => sentWhen(b).localeCompare(sentWhen(a)));
+// Their hardest send of each type that's shown - null for a type they
+// haven't sent anything graded of, so it's told apart from one that's hidden,
+// which is left out.
+function shownHardestSends({ hardestSend }: UserMetrics, shows: (section: ProfileSection) => boolean) {
+  return Object.fromEntries(
+    (Object.keys(HARDEST_SEND_PARTS) as (keyof typeof HARDEST_SEND_PARTS)[])
+      .filter((type) => shows(HARDEST_SEND_PARTS[type]))
+      .map((type) => [type, hardestSend[type] ?? null]),
+  );
 }
 
 // The line they've sent the most on, the lower line on a tie - or null when
@@ -101,12 +96,12 @@ export async function getProfile(request: HttpRequest, context: InvocationContex
     const isFriend = Boolean(relation?.follows && relation.followedBy);
 
     const privacy = privacyOf(user);
-    const shows = (section: ProfileSection) => isOwner || isVisibleToOthers(privacy[section], isFriend);
+    const shows = (section: ProfileSection) => isOwner || isVisibleToOthers(visibilityOf(privacy, section), isFriend);
     const showsStats = (["sends", "comments", "hardestSend", "favouriteLine"] as const).some(shows);
 
     // Only what's shown is read.
     const [metrics, comments, sends, followers, following] = await Promise.all([
-      showsStats ? (user.settings?.metrics ?? computeMetrics(user.userID)) : undefined,
+      showsStats ? (savedMetricsOf(user) ?? computeMetrics(user.userID)) : undefined,
       shows("recentComments") ? readRecentComments(user.userID) : [],
       shows("recentSends") ? readSends(user.userID) : [],
       shows("followers") ? countFollowers(user.userID) : undefined,
@@ -141,7 +136,8 @@ export async function getProfile(request: HttpRequest, context: InvocationContex
           ? {
               ...(shows("sends") ? { sends: metrics.sends } : {}),
               ...(shows("comments") ? { commentsPosted: metrics.commentsPosted } : {}),
-              ...(shows("hardestSend") ? { hardestSend: metrics.hardestSend } : {}),
+              // Only the types shown, and none without hardestSend.
+              ...(shows("hardestSend") ? { hardestSend: shownHardestSends(metrics, shows) } : {}),
               ...(shows("favouriteLine") ? { favouriteLine: favouriteLine(metrics) } : {}),
             }
           : {},

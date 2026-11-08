@@ -1,8 +1,9 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from "@azure/functions";
-import { corsHeaders, readSessionUser } from "../authUtils";
+import { corsHeaders, readCurrentUser, readSessionUser, rejectIfTimedOut } from "../authUtils";
 import { applyCommentChange } from "../climbStats";
 import { readCommentFields, readPeople, toPublicComment } from "../commentFields";
 import { getContainer } from "../cosmosClient";
+import { resolveFlags } from "../flagFields";
 import { Comment, COMMENT_CONTAINER, commentIDFor } from "../models/Comment";
 import { Route, ROUTE_CONTAINER } from "../models/Route";
 
@@ -123,8 +124,10 @@ export async function createMyComment(request: HttpRequest, context: InvocationC
   };
 
   try {
-    const session = readSessionUser(request);
+    const session = await readCurrentUser(request);
     if (!session) return notLoggedIn(headers);
+    const timedOut = rejectIfTimedOut(session, headers);
+    if (timedOut) return timedOut;
 
     const fields = readCommentFields(await request.json().catch(() => null));
     if (!fields) return invalid(headers);
@@ -170,8 +173,11 @@ export async function updateMyComment(request: HttpRequest, context: InvocationC
   const headers = corsHeaders(request);
 
   try {
-    const session = readSessionUser(request);
+    const session = await readCurrentUser(request);
     if (!session) return notLoggedIn(headers);
+    // Deleting it is still allowed - only adding or changing what it says isn't.
+    const timedOut = rejectIfTimedOut(session, headers);
+    if (timedOut) return timedOut;
 
     const fields = readCommentFields(await request.json().catch(() => null));
     if (!fields) return invalid(headers);
@@ -217,7 +223,7 @@ export async function deleteMyComment(request: HttpRequest, context: InvocationC
   const headers = corsHeaders(request);
 
   try {
-    const session = readSessionUser(request);
+    const session = await readCurrentUser(request);
     if (!session) return notLoggedIn(headers);
 
     const { routeID } = request.params;
@@ -233,6 +239,8 @@ export async function deleteMyComment(request: HttpRequest, context: InvocationC
     }
 
     await applyCommentChange(routeID, session.userID, existing, null, context);
+    // Anything it was flagged for went with it.
+    await resolveFlags(existing.commentID, "deleted", session.userID, context);
     return { status: 204, headers };
   } catch (error) {
     context.error("Failed to delete comment", error);

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { type ReactNode, useEffect, useId, useState } from "react";
 import ClimbColour, { Swatch } from "@/components/ClimbColour";
+import FlagCommentButton from "@/components/FlagComment";
 import { Kicker } from "@/components/Masthead";
 import { formatShortDate } from "@/lib/announcements";
 import { avatarUrl } from "@/lib/avatar";
@@ -36,7 +37,7 @@ function gradeRank(climb: Climb) {
   return index === -1 ? scale.length : index;
 }
 
-function byGrade(a: Climb, b: Climb) {
+export function byGrade(a: Climb, b: Climb) {
   return gradeRank(a) - gradeRank(b) || a.grade.localeCompare(b.grade) || a.setAt.localeCompare(b.setAt);
 }
 
@@ -371,12 +372,12 @@ export function Person({ person }: { person: ClimbPerson | null }) {
 }
 
 const GRADE_VERDICTS = {
-  harder: { className: "bg-green-100 text-green-700", label: "harder than its grade" },
-  easier: { className: "bg-red-100 text-red-700", label: "easier than its grade" },
+  harder: { className: "bg-red-100 text-red-700", label: "harder than its grade" },
+  easier: { className: "bg-green-100 text-green-700", label: "easier than its grade" },
   same: { className: "bg-yellow-50 text-yellow-800 ring-1 ring-yellow-200", label: "about its grade" },
 };
 
-function GradeArrow({ direction }: { direction: "up" | "down" }) {
+export function GradeArrow({ direction }: { direction: "up" | "down" }) {
   return (
     <svg aria-hidden="true" viewBox="0 0 20 20" fill="currentColor" className="h-3 w-3">
       <path
@@ -393,7 +394,7 @@ function GradeArrow({ direction }: { direction: "up" | "down" }) {
 }
 
 // A commenter's proposed grade, against the grade the climb is set at - up
-// in green if they think it's harder, down in red if easier, ~ otherwise.
+// in red if they think it's harder, down in green if easier, ~ otherwise.
 function ProposedGrade({ grade, climb }: { grade: string; climb: Climb }) {
   const kind = climb.type === "boulder" ? "boulder" : "route";
   const comparison = compareGrades(kind, grade, climb.grade);
@@ -417,7 +418,17 @@ function ProposedGrade({ grade, climb }: { grade: string; climb: Climb }) {
   );
 }
 
-export function CommentItem({ comment, climb }: { comment: ClimbComment; climb: Climb }) {
+// `flaggable` puts a flag beside the date for reporting it - left off where
+// staff are already looking at it.
+export function CommentItem({
+  comment,
+  climb,
+  flaggable = true,
+}: {
+  comment: ClimbComment;
+  climb: Climb;
+  flaggable?: boolean;
+}) {
   const userID = useSessionUser()?.userID;
   const mine = Boolean(userID && comment.author?.userID === userID);
   const sentAt = commentSentAt(comment);
@@ -432,14 +443,17 @@ export function CommentItem({ comment, climb }: { comment: ClimbComment; climb: 
           <Person person={comment.author} />
           {mine && <span className="rounded bg-sky-100 px-1.5 py-0.5 font-semibold text-sky-700">You</span>}
         </span>
-        <time
-          dateTime={comment.commentedAt}
-          title={comment.editedAt ? `Edited ${formatShortDate(new Date(comment.editedAt))}` : undefined}
-          className="text-neutral-500"
-        >
-          {formatShortDate(new Date(comment.commentedAt))}
-          {comment.editedAt && " (edited)"}
-        </time>
+        <span className="flex items-center gap-2">
+          <time
+            dateTime={comment.commentedAt}
+            title={comment.editedAt ? `Edited ${formatShortDate(new Date(comment.editedAt))}` : undefined}
+            className="text-neutral-500"
+          >
+            {formatShortDate(new Date(comment.commentedAt))}
+            {comment.editedAt && " (edited)"}
+          </time>
+          {flaggable && <FlagCommentButton comment={comment} climb={climb} />}
+        </span>
       </div>
       {comment.comment && <p className="whitespace-pre-line break-words text-sm text-neutral-700">{comment.comment}</p>}
       {(sentAt || comment.grade || comment.rating !== undefined) && (

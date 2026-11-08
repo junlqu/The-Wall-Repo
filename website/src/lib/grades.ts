@@ -41,6 +41,24 @@ function boulderGradeValue(grade: string) {
   return index === -1 || BOULDER_GRADES[index] === "Dyno" ? null : index;
 }
 
+// The grades a climb of `kind` can be at, easiest first - Dyno left off, as
+// it isn't a difficulty.
+export function difficultyScale(kind: ClimbKind) {
+  return kind === "boulder" ? BOULDER_GRADES.filter((grade) => grade !== "Dyno") : ROUTE_GRADES;
+}
+
+// Where `grade` sits on its difficultyScale - 5.3 is 0, 5.4 is 1 and so on -
+// for averaging grades. A route grade with no letter ("5.10") is halfway
+// between b and c, as compareGrades has it. Null when it isn't on the scale.
+export function gradeIndex(kind: ClimbKind, grade: string): number | null {
+  const scale = difficultyScale(kind);
+  const wanted = grade.trim().toLowerCase();
+  const exact = scale.findIndex((option) => option.toLowerCase() === wanted);
+  if (exact !== -1) return exact;
+  const b = kind === "route" ? scale.indexOf(`${wanted}b`) : -1;
+  return b === -1 ? null : b + 0.5;
+}
+
 // Whether `grade` is harder (1), easier (-1) or the same (0) as `than`, or
 // null when either can't be placed on the scale.
 export function compareGrades(kind: ClimbKind, grade: string, than: string): -1 | 0 | 1 | null {

@@ -2,18 +2,20 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import AccessNotice from "@/components/AccessNotice";
+import AdminUserPanel from "@/components/AdminUserPanel";
 import { ClimbBox, RecentComment } from "@/components/ClimbActivity";
 import { Placeholder } from "@/components/ClimbCards";
 import FollowListDialog from "@/components/FollowListDialog";
 import { AVATAR_SIZE, avatarUrl } from "@/lib/avatar";
 import { commentSentAt, formatDate } from "@/lib/climbs";
-import { hardestSendLabel, totalSends } from "@/lib/dashboard";
+import { totalSends } from "@/lib/dashboard";
 import { type FollowList, type FollowRelation, isFriend, setUserFollowed } from "@/lib/follows";
-import type { ProfileSection } from "@/lib/privacy";
+import { HARDEST_SEND_PARTS, type ProfileSection, visibilityOf } from "@/lib/privacy";
 import { displayName, fetchProfile, type Profile, profileHref } from "@/lib/profiles";
 import { withReturnTo } from "@/lib/returnTo";
-import { useSessionUser } from "@/lib/session";
+import { canUseAdminTools, useSessionUser } from "@/lib/session";
 import { settingsHref } from "@/lib/settings";
 
 const PANEL_CLASS = "rounded-lg border border-neutral-200 bg-white p-6 shadow-sm";
@@ -50,6 +52,19 @@ function OwnerBar({ username, asOthers }: { username: string; asOthers: boolean 
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+// Above anyone's profile for staff and admins: opens their account in the
+// admin user panel, as the user center's View does.
+function AdminBar({ onView }: { onView: () => void }) {
+  return (
+    <div className="flex flex-col items-center gap-3 rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 text-sm text-primary sm:flex-row sm:justify-between">
+      <p className="text-center font-semibold sm:text-left">Staff tools</p>
+      <button type="button" onClick={onView} className={BAR_BUTTON_CLASS}>
+        View
+      </button>
     </div>
   );
 }
@@ -241,7 +256,7 @@ function Header({
 
 // On their own profile, beside anything they've hidden from everyone else.
 function HiddenBadge({ profile, section }: { profile: Profile; section: ProfileSection }) {
-  const visibility = profile.privacy?.[section];
+  const visibility = profile.privacy && visibilityOf(profile.privacy, section);
   if (!visibility || visibility === "everyone") return null;
   return (
     <span className="inline-flex items-center gap-1 rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-semibold normal-case tracking-normal text-neutral-500">
@@ -263,39 +278,78 @@ function HiddenBadge({ profile, section }: { profile: Profile; section: ProfileS
   );
 }
 
-type Stat = { section: ProfileSection; label: string; value: string | number; note?: string };
+// `breakdown` sits beside the value, a line each.
+type Stat = { section: ProfileSection; label: string; value: string | number; breakdown?: string[] };
 
-// Only the numbers they show - none at all when they've hidden every one.
+const HARDEST_SEND_LABELS = [
+  { type: "route", label: "Hardest route" },
+  { type: "boulder", label: "Hardest boulder" },
+  { type: "combo", label: "Hardest combo" },
+] as const;
+
+// Their numbers on top and their hardest sends under them, three to a row.
+// Only the ones they show - a row shares its width among what's left in it,
+// so a hidden one doesn't leave a gap, and a row with none goes.
 function Stats({ profile }: { profile: Profile }) {
   const { sends, commentsPosted, hardestSend, favouriteLine } = profile.stats;
-  const stats: Stat[] = [];
-  if (commentsPosted !== undefined) stats.push({ section: "comments", label: "Comments", value: commentsPosted });
+  const counts: Stat[] = [];
+  if (commentsPosted !== undefined) counts.push({ section: "comments", label: "Comments", value: commentsPosted });
   if (sends) {
     const { route, boulder, combo } = sends;
+    // All three, even at 0, so the column keeps its shape.
     const breakdown = [
-      route && `${route} route${route === 1 ? "" : "s"}`,
-      boulder && `${boulder} boulder${boulder === 1 ? "" : "s"}`,
-      combo && `${combo} combo${combo === 1 ? "" : "s"}`,
-    ].filter(Boolean);
-    stats.push({ section: "sends", label: "Sends", value: totalSends({ sends }), note: breakdown.join(" · ") });
+      `${route} route${route === 1 ? "" : "s"}`,
+      `${boulder} boulder${boulder === 1 ? "" : "s"}`,
+      `${combo} combo${combo === 1 ? "" : "s"}`,
+    ];
+    counts.push({ section: "sends", label: "Sends", value: totalSends({ sends }), breakdown });
   }
-  if (hardestSend) stats.push({ section: "hardestSend", label: "Hardest send", value: hardestSendLabel({ hardestSend }) });
   if (favouriteLine !== undefined) {
-    stats.push({ section: "favouriteLine", label: "Favourite line", value: favouriteLine ? `Line ${favouriteLine}` : "—" });
+    counts.push({ section: "favouriteLine", label: "Favourite line", value: favouriteLine ? `Line ${favouriteLine}` : "—" });
   }
-  if (stats.length === 0) return null;
+  const hardest: Stat[] = HARDEST_SEND_LABELS.flatMap(({ type, label }) => {
+    const grade = hardestSend?.[type];
+    return grade === undefined ? [] : [{ section: HARDEST_SEND_PARTS[type], label, value: grade ?? "—" }];
+  });
+  const rows = [counts, hardest].filter((row) => row.length > 0);
+  if (rows.length === 0) return null;
 
-  // As many columns as fit, so a hidden number doesn't leave a gap.
   return (
-    <dl className="grid grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] gap-4">
-      {stats.map((stat) => (
-        <div key={stat.label} className="flex flex-col rounded-lg border border-neutral-200 bg-white px-5 py-4 shadow-sm">
-          <dt className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-semibold uppercase tracking-wide text-neutral-500">
-            {stat.label}
-            <HiddenBadge profile={profile} section={stat.section} />
-          </dt>
-          <dd className="order-first break-words text-2xl font-bold text-primary tabular-nums">{stat.value}</dd>
-          {stat.note && <dd className="mt-1 text-xs text-neutral-500">{stat.note}</dd>}
+    // From sm up, each row is a grid of its own. Below that the rows step aside
+    // (display: contents) so every card flows into one grid - two to a row on a
+    // phone, or one at a time on the narrowest screens.
+    <dl className="grid grid-cols-1 gap-3 min-[360px]:grid-cols-2 sm:grid-cols-1 sm:gap-4">
+      {rows.map((row) => (
+        <div
+          key={row[0].section}
+          style={{ gridTemplateColumns: `repeat(${row.length}, minmax(0, 1fr))` }}
+          className="contents sm:grid sm:gap-4"
+        >
+          {row.map((stat) => (
+            <div
+              key={stat.section}
+              className="flex min-w-0 flex-col rounded-lg border border-neutral-200 bg-white px-3 py-3 shadow-sm sm:px-5 sm:py-4"
+            >
+              <dt className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] font-semibold uppercase tracking-wide text-neutral-500 sm:text-xs">
+                {stat.label}
+                <HiddenBadge profile={profile} section={stat.section} />
+              </dt>
+              {/* Every card's value line is the height of the three breakdown
+                  lines, so the cards match whether they have one or not. */}
+              <dd className="mt-1 flex min-h-9 items-center gap-3">
+                <span className="min-w-0 break-words text-xl font-bold text-primary tabular-nums sm:text-2xl">
+                  {stat.value}
+                </span>
+                {stat.breakdown && (
+                  <span className="ml-auto flex shrink-0 flex-col text-right text-[11px] leading-3 text-neutral-500 tabular-nums">
+                    {stat.breakdown.map((line) => (
+                      <span key={line}>{line}</span>
+                    ))}
+                  </span>
+                )}
+              </dd>
+            </div>
+          ))}
         </div>
       ))}
     </dl>
@@ -376,8 +430,28 @@ function Activity({ profile }: { profile: Profile }) {
 // with a bar of their own above it, unless they've asked to see it as others
 // do.
 export default function PublicProfile({ username, asOthers }: { username: string; asOthers: boolean }) {
-  const sessionUserID = useSessionUser()?.userID;
+  const router = useRouter();
+  const sessionUser = useSessionUser();
+  const sessionUserID = sessionUser?.userID;
   const [profile, setProfile] = useState<Profile | null | "error" | undefined>(undefined);
+  // The admin user panel, while it's open. `saved` is their username after
+  // the last change made in it, if any.
+  const [panel, setPanel] = useState<{ userID: string; saved?: string } | null>(null);
+
+  // Changes made in the panel show once it's closed - a profile that's been
+  // renamed or deleted would otherwise change, or go, under it.
+  function closePanel() {
+    const saved = panel?.saved;
+    setPanel(null);
+    if (saved === undefined) return;
+    if (saved !== username) {
+      router.replace(profileHref(saved, asOthers));
+      return;
+    }
+    fetchProfile(username, asOthers)
+      .then(setProfile)
+      .catch(() => setProfile("error"));
+  }
 
   useEffect(() => {
     fetchProfile(username, asOthers)
@@ -411,6 +485,7 @@ export default function PublicProfile({ username, asOthers }: { username: string
           </>
         ) : (
           <>
+            {canUseAdminTools(sessionUser) && <AdminBar onView={() => setPanel({ userID: profile.userID })} />}
             {sessionUserID === profile.userID && <OwnerBar username={profile.username} asOthers={asOthers} />}
             <Header
               profile={profile}
@@ -426,6 +501,13 @@ export default function PublicProfile({ username, asOthers }: { username: string
             />
             <Stats profile={profile} />
             <Activity profile={profile} />
+            {panel && (
+              <AdminUserPanel
+                userID={panel.userID}
+                onClose={closePanel}
+                onSaved={(saved) => setPanel((current) => current && { ...current, saved: saved.username })}
+              />
+            )}
           </>
         )}
       </div>

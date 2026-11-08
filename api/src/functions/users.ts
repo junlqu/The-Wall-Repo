@@ -1,12 +1,26 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from "@azure/functions";
+import { eraseAccount } from "../accountDeletion";
+import { MAX_USERNAME_LENGTH, readAccountDetails } from "../accountFields";
 import { corsHeaders, readCurrentUser, rejectUnlessAdmin } from "../authUtils";
-import { isNotFound, PublicPerson, readPeople } from "../commentFields";
+import { getStarterAvatar } from "../avatarUtils";
+import { readClimbs } from "../climbLinks";
+import { isNotFound, PublicPerson, readPeople, toPublicComment } from "../commentFields";
 import { getContainer } from "../cosmosClient";
-import { COMMENT_CONTAINER } from "../models/Comment";
-import { isUserLevel, User, USER_CONTAINER, USER_LEVEL } from "../models/User";
+import { Avatar, AVATAR_CONTAINER } from "../models/Avatar";
+import { Comment, COMMENT_CONTAINER } from "../models/Comment";
+import { activeBan, activeTimeout, Ban, isUserLevel, Timeout, User, USER_CONTAINER, USER_LEVEL } from "../models/User";
 
 const FORBIDDEN = "Only staff and admins can look up users.";
+const NOT_FOUND = "That account doesn't exist any more.";
+// For bans and timeouts alike. Mirrors MAX_RESTRICTION_DAYS and
+// MAX_RESTRICTION_REASON_LENGTH in website/src/lib/users.ts - the longest the
+// page's wheels go is 365 days, 23 hours and 59 minutes.
+const MAX_RESTRICTION_MINUTES = (365 * 24 + 23) * 60 + 59;
+const MAX_RESTRICTION_REASON_LENGTH = 500;
 const LEADERBOARD_SIZE = 10;
+// Mirrors USER_COMMENTS_PAGE in website/src/lib/users.ts.
+const COMMENTS_PAGE = 10;
+const MAX_COMMENTS_OFFSET = 10000;
 // Mirrors USER_PAGE_SIZES in website/src/lib/users.ts.
 const PAGE_SIZES = [10, 25, 50, 100];
 const MAX_SEARCH_LENGTH = 100;
@@ -201,7 +215,7 @@ export async function listUsers(request: HttpRequest, context: InvocationContext
       container.items
         .query<Partial<User>>({
           query: `SELECT c.userID, c.username, c.fname, c.lname, c.email, c.phone, c.createdAt, c.avatarUpdatedAt,
-                    c.level
+                    c.level, c.ban, c.timeout
                   FROM c ${where} ORDER BY c.createdAt DESC OFFSET @offset LIMIT @limit`,
           parameters: [
             ...parameters,
@@ -231,8 +245,17 @@ export async function listUsers(request: HttpRequest, context: InvocationContext
   }
 }
 
+// The ban or timeout running now, for their card: a ban if they have one,
+// as it's the stronger. `endAt` is null for a permanent ban.
+function restrictionOf(user: Partial<User>): { kind: "ban" | "timeout"; endAt: string | null } | null {
+  const ban = activeBan(user);
+  if (ban) return { kind: "ban", endAt: ban.endAt };
+  const timeout = activeTimeout(user);
+  return timeout ? { kind: "timeout", endAt: timeout.endAt } : null;
+}
+
 // What the admin pages show of someone - never their email, phone or
-// password hash.
+// password hash. `restriction` needs their `ban` and `timeout` read.
 function toListedUser(user: Partial<User>) {
   return {
     userID: user.userID,
@@ -242,6 +265,7 @@ function toListedUser(user: Partial<User>) {
     createdAt: user.createdAt,
     avatarUpdatedAt: user.avatarUpdatedAt,
     level: user.level ?? USER_LEVEL.member,
+    restriction: restrictionOf(user),
   };
 }
 
@@ -259,7 +283,8 @@ export async function listPermissionUsers(
 
     const { resources } = await getContainer(USER_CONTAINER)
       .items.query<Partial<User>>({
-        query: `SELECT c.userID, c.username, c.fname, c.lname, c.createdAt, c.avatarUpdatedAt, c.level
+        query: `SELECT c.userID, c.username, c.fname, c.lname, c.createdAt, c.avatarUpdatedAt, c.level, c.ban,
+                  c.timeout
                 FROM c WHERE c.level > @member ORDER BY c.createdAt DESC`,
         parameters: [{ name: "@member", value: USER_LEVEL.member }],
       })
@@ -326,6 +351,335 @@ export async function setUserLevel(request: HttpRequest, context: InvocationCont
   }
 }
 
+// Everything the admin user panel shows of someone - their listing plus
+// their email and phone ("" when they haven't given one), when the account
+// was deleted, if it was, and every ban and timeout they've had, oldest
+// first, each with who gave it (`by`, null if that account is gone). Never
+// their password hash.
+async function toUserDetails(user: User) {
+  const bans = user.ban ?? [];
+  const timeouts = user.timeout ?? [];
+  const people = await readPeople([
+    ...bans.map((ban) => ban.bannedBy),
+    ...timeouts.map((timeout) => timeout.timedOutBy),
+  ]);
+  const shown = ({ startAt, endAt, reason }: Ban | Timeout, by: string) => ({
+    startAt,
+    endAt,
+    reason,
+    by: people.get(by) ?? null,
+  });
+  return {
+    ...toListedUser(user),
+    email: user.email ?? "",
+    phone: user.phone ?? "",
+    deletedAt: user.deletedAt,
+    ban: bans.map((ban) => shown(ban, ban.bannedBy)),
+    timeout: timeouts.map((timeout) => shown(timeout, timeout.timedOutBy)),
+  };
+}
+
+// Why `actor` can't edit, ban, time out or delete `user`, or null when they
+// can. As with levels, only people below your own level - your own account
+// is changed, or deleted, from Settings. Mirrors editLockedReason in
+// website/src/lib/users.ts.
+function refusal(actor: User, user: User, action: "edit" | "ban" | "timeout" | "delete"): string | null {
+  const doing = action === "timeout" ? "time out" : action;
+  if (user.userID === actor.userID) {
+    if (action === "edit") return "Change your own account from Settings.";
+    if (action === "delete") return "Delete your own account from Settings.";
+    return `You can't ${doing} yourself.`;
+  }
+  if ((user.level ?? USER_LEVEL.member) >= actor.level) {
+    return `You can only ${doing} people below your own level.`;
+  }
+  if (user.deletedAt) return "That account has been deleted.";
+  return null;
+}
+
+// GET /users/{userID} - one person's account, for the admin user panel.
+export async function getUser(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
+  const headers = corsHeaders(request);
+
+  try {
+    const rejection = await rejectUnlessAdmin(request, headers, FORBIDDEN);
+    if (rejection) return rejection;
+
+    const { userID } = request.params;
+    const { resource: user } = await getContainer(USER_CONTAINER).item(userID, userID).read<User>();
+    if (!user) return { status: 404, headers, jsonBody: { error: NOT_FOUND } };
+    return { status: 200, headers, jsonBody: await toUserDetails(user) };
+  } catch (error) {
+    context.error("Failed to read a user", error);
+    return { status: 500, headers, jsonBody: { error: "Failed to load their account." } };
+  }
+}
+
+// PUT /users/{userID} { username, fname, lname, email, phone, resetAvatar } -
+// changes someone's account for them. The same rules as sign-up and Settings
+// apply: names are required, email and phone are optional, and username,
+// email and phone can't be one another account already has. `resetAvatar`
+// puts their picture back to their starter. See editRefusal for who can be
+// edited.
+export async function updateUser(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
+  const headers = corsHeaders(request);
+
+  try {
+    const rejection = await rejectUnlessAdmin(request, headers, FORBIDDEN);
+    if (rejection) return rejection;
+    const actor = (await readCurrentUser(request))!;
+
+    const { userID } = request.params;
+    const item = getContainer(USER_CONTAINER).item(userID, userID);
+    const { resource: user } = await item.read<User>();
+    if (!user) return { status: 404, headers, jsonBody: { error: NOT_FOUND } };
+    const refused = refusal(actor, user, "edit");
+    if (refused) return { status: 403, headers, jsonBody: { error: refused } };
+
+    const body = ((await request.json().catch(() => null)) ?? {}) as Record<string, unknown>;
+    // Kept as typed, as at sign-up - usernames can mix upper and lowercase.
+    const username = typeof body.username === "string" ? body.username.trim() : "";
+    if (!username) return { status: 400, headers, jsonBody: { error: "Username is required." } };
+    if (username.length > MAX_USERNAME_LENGTH) {
+      return { status: 400, headers, jsonBody: { error: `Username must be ${MAX_USERNAME_LENGTH} characters or fewer.` } };
+    }
+    const details = readAccountDetails(body);
+    if ("error" in details) return { status: 400, headers, jsonBody: { error: details.error } };
+    const { email, phone } = details;
+    const resetAvatar = body.resetAvatar === true;
+
+    // Ignoring case for username and email, as sign-up does - profile links
+    // ignore case, so two usernames differing only by it would clash there.
+    const conditions = ["STRINGEQUALS(c.username, @username, true)"];
+    const parameters = [
+      { name: "@userID", value: userID },
+      { name: "@username", value: username },
+    ];
+    if (email) {
+      conditions.push("STRINGEQUALS(c.email, @email, true)");
+      parameters.push({ name: "@email", value: email });
+    }
+    if (phone) {
+      conditions.push("c.phone = @phone");
+      parameters.push({ name: "@phone", value: phone });
+    }
+    const { resources: taken } = await getContainer(USER_CONTAINER)
+      .items.query<{ username: string; email?: string; phone?: string }>({
+        query: `SELECT c.username, c.email, c.phone FROM c WHERE c.userID != @userID AND (${conditions.join(" OR ")})`,
+        parameters,
+      })
+      .fetchAll();
+    if (taken.length > 0) {
+      const what = taken.some((other) => other.username.toLowerCase() === username.toLowerCase())
+        ? "username"
+        : taken.some((other) => email && other.email?.toLowerCase() === email)
+          ? "email"
+          : "phone number";
+      return { status: 409, headers, jsonBody: { error: `Another account already uses that ${what}.` } };
+    }
+
+    // The picture goes first, as when an account is deleted: if the account
+    // then fails to save, trying again resets it again and moves the
+    // version, so nobody is left with the old one cached under a new URL.
+    const now = new Date().toISOString();
+    if (resetAvatar) {
+      const avatar: Avatar = { id: userID, userID, avatar: getStarterAvatar(userID), updatedAt: now };
+      await getContainer(AVATAR_CONTAINER).items.upsert(avatar);
+    }
+
+    // Blank email and phone are dropped from the document, as in Settings.
+    // Only saved if nothing else changed the account since it was read. Their
+    // session picks up the change on its next GET /auth/me.
+    const next: User = { ...user, username, ...details, ...(resetAvatar ? { avatarUpdatedAt: now } : {}) };
+    const { resource: updated } = await item.replace<User>(next, {
+      accessCondition: { type: "IfMatch", condition: user._etag },
+    });
+    return { status: 200, headers, jsonBody: await toUserDetails(updated ?? next) };
+  } catch (error) {
+    if ((error as { code?: number }).code === 412) {
+      return { status: 409, headers, jsonBody: { error: "Their account changed while saving - refresh and try again." } };
+    }
+    context.error("Failed to update a user", error);
+    return { status: 500, headers, jsonBody: { error: "Failed to save their account." } };
+  }
+}
+
+// GET /users/{userID}/comments?offset= - a page of everything someone has
+// commented, newest first - those that are only a send, grade or rating too -
+// with how many there are in all and whether there are more. Each comes with
+// its climb, or null if that's gone. For the admin user panel, so anyone's,
+// whatever their privacy settings, and a deleted account's too.
+export async function listUserComments(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
+  const headers = corsHeaders(request);
+
+  try {
+    const rejection = await rejectUnlessAdmin(request, headers, FORBIDDEN);
+    if (rejection) return rejection;
+
+    const offset = Number(request.query.get("offset") ?? 0);
+    if (!Number.isInteger(offset) || offset < 0 || offset > MAX_COMMENTS_OFFSET) {
+      return { status: 400, headers, jsonBody: { error: "That isn't a valid page of comments." } };
+    }
+
+    const { userID } = request.params;
+    const parameters = [{ name: "@userID", value: userID }];
+    const container = getContainer(COMMENT_CONTAINER);
+    const [{ resources }, { resources: counts }] = await Promise.all([
+      // One more than a page, to tell whether there's another after it.
+      container.items
+        .query<Comment>({
+          query: "SELECT * FROM c WHERE c.userID = @userID ORDER BY c.commentedAt DESC OFFSET @offset LIMIT @limit",
+          parameters: [
+            ...parameters,
+            { name: "@offset", value: offset },
+            { name: "@limit", value: COMMENTS_PAGE + 1 },
+          ],
+        })
+        .fetchAll(),
+      container.items.query<number>({ query: "SELECT VALUE COUNT(1) FROM c WHERE c.userID = @userID", parameters }).fetchAll(),
+    ]);
+
+    const page = resources.slice(0, COMMENTS_PAGE);
+    const [people, routes] = await Promise.all([
+      readPeople([userID]),
+      readClimbs([...new Set(page.map((comment) => comment.routeID))]),
+    ]);
+    return {
+      status: 200,
+      headers,
+      jsonBody: {
+        comments: page.map((comment) => ({
+          comment: toPublicComment(comment, people),
+          climb: routes.get(comment.routeID) ?? null,
+        })),
+        hasMore: resources.length > COMMENTS_PAGE,
+        total: counts[0] ?? 0,
+      },
+    };
+  } catch (error) {
+    // The container may not exist until comments can be posted.
+    if (isNotFound(error)) return { status: 200, headers, jsonBody: { comments: [], hasMore: false, total: 0 } };
+    context.error("Failed to list a user's comments", error);
+    return { status: 500, headers, jsonBody: { error: "Failed to load their comments." } };
+  }
+}
+
+// DELETE /users/{userID} - deletes someone's account for them, as they could
+// from Settings - see eraseAccount. Their comments and sends stay, no longer
+// naming them, and any session they have ends. See refusal for who can be
+// deleted. Returns them as they are now.
+export async function deleteUser(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
+  const headers = corsHeaders(request);
+
+  try {
+    const rejection = await rejectUnlessAdmin(request, headers, FORBIDDEN);
+    if (rejection) return rejection;
+    const actor = (await readCurrentUser(request))!;
+
+    const { userID } = request.params;
+    const { resource: user } = await getContainer(USER_CONTAINER).item(userID, userID).read<User>();
+    if (!user) return { status: 404, headers, jsonBody: { error: NOT_FOUND } };
+    const refused = refusal(actor, user, "delete");
+    if (refused) return { status: 403, headers, jsonBody: { error: refused } };
+
+    const deleted = await eraseAccount(user, actor.userID);
+    return { status: 200, headers, jsonBody: await toUserDetails(deleted) };
+  } catch (error) {
+    if ((error as { code?: number }).code === 412) {
+      return { status: 409, headers, jsonBody: { error: "Their account changed while deleting - refresh and try again." } };
+    }
+    context.error("Failed to delete a user", error);
+    return { status: 500, headers, jsonBody: { error: "Failed to delete their account." } };
+  }
+}
+
+// What a ban and a timeout each need: a ban can be permanent and stops them
+// logging in; a timeout always ends and only stops them posting.
+const RESTRICTIONS = {
+  ban: { noun: "ban", verb: "banned", verbing: "banning", permanent: true },
+  timeout: { noun: "timeout", verb: "timed out", verbing: "timing out", permanent: false },
+} as const;
+
+type Restriction = keyof typeof RESTRICTIONS;
+
+// POST /users/{userID}/ban { minutes, reason } bans someone from now for
+// `minutes`, or for good when it's null. POST /users/{userID}/timeout
+// { minutes, reason } times them out for `minutes` - never for good. Each is
+// added to their `ban` or `timeout` list, which keeps every one they've had.
+// Nobody can be given another of either until the one they have ends, or be
+// timed out while banned. See refusal for who can be banned or timed out.
+export async function restrictUser(
+  request: HttpRequest,
+  context: InvocationContext,
+  kind: Restriction,
+): Promise<HttpResponseInit> {
+  const headers = corsHeaders(request);
+  const { noun, verb, verbing, permanent } = RESTRICTIONS[kind];
+
+  try {
+    const rejection = await rejectUnlessAdmin(request, headers, FORBIDDEN);
+    if (rejection) return rejection;
+    const actor = (await readCurrentUser(request))!;
+
+    const { userID } = request.params;
+    const item = getContainer(USER_CONTAINER).item(userID, userID);
+    const { resource: user } = await item.read<User>();
+    if (!user) return { status: 404, headers, jsonBody: { error: NOT_FOUND } };
+    const refused = refusal(actor, user, kind);
+    if (refused) return { status: 403, headers, jsonBody: { error: refused } };
+
+    const body = ((await request.json().catch(() => null)) ?? {}) as { minutes?: unknown; reason?: unknown };
+    // null for a permanent ban.
+    const minutes =
+      permanent && body.minutes === null ? null : Number.isInteger(body.minutes) ? (body.minutes as number) : 0;
+    if (minutes !== null && (minutes < 1 || minutes > MAX_RESTRICTION_MINUTES)) {
+      const error = `Choose how long the ${noun} lasts${permanent ? ", or make it permanent" : ""}.`;
+      return { status: 400, headers, jsonBody: { error } };
+    }
+    const reason = typeof body.reason === "string" ? body.reason.trim() : "";
+    if (!reason) return { status: 400, headers, jsonBody: { error: `Give a reason for the ${noun}.` } };
+    if (reason.length > MAX_RESTRICTION_REASON_LENGTH) {
+      return {
+        status: 400,
+        headers,
+        jsonBody: { error: `The reason must be ${MAX_RESTRICTION_REASON_LENGTH} characters or fewer.` },
+      };
+    }
+
+    const now = new Date();
+    const ban = activeBan(user, now.toISOString());
+    if (ban) {
+      return { status: 409, headers, jsonBody: { error: ban.endAt ? "They're already banned." : "They're already banned permanently." } };
+    }
+    if (kind === "timeout" && activeTimeout(user, now.toISOString())) {
+      return { status: 409, headers, jsonBody: { error: "They're already timed out." } };
+    }
+
+    const startAt = now.toISOString();
+    const endAt = minutes === null ? null : new Date(now.getTime() + minutes * 60_000).toISOString();
+    const entry: Ban | Timeout =
+      kind === "ban"
+        ? { startAt, endAt, reason, bannedBy: actor.userID }
+        : { startAt, endAt: endAt!, reason, timedOutBy: actor.userID };
+    // Only if nothing else changed them since they were read, so two at once
+    // can't both go on. Accounts that have never had one have no list to add
+    // to yet.
+    const list = user[kind];
+    const { resource: updated } = await item.patch<User>(
+      [list ? { op: "add", path: `/${kind}/-`, value: entry } : { op: "set", path: `/${kind}`, value: [entry] }],
+      { accessCondition: { type: "IfMatch", condition: user._etag } },
+    );
+    const fallback = { ...user, [kind]: [...(list ?? []), entry] } as User;
+    return { status: 200, headers, jsonBody: await toUserDetails(updated ?? fallback) };
+  } catch (error) {
+    if ((error as { code?: number }).code === 412) {
+      return { status: 409, headers, jsonBody: { error: `Their account changed while ${verbing} them - refresh and try again.` } };
+    }
+    context.error(`Failed to put a ${noun} on a user`, error);
+    return { status: 500, headers, jsonBody: { error: `Failed to get them ${verb}.` } };
+  }
+}
+
 app.http("users", {
   methods: ["GET", "OPTIONS"],
   authLevel: "anonymous",
@@ -359,6 +713,48 @@ app.http("userLevel", {
       return { status: 204, headers: corsHeaders(request) };
     }
     return setUserLevel(request, context);
+  },
+});
+
+// Only matches a GUID - every userID is one - so it can't swallow
+// users/stats and users/permissions: the host doesn't rank those literal
+// routes ahead of a {userID} one.
+app.http("userItem", {
+  methods: ["GET", "PUT", "DELETE", "OPTIONS"],
+  authLevel: "anonymous",
+  route: "users/{userID:guid}",
+  handler: async (request, context) => {
+    if (request.method === "OPTIONS") {
+      return { status: 204, headers: corsHeaders(request) };
+    }
+    if (request.method === "DELETE") return deleteUser(request, context);
+    return request.method === "PUT" ? updateUser(request, context) : getUser(request, context);
+  },
+});
+
+for (const kind of Object.keys(RESTRICTIONS) as Restriction[]) {
+  app.http(kind === "ban" ? "userBan" : "userTimeout", {
+    methods: ["POST", "OPTIONS"],
+    authLevel: "anonymous",
+    route: `users/{userID}/${kind}`,
+    handler: async (request, context) => {
+      if (request.method === "OPTIONS") {
+        return { status: 204, headers: corsHeaders(request) };
+      }
+      return restrictUser(request, context, kind);
+    },
+  });
+}
+
+app.http("userComments", {
+  methods: ["GET", "OPTIONS"],
+  authLevel: "anonymous",
+  route: "users/{userID}/comments",
+  handler: async (request, context) => {
+    if (request.method === "OPTIONS") {
+      return { status: 204, headers: corsHeaders(request) };
+    }
+    return listUserComments(request, context);
   },
 });
 

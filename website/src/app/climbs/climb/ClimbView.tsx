@@ -15,7 +15,9 @@ import {
   SaveClimbButton,
   Stars,
 } from "@/components/ClimbCards";
+import { EditDialog } from "@/components/ClimbActions";
 import CommentForm from "@/components/CommentForm";
+import TimedOutNotice from "@/components/TimedOutNotice";
 import { Kicker, SectionRule } from "@/components/Masthead";
 import {
   type Climb,
@@ -35,8 +37,9 @@ import {
   formatDate,
   swatchFor,
 } from "@/lib/climbs";
+import { gradingReportHref } from "@/lib/moderation";
 import { withReturnTo } from "@/lib/returnTo";
-import { useSessionUser } from "@/lib/session";
+import { canUseAdminTools, timeoutOf, useSessionUser } from "@/lib/session";
 
 const LEADABLE_TEXT: Record<Climb["leadable"], string> = { Yes: "Yes", Sketch: "Sketchy", No: "No", "?": "Unknown" };
 
@@ -69,6 +72,39 @@ function BackLink({ type }: { type?: ClimbType }) {
     <Link href={href} className="w-fit text-sm font-semibold text-primary hover:text-secondary">
       ← {label}
     </Link>
+  );
+}
+
+const STAFF_BUTTON_CLASS =
+  "inline-flex shrink-0 items-center justify-center rounded-full border border-primary bg-white px-4 py-1.5 text-sm font-semibold text-primary transition-colors hover:bg-primary hover:text-white";
+
+// For staff and admins: opens the same edit side panel as the admin climbs
+// table, or the climb's grading report. Styled like the staff tools bar on a
+// profile.
+function StaffBar({ climb, onSaved }: { climb: Climb; onSaved: (climb: Climb) => void }) {
+  const [editing, setEditing] = useState(false);
+  return (
+    <div className="flex flex-col items-center gap-3 rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 text-sm text-primary sm:flex-row sm:justify-between">
+      <p className="text-center font-semibold sm:text-left">Staff tools</p>
+      <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
+        <Link href={gradingReportHref(climb.id)} className={STAFF_BUTTON_CLASS}>
+          Grading report
+        </Link>
+        <button type="button" onClick={() => setEditing(true)} className={STAFF_BUTTON_CLASS}>
+          Edit climb
+        </button>
+      </div>
+      {editing && (
+        <EditDialog
+          climb={climb}
+          onClose={() => setEditing(false)}
+          onSaved={(saved) => {
+            setEditing(false);
+            onSaved(saved);
+          }}
+        />
+      )}
+    </div>
   );
 }
 
@@ -247,10 +283,12 @@ function CommentsClosed() {
 
 // The visitor's own comment: a prompt to log in, the form to write their one
 // comment, or - once they have - that comment in a dropdown they can edit or
-// delete it from. A climb that's come down takes no new ones.
+// delete it from. A climb that's come down takes no new ones. While they're
+// timed out they can't post or edit one, only delete it.
 function MyComment({ climb, onChanged }: { climb: Climb; onChanged: () => void }) {
   const user = useSessionUser();
   const userID = user?.userID;
+  const timedOut = timeoutOf(user) !== null;
   const [mine, setMine] = useState<ClimbComment | null | "loading" | "error">("loading");
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -301,8 +339,13 @@ function MyComment({ climb, onChanged }: { climb: Climb; onChanged: () => void }
   if (mine === "error") {
     return <p className="text-center text-sm text-neutral-500">Couldn&apos;t check for your comment right now.</p>;
   }
-  if (mine === null) return climb.status === "past" ? <CommentsClosed /> : <CommentForm climb={climb} onSaved={saved} />;
-  if (editing) return <CommentForm climb={climb} initial={mine} onSaved={saved} onCancel={() => setEditing(false)} />;
+  if (mine === null) {
+    if (climb.status === "past") return <CommentsClosed />;
+    return timedOut ? <TimedOutNotice /> : <CommentForm climb={climb} onSaved={saved} />;
+  }
+  if (editing && !timedOut) {
+    return <CommentForm climb={climb} initial={mine} onSaved={saved} onCancel={() => setEditing(false)} />;
+  }
 
   return (
     <div className="rounded-xl border border-neutral-200 bg-white shadow-sm">
@@ -356,7 +399,9 @@ function MyComment({ climb, onChanged }: { climb: Climb; onChanged: () => void }
             <button
               type="button"
               onClick={() => setEditing(true)}
-              className="rounded-full border border-primary px-4 py-1.5 text-sm font-semibold text-primary transition-colors hover:bg-primary hover:text-white"
+              disabled={timedOut}
+              title={timedOut ? "You can't edit comments while you're timed out" : undefined}
+              className="rounded-full border border-primary px-4 py-1.5 text-sm font-semibold text-primary transition-colors hover:bg-primary hover:text-white disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-primary"
             >
               Edit
             </button>
@@ -429,6 +474,7 @@ function AllComments({ climb }: { climb: Climb }) {
 }
 
 function ClimbDetails({ id }: { id: string }) {
+  const isStaff = canUseAdminTools(useSessionUser());
   const [climb, setClimb] = useState<Climb | null | "loading" | "error">("loading");
   const [lastSend, setLastSend] = useState<LastSend>("loading");
   // Bumped when the visitor's comment changes, to load the list afresh.
@@ -475,6 +521,7 @@ function ClimbDetails({ id }: { id: string }) {
   return (
     <>
       <BackLink type={climb.type} />
+      {isStaff && <StaffBar climb={climb} onSaved={setClimb} />}
       <PostCard climb={climb} lastSend={lastSend} />
 
       <section className="flex flex-col gap-6">

@@ -2,9 +2,11 @@
 
 import Link from "next/link";
 import { type LiHTMLAttributes, type ReactNode, useEffect, useState } from "react";
+import AdminUserPanel from "@/components/AdminUserPanel";
 import { FIELD_CLASS } from "@/components/ClimbForm";
 import CountChart from "@/components/CountChart";
 import ProfileLink from "@/components/ProfileLink";
+import RestrictionBadge from "@/components/RestrictionBadge";
 import SlidingTabs from "@/components/SlidingTabs";
 import { type AdminSection, adminSubpageHref } from "@/lib/adminSections";
 import { avatarUrl } from "@/lib/avatar";
@@ -19,6 +21,7 @@ import {
   type SearchMatch,
   USER_PAGE_SIZES,
   type UserPageSize,
+  type UserDetails,
   type UserStats,
   type UserSummary,
 } from "@/lib/users";
@@ -131,7 +134,7 @@ const ACTIVITY_METRICS: { id: ActivityMetric; label: string; noun: string; empty
   { id: "sends", label: "Sends", noun: "send", emptyText: "No sends" },
 ];
 
-type ActivityScale = "week" | "month" | "year";
+export type ActivityScale = "week" | "month" | "year";
 
 const ACTIVITY_SCALES: { id: ActivityScale; label: string }[] = [
   { id: "week", label: "Week" },
@@ -141,7 +144,7 @@ const ACTIVITY_SCALES: { id: ActivityScale; label: string }[] = [
 
 // One bar of the activity chart: the day (YYYY-MM-DD) or, for a year, the
 // month (YYYY-MM) it counts.
-type Bucket = { key: string; label: string };
+export type Bucket = { key: string; label: string };
 
 function addDays(date: string, days: number) {
   const day = parseDate(date);
@@ -151,7 +154,7 @@ function addDays(date: string, days: number) {
 
 // The past seven days ending today, every day of this month, or every month
 // of this year - a year is counted by month, as 365 bars wouldn't fit.
-function bucketsFor(scale: ActivityScale, today: string): Bucket[] {
+export function bucketsFor(scale: ActivityScale, today: string): Bucket[] {
   const [year, month] = today.split("-").map(Number);
   if (scale === "week") {
     return Array.from({ length: 7 }, (_, i) => {
@@ -175,11 +178,11 @@ function bucketsFor(scale: ActivityScale, today: string): Bucket[] {
 
 // The day something happened in the admin's own timezone. Sends dated by
 // their climber are already a day.
-function dayOf(value: string) {
+export function dayOf(value: string) {
   return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : localDate(new Date(value));
 }
 
-function describeScale(scale: ActivityScale, buckets: Bucket[]) {
+export function describeScale(scale: ActivityScale, buckets: Bucket[]) {
   const first = parseDate(buckets[0].key.length === 7 ? `${buckets[0].key}-01` : buckets[0].key);
   if (scale === "year") return `Per month · ${first.getFullYear()}`;
   if (scale === "month") return `Per day · ${first.toLocaleDateString(undefined, { month: "long", year: "numeric" })}`;
@@ -317,9 +320,10 @@ export function MatchBadge({ match }: { match: SearchMatch }) {
   );
 }
 
-// One person: their picture, username, name and when they joined, with
-// `children` - a search match, buttons - on the right. `itemProps` go on the
-// card itself, to make it draggable; their className is added to the card's.
+// One person: their picture, username, name, when they joined and - in the
+// corner - whether they're banned or timed out, with `children` - a search
+// match, buttons - on the right. `itemProps` go on the card itself, to make it
+// draggable; their className is added to the card's.
 export function UserCard({
   user,
   children,
@@ -332,9 +336,11 @@ export function UserCard({
   return (
     <li
       {...itemProps}
-      className={`flex items-center gap-3 rounded-lg border border-neutral-200 bg-white p-3 shadow-sm ${
-        itemProps?.className ?? ""
-      }`}
+      // A ban or timeout's tag sits in the bottom right corner, with room
+      // made for it under whatever's on the right.
+      className={`relative flex items-center gap-3 rounded-lg border border-neutral-200 bg-white p-3 shadow-sm ${
+        user.restriction ? "pb-9" : ""
+      } ${itemProps?.className ?? ""}`}
     >
       <Avatar user={user} size="md" />
       <div className="min-w-0 flex-1">
@@ -347,6 +353,7 @@ export function UserCard({
         <p className="text-xs text-neutral-500">Joined {formatJoined(user.createdAt)}</p>
       </div>
       {children}
+      <RestrictionBadge restriction={user.restriction} className="absolute bottom-2 right-3 max-w-[calc(100%-1.5rem)]" />
     </li>
   );
 }
@@ -364,13 +371,37 @@ function appendUsers(users: UserSummary[], more: UserSummary[]) {
 
 // Every user, newest first, in one long list that grows a batch at a time,
 // with a search across username, first and last name, email and phone. Each
-// card shows where the search matched it. Also the body of /admin/users/all.
+// card shows where the search matched it, and opens their account in a side
+// panel. Also the body of /admin/users/all.
 export function AdminUserList() {
   const [input, setInput] = useState("");
   const [search, setSearch] = useState("");
   const [batchSize, setBatchSize] = useState<UserPageSize>(USER_PAGE_SIZES[0]);
   const [data, setData] = useState<LoadedUsers>();
   const [loadingMore, setLoadingMore] = useState(false);
+  // Whose account is open in the side panel.
+  const [viewing, setViewing] = useState<string | null>(null);
+
+  // An edit shows on their card straight away. Where the search matched them
+  // stays as it was until the list next loads.
+  const showSaved = (saved: UserDetails) =>
+    setData((last) =>
+      last && {
+        ...last,
+        users: last.users.map((user) =>
+          user.userID === saved.userID
+            ? {
+                ...user,
+                username: saved.username,
+                fname: saved.fname,
+                lname: saved.lname,
+                avatarUpdatedAt: saved.avatarUpdatedAt,
+                restriction: saved.restriction,
+              }
+            : user,
+        ),
+      },
+    );
   const list = JSON.stringify([search, batchSize]);
   // A new search or batch size starts the list over; the old one stays up,
   // dimmed, until the first batch arrives.
@@ -466,10 +497,20 @@ export function AdminUserList() {
           {data.users.map((user) => (
             <UserCard key={user.userID} user={user}>
               {user.match && <MatchBadge match={user.match} />}
+              <button
+                type="button"
+                onClick={() => setViewing(user.userID)}
+                aria-label={`View @${user.username}`}
+                className="shrink-0 rounded-full border border-primary bg-white px-3 py-1 text-xs font-semibold text-primary transition-colors hover:bg-primary hover:text-white"
+              >
+                View
+              </button>
             </UserCard>
           ))}
         </ul>
       )}
+
+      {viewing && <AdminUserPanel userID={viewing} onClose={() => setViewing(null)} onSaved={showSaved} />}
 
       {hasMore && (
         <button

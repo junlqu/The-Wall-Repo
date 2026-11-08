@@ -114,7 +114,7 @@ export async function applyCommentChange(
   if (sendChanged) await setSent(routeID, userID, Boolean(after?.send));
 
   // Not fatal: the comment is saved, and the next change works them out afresh.
-  if (textDelta !== 0 || sendChanged || before?.sentAt !== after?.sentAt) {
+  if (textDelta !== 0 || sendChanged || before?.sentAt !== after?.sentAt || ratingBefore !== ratingAfter) {
     await refreshMetrics(userID).catch((error) => context.warn("Failed to update the user's metrics", error));
   }
 }

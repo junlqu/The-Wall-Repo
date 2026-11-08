@@ -2,6 +2,7 @@
 
 import { useCallback, useRef } from "react";
 import { type Announcement, setAnnouncementLiked } from "@/lib/announcements";
+import { timeoutOf, useSessionUser } from "@/lib/session";
 
 // Likes or takes back a like, given how to swap the changed announcement into
 // the page. Shows the change straight away and puts it back if it doesn't save.
@@ -24,8 +25,8 @@ export function useToggleLike(replace: (announcement: Announcement) => void) {
   );
 }
 
-// Members can like a post; guests just see the count. `light` is for a dark
-// background.
+// Members can like a post; guests just see the count, as do members while
+// they're timed out. `light` is for a dark background.
 export function LikeButton({
   announcement,
   canLike,
@@ -37,6 +38,7 @@ export function LikeButton({
   onToggle: (announcement: Announcement) => void;
   light?: boolean;
 }) {
+  const timedOut = timeoutOf(useSessionUser()) !== null;
   const { liked } = announcement;
   const likedClass = light ? "bg-white/20 text-white" : "bg-secondary/20 text-primary";
   const hoverClass = light ? "hover:bg-white/10" : "hover:bg-neutral-100";
@@ -45,11 +47,13 @@ export function LikeButton({
     <button
       type="button"
       onClick={() => onToggle(announcement)}
-      disabled={!canLike}
+      disabled={!canLike || timedOut}
       aria-pressed={canLike ? liked : undefined}
-      title={canLike ? (liked ? "Take back your like" : "Like") : "Log in to like"}
+      title={
+        !canLike ? "Log in to like" : timedOut ? "You can't like updates while you're timed out" : liked ? "Take back your like" : "Like"
+      }
       className={`-mx-2 inline-flex items-center gap-1 rounded-full px-2 py-0.5 transition-colors disabled:cursor-default ${
-        liked ? likedClass : canLike ? hoverClass : ""
+        liked ? likedClass : canLike && !timedOut ? hoverClass : ""
       }`}
     >
       <span aria-hidden="true" className={`text-sm leading-none ${liked ? "" : "opacity-70 grayscale"}`}>
