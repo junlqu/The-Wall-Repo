@@ -36,7 +36,7 @@ const SECTION = getAdminSection("moderation")!;
 const REPORTS = SECTION.subpages.find((subpage) => subpage.slug === "grading-reports")!;
 
 // Coloured as a commenter's proposed grade is on the climbs pages and in the
-// grading reports: red under, yellow at, green over. `ring` marks the one
+// grading reports: green under, yellow at, red over. `ring` marks the one
 // the climb should be at.
 const VERDICTS: {
   id: GradeVerdict;
@@ -51,10 +51,10 @@ const VERDICTS: {
   {
     id: "easier",
     label: "Under grade",
-    tile: "bg-red-50 text-red-700",
-    ring: "ring-2 ring-red-400",
-    dot: "bg-red-400",
-    underline: "border-red-400",
+    tile: "bg-green-50 text-green-700",
+    ring: "ring-2 ring-green-500",
+    dot: "bg-green-500",
+    underline: "border-green-500",
     phrase: "under its grade",
   },
   {
@@ -69,10 +69,10 @@ const VERDICTS: {
   {
     id: "harder",
     label: "Over grade",
-    tile: "bg-green-50 text-green-700",
-    ring: "ring-2 ring-green-500",
-    dot: "bg-green-500",
-    underline: "border-green-500",
+    tile: "bg-red-50 text-red-700",
+    ring: "ring-2 ring-red-400",
+    dot: "bg-red-400",
+    underline: "border-red-400",
     phrase: "over its grade",
   },
 ];
@@ -230,8 +230,8 @@ function VoteTiles({ votes, suggested }: { votes: GradeVotes; suggested: GradeVe
   );
 }
 
-// The grade the comments suggest, coloured as its tile would be: red under
-// its listed grade, yellow at it, green over. Grey when its listed grade
+// The grade the comments suggest, coloured as its tile would be: green
+// under its listed grade, yellow at it, red over. Grey when its listed grade
 // isn't on the scale to compare with, or with too few proposed grades to go
 // on - those that aren't on the scale don't count.
 function SuggestedGrade({ climb, grades }: { climb: Climb; grades: string[] }) {

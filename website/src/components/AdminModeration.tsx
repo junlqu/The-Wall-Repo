@@ -69,12 +69,18 @@ function useGradeReports(type?: ClimbType, enabled = true) {
   return reports;
 }
 
-// Coloured as a commenter's proposed grade is on the climbs pages - red for
-// easier, yellow for its grade, green for harder.
+// Coloured as a commenter's proposed grade is on the climbs pages - green
+// for easier, yellow for its grade, red for harder. `legend` names each in
+// the grading reports' key; `label` is the fuller wording read out.
 export const VOTE_SQUARES = [
-  { key: "easier", className: "bg-red-100 text-red-700", label: "easier than its grade" },
-  { key: "same", className: "bg-yellow-50 text-yellow-800 ring-1 ring-inset ring-yellow-200", label: "at its grade" },
-  { key: "harder", className: "bg-green-100 text-green-700", label: "harder than its grade" },
+  { key: "easier", className: "bg-green-100 text-green-700", label: "easier than its grade", legend: "Easier" },
+  {
+    key: "same",
+    className: "bg-yellow-50 text-yellow-800 ring-1 ring-inset ring-yellow-200",
+    label: "at its grade",
+    legend: "Accurate",
+  },
+  { key: "harder", className: "bg-red-100 text-red-700", label: "harder than its grade", legend: "Harder" },
 ] as const;
 
 export function GradeVoteSquares({ votes }: { votes: GradeVotes }) {
@@ -180,17 +186,20 @@ function ReportRows({
 function VoteLegend() {
   return (
     <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs text-neutral-600">
-      {VOTE_SQUARES.map(({ key, className, label }) => (
+      {VOTE_SQUARES.map(({ key, className, legend }) => (
         <span key={key} className="flex items-center gap-1.5">
           <span aria-hidden="true" className={`h-3.5 w-3.5 rounded ${className}`} />
-          Graded {label}
+          {legend}
         </span>
       ))}
-      <span className="flex items-center gap-1.5">
+      <span
+        title={`${MIN_GRADE_VOTES}+ comments grade it, and more put it easier, or more put it harder, than at its grade`}
+        className="flex items-center gap-1.5"
+      >
         <span className="text-orange-700">
           <FlagIcon />
         </span>
-        Flagged once {MIN_GRADE_VOTES}+ comments grade it and more put it under, or more put it over, than at its grade
+        Flagged
       </span>
     </div>
   );

@@ -371,8 +371,8 @@ export function Person({ person }: { person: ClimbPerson | null }) {
 }
 
 const GRADE_VERDICTS = {
-  harder: { className: "bg-green-100 text-green-700", label: "harder than its grade" },
-  easier: { className: "bg-red-100 text-red-700", label: "easier than its grade" },
+  harder: { className: "bg-red-100 text-red-700", label: "harder than its grade" },
+  easier: { className: "bg-green-100 text-green-700", label: "easier than its grade" },
   same: { className: "bg-yellow-50 text-yellow-800 ring-1 ring-yellow-200", label: "about its grade" },
 };
 
@@ -393,7 +393,7 @@ export function GradeArrow({ direction }: { direction: "up" | "down" }) {
 }
 
 // A commenter's proposed grade, against the grade the climb is set at - up
-// in green if they think it's harder, down in red if easier, ~ otherwise.
+// in red if they think it's harder, down in green if easier, ~ otherwise.
 function ProposedGrade({ grade, climb }: { grade: string; climb: Climb }) {
   const kind = climb.type === "boulder" ? "boulder" : "route";
   const comparison = compareGrades(kind, grade, climb.grade);
