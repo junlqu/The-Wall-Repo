@@ -19,7 +19,7 @@ export async function followRoute(request: HttpRequest, context: InvocationConte
   const follow = request.method === "PUT";
 
   try {
-    const session = readSessionUser(request);
+    const session = await readCurrentUser(request);
     if (!session) return notLoggedIn(headers, "save climbs");
 
     const { routeID } = request.params;

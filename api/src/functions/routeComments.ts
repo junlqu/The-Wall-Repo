@@ -1,5 +1,5 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from "@azure/functions";
-import { corsHeaders, readSessionUser } from "../authUtils";
+import { corsHeaders, readCurrentUser, readSessionUser } from "../authUtils";
 import { applyCommentChange } from "../climbStats";
 import { readCommentFields, readPeople, toPublicComment } from "../commentFields";
 import { getContainer } from "../cosmosClient";
@@ -123,7 +123,7 @@ export async function createMyComment(request: HttpRequest, context: InvocationC
   };
 
   try {
-    const session = readSessionUser(request);
+    const session = await readCurrentUser(request);
     if (!session) return notLoggedIn(headers);
 
     const fields = readCommentFields(await request.json().catch(() => null));
@@ -170,7 +170,7 @@ export async function updateMyComment(request: HttpRequest, context: InvocationC
   const headers = corsHeaders(request);
 
   try {
-    const session = readSessionUser(request);
+    const session = await readCurrentUser(request);
     if (!session) return notLoggedIn(headers);
 
     const fields = readCommentFields(await request.json().catch(() => null));
@@ -217,7 +217,7 @@ export async function deleteMyComment(request: HttpRequest, context: InvocationC
   const headers = corsHeaders(request);
 
   try {
-    const session = readSessionUser(request);
+    const session = await readCurrentUser(request);
     if (!session) return notLoggedIn(headers);
 
     const { routeID } = request.params;

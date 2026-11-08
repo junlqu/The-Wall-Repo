@@ -8,7 +8,7 @@ export const metadata: Metadata = {
 };
 
 // Change whenever the policy does.
-const EFFECTIVE_DATE = "November 6, 2026";
+const EFFECTIVE_DATE = "November 8, 2026";
 
 const LINK_CLASS = "font-medium text-primary underline decoration-primary/30 underline-offset-2 hover:decoration-primary";
 
@@ -67,6 +67,11 @@ const COLLECTED: [string, string, string][] = [
     "Account creation date, the time you last opened your dashboard, account level, profile visibility choices, cookie preference, and activity totals derived from your contributions.",
     "To personalize your dashboard, apply your privacy choices and control access to administrative features.",
   ],
+  [
+    "Bans",
+    "Any ban placed on your account: when it started and when it ends (or that it is permanent), the reason given, and the staff member who placed it.",
+    "To enforce the Site's rules, stop a banned account from logging in until the ban ends, and keep a record of past bans.",
+  ],
 ];
 
 const COOKIES: [string, string, string, string][] = [
@@ -90,8 +95,9 @@ const RETENTION: [string, string][] = [
   ],
   [
     "De-identified account record",
-    "After deletion, a record containing your internal identifier, settings and activity totals is retained so that existing contributions remain consistent. It contains no name, username, email, phone or usable password.",
+    "After deletion, a record containing your internal identifier, settings, activity totals and any ban history is retained so that existing contributions remain consistent. It contains no name, username, email, phone or usable password.",
   ],
+  ["Bans", "Kept with your account record, including after a ban ends and after account deletion."],
   ["Session cookie", "30 days from your last login, or until you log out."],
   ["Technical logs", "In line with our hosting provider's standard retention periods."],
   ["Data exports", "Generated when you request them and not stored by us."],
@@ -256,7 +262,7 @@ export default function PrivacyPage() {
                 from members you follow;
               </li>
               <li>apply the visibility and cookie preferences you choose;</li>
-              <li>allow authorized staff to administer accounts and access levels;</li>
+              <li>allow authorized staff to administer accounts and access levels, and to ban accounts that break the Site&apos;s rules;</li>
               <li>keep the Site secure and diagnose technical problems; and</li>
               <li>comply with applicable legal obligations.</li>
             </List>
@@ -294,8 +300,11 @@ export default function PrivacyPage() {
             <Subheading>4.2 Authorized staff</Subheading>
             <p>
               Members with staff or administrator access can view account details, including names, usernames, email
-              addresses, phone numbers, account creation dates and activity totals, for the purpose of administering
-              accounts. No one, including staff, can view your password.
+              addresses, phone numbers, account creation dates, activity totals and ban history, for the purpose of
+              administering accounts. They can correct those details, reset your profile picture to its default, and ban
+              your account for a set time or permanently, giving a reason. While a ban is in effect you are logged out
+              and cannot log in; the login page shows when it ends and the reason given. No one, including staff, can
+              view your password.
             </p>
             <Subheading>4.3 Service providers</Subheading>
             <p>

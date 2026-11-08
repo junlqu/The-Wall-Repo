@@ -6,10 +6,14 @@ import { isNotFound, PublicPerson, readPeople } from "../commentFields";
 import { getContainer } from "../cosmosClient";
 import { Avatar, AVATAR_CONTAINER } from "../models/Avatar";
 import { COMMENT_CONTAINER } from "../models/Comment";
-import { isUserLevel, User, USER_CONTAINER, USER_LEVEL } from "../models/User";
+import { activeBan, Ban, isUserLevel, User, USER_CONTAINER, USER_LEVEL } from "../models/User";
 
 const FORBIDDEN = "Only staff and admins can look up users.";
 const NOT_FOUND = "That account doesn't exist any more.";
+// Mirrors MAX_BAN_DAYS and MAX_BAN_REASON_LENGTH in website/src/lib/users.ts -
+// the longest the page's wheels go is 365 days, 23 hours and 59 minutes.
+const MAX_BAN_MINUTES = (365 * 24 + 23) * 60 + 59;
+const MAX_BAN_REASON_LENGTH = 500;
 const LEADERBOARD_SIZE = 10;
 // Mirrors USER_PAGE_SIZES in website/src/lib/users.ts.
 const PAGE_SIZES = [10, 25, 50, 100];
@@ -331,24 +335,35 @@ export async function setUserLevel(request: HttpRequest, context: InvocationCont
 }
 
 // Everything the admin user panel shows of someone - their listing plus
-// their email and phone ("" when they haven't given one), and when the
-// account was deleted, if it was. Never their password hash.
-function toUserDetails(user: User) {
+// their email and phone ("" when they haven't given one), when the account
+// was deleted, if it was, and every ban they've had, oldest first, with who
+// banned them (null if that account is gone). Never their password hash.
+async function toUserDetails(user: User) {
+  const bans = user.ban ?? [];
+  const people = await readPeople(bans.map((ban) => ban.bannedBy));
   return {
     ...toListedUser(user),
     email: user.email ?? "",
     phone: user.phone ?? "",
     deletedAt: user.deletedAt,
+    ban: bans.map(({ startAt, endAt, reason, bannedBy }) => ({
+      startAt,
+      endAt,
+      reason,
+      bannedBy: people.get(bannedBy) ?? null,
+    })),
   };
 }
 
-// Why `actor` can't edit `user`'s account, or null when they can. As with
+// Why `actor` can't edit or ban `user`, or null when they can. As with
 // levels, only people below your own level - your own account is changed
 // from Settings. Mirrors editLockedReason in website/src/lib/users.ts.
-function editRefusal(actor: User, user: User): string | null {
-  if (user.userID === actor.userID) return "Change your own account from Settings.";
+function refusal(actor: User, user: User, action: "edit" | "ban"): string | null {
+  if (user.userID === actor.userID) {
+    return action === "edit" ? "Change your own account from Settings." : "You can't ban yourself.";
+  }
   if ((user.level ?? USER_LEVEL.member) >= actor.level) {
-    return "You can only edit people below your own level.";
+    return `You can only ${action} people below your own level.`;
   }
   if (user.deletedAt) return "That account has been deleted.";
   return null;
@@ -365,7 +380,7 @@ export async function getUser(request: HttpRequest, context: InvocationContext):
     const { userID } = request.params;
     const { resource: user } = await getContainer(USER_CONTAINER).item(userID, userID).read<User>();
     if (!user) return { status: 404, headers, jsonBody: { error: NOT_FOUND } };
-    return { status: 200, headers, jsonBody: toUserDetails(user) };
+    return { status: 200, headers, jsonBody: await toUserDetails(user) };
   } catch (error) {
     context.error("Failed to read a user", error);
     return { status: 500, headers, jsonBody: { error: "Failed to load their account." } };
@@ -390,8 +405,8 @@ export async function updateUser(request: HttpRequest, context: InvocationContex
     const item = getContainer(USER_CONTAINER).item(userID, userID);
     const { resource: user } = await item.read<User>();
     if (!user) return { status: 404, headers, jsonBody: { error: NOT_FOUND } };
-    const refusal = editRefusal(actor, user);
-    if (refusal) return { status: 403, headers, jsonBody: { error: refusal } };
+    const refused = refusal(actor, user, "edit");
+    if (refused) return { status: 403, headers, jsonBody: { error: refused } };
 
     const body = ((await request.json().catch(() => null)) ?? {}) as Record<string, unknown>;
     // Kept as typed, as at sign-up - usernames can mix upper and lowercase.
@@ -451,13 +466,77 @@ export async function updateUser(request: HttpRequest, context: InvocationContex
     const { resource: updated } = await item.replace<User>(next, {
       accessCondition: { type: "IfMatch", condition: user._etag },
     });
-    return { status: 200, headers, jsonBody: toUserDetails(updated ?? next) };
+    return { status: 200, headers, jsonBody: await toUserDetails(updated ?? next) };
   } catch (error) {
     if ((error as { code?: number }).code === 412) {
       return { status: 409, headers, jsonBody: { error: "Their account changed while saving - refresh and try again." } };
     }
     context.error("Failed to update a user", error);
     return { status: 500, headers, jsonBody: { error: "Failed to save their account." } };
+  }
+}
+
+// POST /users/{userID}/ban { minutes, reason } - bans someone from now for
+// `minutes`, or for good when it's null. Added to their `ban` list, which
+// keeps every ban they've had. Someone already banned can't be banned again
+// until it ends. See refusal for who can be banned.
+export async function banUser(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
+  const headers = corsHeaders(request);
+
+  try {
+    const rejection = await rejectUnlessAdmin(request, headers, FORBIDDEN);
+    if (rejection) return rejection;
+    const actor = (await readCurrentUser(request))!;
+
+    const { userID } = request.params;
+    const item = getContainer(USER_CONTAINER).item(userID, userID);
+    const { resource: user } = await item.read<User>();
+    if (!user) return { status: 404, headers, jsonBody: { error: NOT_FOUND } };
+    const refused = refusal(actor, user, "ban");
+    if (refused) return { status: 403, headers, jsonBody: { error: refused } };
+
+    const body = ((await request.json().catch(() => null)) ?? {}) as { minutes?: unknown; reason?: unknown };
+    // null for a permanent ban.
+    const minutes = body.minutes === null ? null : Number.isInteger(body.minutes) ? (body.minutes as number) : 0;
+    if (minutes !== null && (minutes < 1 || minutes > MAX_BAN_MINUTES)) {
+      return { status: 400, headers, jsonBody: { error: "Choose how long the ban lasts, or make it permanent." } };
+    }
+    const reason = typeof body.reason === "string" ? body.reason.trim() : "";
+    if (!reason) return { status: 400, headers, jsonBody: { error: "Give a reason for the ban." } };
+    if (reason.length > MAX_BAN_REASON_LENGTH) {
+      return { status: 400, headers, jsonBody: { error: `The reason must be ${MAX_BAN_REASON_LENGTH} characters or fewer.` } };
+    }
+
+    const now = new Date();
+    const current = activeBan(user, now.toISOString());
+    if (current) {
+      return {
+        status: 409,
+        headers,
+        jsonBody: { error: current.endAt ? "They're already banned." : "They're already banned permanently." },
+      };
+    }
+
+    const ban: Ban = {
+      startAt: now.toISOString(),
+      endAt: minutes === null ? null : new Date(now.getTime() + minutes * 60_000).toISOString(),
+      reason,
+      bannedBy: actor.userID,
+    };
+    // Only if nothing else changed them since they were read, so two bans
+    // at once can't both go on. Accounts that have never been banned have
+    // no list to add to yet.
+    const { resource: updated } = await item.patch<User>(
+      [user.ban ? { op: "add", path: "/ban/-", value: ban } : { op: "set", path: "/ban", value: [ban] }],
+      { accessCondition: { type: "IfMatch", condition: user._etag } },
+    );
+    return { status: 200, headers, jsonBody: await toUserDetails(updated ?? { ...user, ban: [...(user.ban ?? []), ban] }) };
+  } catch (error) {
+    if ((error as { code?: number }).code === 412) {
+      return { status: 409, headers, jsonBody: { error: "Their account changed while banning - refresh and try again." } };
+    }
+    context.error("Failed to ban a user", error);
+    return { status: 500, headers, jsonBody: { error: "Failed to ban them." } };
   }
 }
 
@@ -508,6 +587,18 @@ app.http("userItem", {
       return { status: 204, headers: corsHeaders(request) };
     }
     return request.method === "PUT" ? updateUser(request, context) : getUser(request, context);
+  },
+});
+
+app.http("userBan", {
+  methods: ["POST", "OPTIONS"],
+  authLevel: "anonymous",
+  route: "users/{userID}/ban",
+  handler: async (request, context) => {
+    if (request.method === "OPTIONS") {
+      return { status: 204, headers: corsHeaders(request) };
+    }
+    return banUser(request, context);
   },
 });
 

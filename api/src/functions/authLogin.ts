@@ -1,7 +1,7 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from "@azure/functions";
 import { getContainer } from "../cosmosClient";
 import { buildSessionCookie, corsHeaders, signSessionToken, toSessionUser, verifyPassword } from "../authUtils";
-import { User, USER_CONTAINER } from "../models/User";
+import { activeBan, User, USER_CONTAINER } from "../models/User";
 
 type LoginBody = {
   identifier?: string; // email, username, or phone
@@ -35,6 +35,20 @@ export async function authLogin(request: HttpRequest, context: InvocationContext
     // A deleted account's password is already unguessable - this is belt and braces.
     if (!user || user.deletedAt || !user.passwordHash || !(await verifyPassword(password, user.passwordHash))) {
       return { status: 401, headers, jsonBody: { error: "Incorrect login or password." } };
+    }
+
+    // Only once the password is right, so nobody can find out who's banned
+    // without it. `ban` lets the page show when it ends in their own timezone.
+    const ban = activeBan(user);
+    if (ban) {
+      return {
+        status: 403,
+        headers,
+        jsonBody: {
+          error: ban.endAt ? "This account is banned." : "This account is permanently banned.",
+          ban: { endAt: ban.endAt, reason: ban.reason },
+        },
+      };
     }
 
     const token = signSessionToken(toSessionUser(user));

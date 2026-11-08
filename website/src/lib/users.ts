@@ -74,10 +74,39 @@ export async function fetchUsers(
   return (await adminRequest(`/users?${query}`, {})) as UserPage;
 }
 
+// A ban: ISO dates and times, with no `endAt` when it's permanent.
+// `bannedBy` is null when that account is gone. Mirrors Ban in
+// api/src/models/User.ts.
+export type UserBan = {
+  startAt: string;
+  endAt: string | null;
+  reason: string;
+  bannedBy: { userID: string; username: string } | null;
+};
+
 // Someone's whole account, for the admin user panel. Email and phone are ""
-// when they haven't given one. Mirrors toUserDetails in
+// when they haven't given one; `ban` is every ban they've had, oldest first.
+// Mirrors toUserDetails in api/src/functions/users.ts.
+export type UserDetails = ListedUser & { email: string; phone: string; deletedAt?: string; ban: UserBan[] };
+
+// Mirror MAX_BAN_MINUTES and MAX_BAN_REASON_LENGTH in
 // api/src/functions/users.ts.
-export type UserDetails = ListedUser & { email: string; phone: string; deletedAt?: string };
+export const MAX_BAN_DAYS = 365;
+export const MAX_BAN_REASON_LENGTH = 500;
+
+// The ban running now, if any. Mirrors activeBan in api/src/models/User.ts.
+export function activeBan(user: Pick<UserDetails, "ban">, now = new Date().toISOString()): UserBan | undefined {
+  return user.ban.find((ban) => ban.startAt <= now && (ban.endAt === null || ban.endAt > now));
+}
+
+// Bans them from now for `minutes`, or for good when it's null. Returns them
+// as they are now.
+export async function banUser(userID: string, minutes: number | null, reason: string): Promise<UserDetails> {
+  return (await adminRequest(`/users/${encodeURIComponent(userID)}/ban`, {
+    method: "POST",
+    body: JSON.stringify({ minutes, reason }),
+  })) as UserDetails;
+}
 
 // What the panel's edit form sends. `resetAvatar` puts their picture back to
 // their starter.

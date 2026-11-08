@@ -104,7 +104,21 @@ export type User = {
   // still have someone to point at, but nobody can log in as them or open
   // their profile.
   deletedAt?: string;
+  // Every ban they've had, oldest first - see Ban. Missing until their first.
+  ban?: Ban[];
 };
+
+// A ban, from POST /users/{userID}/ban. While one is running they can't log
+// in, and any session they already have stops working. ISO dates and times;
+// a ban with no `endAt` is permanent. `bannedBy` is the userID of whoever
+// banned them.
+export type Ban = { startAt: string; endAt: string | null; reason: string; bannedBy: string };
+
+// The ban running at `now`, if any. Bans don't overlap - a new one can only
+// start once the last has ended - so there's at most one.
+export function activeBan(user: Pick<User, "ban">, now = new Date().toISOString()): Ban | undefined {
+  return user.ban?.find((ban) => ban.startAt <= now && (ban.endAt === null || ban.endAt > now));
+}
 
 // Someone they follow, and when they started - an ISO date and time.
 export type Follow = { userID: string; followedAt: string };
