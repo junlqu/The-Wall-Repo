@@ -37,6 +37,7 @@ import {
   formatDate,
   swatchFor,
 } from "@/lib/climbs";
+import { gradingReportHref } from "@/lib/moderation";
 import { withReturnTo } from "@/lib/returnTo";
 import { canUseAdminTools, timeoutOf, useSessionUser } from "@/lib/session";
 
@@ -74,20 +75,25 @@ function BackLink({ type }: { type?: ClimbType }) {
   );
 }
 
+const STAFF_BUTTON_CLASS =
+  "inline-flex shrink-0 items-center justify-center rounded-full border border-primary bg-white px-4 py-1.5 text-sm font-semibold text-primary transition-colors hover:bg-primary hover:text-white";
+
 // For staff and admins: opens the same edit side panel as the admin climbs
-// table. Styled like the staff tools bar on a profile.
+// table, or the climb's grading report. Styled like the staff tools bar on a
+// profile.
 function StaffBar({ climb, onSaved }: { climb: Climb; onSaved: (climb: Climb) => void }) {
   const [editing, setEditing] = useState(false);
   return (
     <div className="flex flex-col items-center gap-3 rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 text-sm text-primary sm:flex-row sm:justify-between">
       <p className="text-center font-semibold sm:text-left">Staff tools</p>
-      <button
-        type="button"
-        onClick={() => setEditing(true)}
-        className="shrink-0 rounded-full border border-primary bg-white px-4 py-1.5 text-sm font-semibold text-primary transition-colors hover:bg-primary hover:text-white"
-      >
-        Edit climb
-      </button>
+      <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
+        <Link href={gradingReportHref(climb.id)} className={STAFF_BUTTON_CLASS}>
+          Grading report
+        </Link>
+        <button type="button" onClick={() => setEditing(true)} className={STAFF_BUTTON_CLASS}>
+          Edit climb
+        </button>
+      </div>
       {editing && (
         <EditDialog
           climb={climb}

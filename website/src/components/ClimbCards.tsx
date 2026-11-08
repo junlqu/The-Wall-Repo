@@ -376,7 +376,7 @@ const GRADE_VERDICTS = {
   same: { className: "bg-yellow-50 text-yellow-800 ring-1 ring-yellow-200", label: "about its grade" },
 };
 
-function GradeArrow({ direction }: { direction: "up" | "down" }) {
+export function GradeArrow({ direction }: { direction: "up" | "down" }) {
   return (
     <svg aria-hidden="true" viewBox="0 0 20 20" fill="currentColor" className="h-3 w-3">
       <path

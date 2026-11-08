@@ -1,8 +1,8 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from "@azure/functions";
 import { corsHeaders, rejectUnlessAdmin } from "../authUtils";
-import { isNotFound } from "../commentFields";
+import { isNotFound, readPeople, toPublicComment } from "../commentFields";
 import { getContainer } from "../cosmosClient";
-import { COMMENT_CONTAINER } from "../models/Comment";
+import { Comment, COMMENT_CONTAINER } from "../models/Comment";
 import { CLIMB_TYPES, ClimbType, Route, ROUTE_CONTAINER } from "../models/Route";
 
 const FORBIDDEN = "Only staff and admins can see moderation reports.";
@@ -161,6 +161,61 @@ app.http("moderationActivity", {
       return { status: 204, headers: corsHeaders(request) };
     }
     return getCommentActivity(request, context);
+  },
+});
+
+// More than any one climb gets; a guard so one request can't read without end.
+const MAX_GRADED_COMMENTS = 500;
+
+// GET /moderation/climbs/{routeID}/grades - every comment on the climb that
+// proposed a grade, newest first, with or without text, each with who wrote
+// it. For a climb's grading report, which sorts them by whether they put it
+// under, at or over its grade.
+export async function getClimbGradeComments(
+  request: HttpRequest,
+  context: InvocationContext,
+): Promise<HttpResponseInit> {
+  const headers = corsHeaders(request);
+
+  try {
+    const rejection = await rejectUnlessAdmin(request, headers, FORBIDDEN);
+    if (rejection) return rejection;
+
+    const { routeID } = request.params;
+    let comments: Comment[];
+    try {
+      ({ resources: comments } = await getContainer(COMMENT_CONTAINER)
+        .items.query<Comment>({
+          query: `SELECT * FROM c WHERE c.routeID = @routeID AND IS_STRING(c.grade) AND c.grade != ""
+                  ORDER BY c.commentedAt DESC OFFSET 0 LIMIT @limit`,
+          parameters: [
+            { name: "@routeID", value: routeID },
+            { name: "@limit", value: MAX_GRADED_COMMENTS },
+          ],
+        })
+        .fetchAll());
+    } catch (error) {
+      // The container may not exist until comments can be posted.
+      if (!isNotFound(error)) throw error;
+      comments = [];
+    }
+    const people = await readPeople(comments.map((comment) => comment.userID));
+    return { status: 200, headers, jsonBody: { comments: comments.map((comment) => toPublicComment(comment, people)) } };
+  } catch (error) {
+    context.error("Failed to load a climb's graded comments", error);
+    return { status: 500, headers, jsonBody: { error: "Failed to load the climb's comments." } };
+  }
+}
+
+app.http("moderationClimbGrades", {
+  methods: ["GET", "OPTIONS"],
+  authLevel: "anonymous",
+  route: "moderation/climbs/{routeID}/grades",
+  handler: async (request, context) => {
+    if (request.method === "OPTIONS") {
+      return { status: 204, headers: corsHeaders(request) };
+    }
+    return getClimbGradeComments(request, context);
   },
 });
 

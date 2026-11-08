@@ -10,12 +10,13 @@ import GroupedCountChart from "@/components/GroupedCountChart";
 import { SectionRule } from "@/components/Masthead";
 import SlidingTabs from "@/components/SlidingTabs";
 import { type AdminSection, adminSubpageHref } from "@/lib/adminSections";
-import { type Climb, type ClimbType, climbHref, climbTypeLabel, LINES, todayDate } from "@/lib/climbs";
+import { type Climb, type ClimbType, climbTypeLabel, LINES, todayDate } from "@/lib/climbs";
 import {
   type CommentActivity,
   compareDisagreement,
   fetchCommentActivity,
   fetchGradeReport,
+  gradingReportHref,
   type GradeVotes,
   MIN_GRADE_VOTES,
   needsGradeReview,
@@ -70,13 +71,13 @@ function useGradeReports(type?: ClimbType, enabled = true) {
 
 // Coloured as a commenter's proposed grade is on the climbs pages - red for
 // easier, yellow for its grade, green for harder.
-const VOTE_SQUARES = [
+export const VOTE_SQUARES = [
   { key: "easier", className: "bg-red-100 text-red-700", label: "easier than its grade" },
   { key: "same", className: "bg-yellow-50 text-yellow-800 ring-1 ring-inset ring-yellow-200", label: "at its grade" },
   { key: "harder", className: "bg-green-100 text-green-700", label: "harder than its grade" },
 ] as const;
 
-function GradeVoteSquares({ votes }: { votes: GradeVotes }) {
+export function GradeVoteSquares({ votes }: { votes: GradeVotes }) {
   return (
     <span className="flex shrink-0 gap-1">
       {VOTE_SQUARES.map(({ key, className, label }) => (
@@ -97,7 +98,7 @@ function GradeVoteSquares({ votes }: { votes: GradeVotes }) {
   );
 }
 
-function FlagIcon({ className = "h-3.5 w-3.5" }: { className?: string }) {
+export function FlagIcon({ className = "h-3.5 w-3.5" }: { className?: string }) {
   return (
     <svg aria-hidden="true" viewBox="0 0 20 20" fill="currentColor" className={`shrink-0 ${className}`}>
       <path d="M3.5 2.75a.75.75 0 0 0-1.5 0v14.5a.75.75 0 0 0 1.5 0v-4.39l1.66-.35a6.45 6.45 0 0 1 4.27.57 7.95 7.95 0 0 0 5.97.53l2.07-.64a.75.75 0 0 0 .53-.72v-8.5a.75.75 0 0 0-.9-.73l-2.38.5a7.25 7.25 0 0 1-4.19-.36l-.5-.2a8.75 8.75 0 0 0-5.05-.44l-1.48.31V2.75z" />
@@ -107,10 +108,10 @@ function FlagIcon({ className = "h-3.5 w-3.5" }: { className?: string }) {
 
 // Marks a climb whose listed grade might need some work. Just the flag on
 // phones, where the row has no room for the words.
-function ReviewBadge() {
+export function ReviewBadge() {
   return (
     <span
-      title={`Most of its ${MIN_GRADE_VOTES}+ graders put it off its grade`}
+      title={`Of its ${MIN_GRADE_VOTES}+ graders, more put it under or over its grade than at it`}
       className="inline-flex shrink-0 items-center gap-1 rounded bg-orange-100 px-1.5 py-0.5 text-xs font-semibold text-orange-800"
     >
       <FlagIcon />
@@ -122,14 +123,14 @@ function ReviewBadge() {
 const NO_VOTES: GradeVotes = { easier: 0, same: 0, harder: 0 };
 
 // A climb as a row of the public climbs pages, cut down to its colour and
-// grade, with its grade votes on the right. Links to the climb's own page,
-// where its comments are.
+// grade, with its grade votes on the right. Links to the climb's grading
+// report, where its comments are.
 function ReportRow({ climb, votes = NO_VOTES, tapeRow }: { climb: Climb; votes?: GradeVotes; tapeRow: boolean }) {
   const flagged = needsGradeReview(votes);
   return (
     <li className="py-1">
       <Link
-        href={climbHref(climb.id)}
+        href={gradingReportHref(climb.id)}
         className={`relative -mx-2 flex w-[calc(100%+1rem)] items-center justify-between gap-3 rounded-lg px-2 ${
           tapeRow ? "py-3" : "py-2"
         } text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-secondary ${
@@ -189,7 +190,7 @@ function VoteLegend() {
         <span className="text-orange-700">
           <FlagIcon />
         </span>
-        Flagged once {MIN_GRADE_VOTES}+ comments grade it and more put it off its grade than on it
+        Flagged once {MIN_GRADE_VOTES}+ comments grade it and more put it under, or more put it over, than at its grade
       </span>
     </div>
   );
@@ -231,7 +232,7 @@ function GradingUpdates({ reports, href }: { reports: ReturnType<typeof useGrade
             {shown.map((climb) => (
               <li key={climb.id}>
                 <Link
-                  href={climbHref(climb.id)}
+                  href={gradingReportHref(climb.id)}
                   className="flex items-center justify-between gap-3 px-3 py-2.5 text-sm transition-colors hover:bg-secondary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-secondary"
                 >
                   <span className="flex min-w-0 flex-col gap-0.5">
@@ -527,7 +528,7 @@ function PlaceTag({ climb }: { climb: Climb }) {
 }
 
 // Every flagged climb of a dropdown as a card, worst first, with where it is
-// in the corner. Each links to the climb's own page.
+// in the corner. Each links to the climb's grading report.
 function FlaggedCards({ climbs, votes, noun }: { climbs: Climb[]; votes: Map<string, GradeVotes>; noun: string }) {
   return (
     <div className="flex flex-col gap-4">
@@ -543,7 +544,7 @@ function FlaggedCards({ climbs, votes, noun }: { climbs: Climb[]; votes: Map<str
             {climbs.map((climb) => (
               <li key={climb.id}>
                 <Link
-                  href={climbHref(climb.id)}
+                  href={gradingReportHref(climb.id)}
                   className="relative flex h-full min-h-24 flex-col gap-3 rounded-lg border border-orange-200 bg-orange-50 p-3 text-sm transition-colors hover:bg-orange-100/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-secondary"
                 >
                   <PlaceTag climb={climb} />
