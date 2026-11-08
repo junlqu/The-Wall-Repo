@@ -1,6 +1,7 @@
 // User data for the admin User center. Mirrors api/src/functions/users.ts.
 
 import { adminRequest } from "@/lib/api";
+import { type ApiComment, type DashboardComment, toDashboardComment } from "@/lib/dashboard";
 import { type SessionUser, USER_LEVEL } from "@/lib/session";
 
 // Mirrors PAGE_SIZES in api/src/functions/users.ts.
@@ -141,6 +142,25 @@ export async function updateUser(userID: string, edit: UserEdit): Promise<UserDe
     method: "PUT",
     body: JSON.stringify(edit),
   })) as UserDetails;
+}
+
+// Mirrors COMMENTS_PAGE in api/src/functions/users.ts.
+export const USER_COMMENTS_PAGE = 10;
+
+// A page of everything they've commented, newest first, starting `offset`
+// in - those that are only a send, grade or rating too. `total` is how many
+// there are in all.
+export async function fetchUserComments(
+  userID: string,
+  offset: number,
+): Promise<{ comments: DashboardComment[]; hasMore: boolean; total: number }> {
+  const query = new URLSearchParams({ offset: String(offset) });
+  const body = (await adminRequest(`/users/${encodeURIComponent(userID)}/comments?${query}`, {})) as {
+    comments: ApiComment[];
+    hasMore: boolean;
+    total: number;
+  };
+  return { comments: body.comments.map(toDashboardComment), hasMore: body.hasMore, total: body.total };
 }
 
 // Deletes their account as they could from Settings - wiped, not removed, so

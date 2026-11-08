@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import AccessNotice from "@/components/AccessNotice";
+import AdminUserPanel from "@/components/AdminUserPanel";
 import { ClimbBox, RecentComment } from "@/components/ClimbActivity";
 import { Placeholder } from "@/components/ClimbCards";
 import FollowListDialog from "@/components/FollowListDialog";
@@ -13,7 +15,7 @@ import { type FollowList, type FollowRelation, isFriend, setUserFollowed } from 
 import { HARDEST_SEND_PARTS, type ProfileSection, visibilityOf } from "@/lib/privacy";
 import { displayName, fetchProfile, type Profile, profileHref } from "@/lib/profiles";
 import { withReturnTo } from "@/lib/returnTo";
-import { useSessionUser } from "@/lib/session";
+import { canUseAdminTools, useSessionUser } from "@/lib/session";
 import { settingsHref } from "@/lib/settings";
 
 const PANEL_CLASS = "rounded-lg border border-neutral-200 bg-white p-6 shadow-sm";
@@ -50,6 +52,19 @@ function OwnerBar({ username, asOthers }: { username: string; asOthers: boolean 
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+// Above anyone's profile for staff and admins: opens their account in the
+// admin user panel, as the user center's View does.
+function AdminBar({ onView }: { onView: () => void }) {
+  return (
+    <div className="flex flex-col items-center gap-3 rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 text-sm text-primary sm:flex-row sm:justify-between">
+      <p className="text-center font-semibold sm:text-left">Staff tools</p>
+      <button type="button" onClick={onView} className={BAR_BUTTON_CLASS}>
+        View
+      </button>
     </div>
   );
 }
@@ -415,8 +430,28 @@ function Activity({ profile }: { profile: Profile }) {
 // with a bar of their own above it, unless they've asked to see it as others
 // do.
 export default function PublicProfile({ username, asOthers }: { username: string; asOthers: boolean }) {
-  const sessionUserID = useSessionUser()?.userID;
+  const router = useRouter();
+  const sessionUser = useSessionUser();
+  const sessionUserID = sessionUser?.userID;
   const [profile, setProfile] = useState<Profile | null | "error" | undefined>(undefined);
+  // The admin user panel, while it's open. `saved` is their username after
+  // the last change made in it, if any.
+  const [panel, setPanel] = useState<{ userID: string; saved?: string } | null>(null);
+
+  // Changes made in the panel show once it's closed - a profile that's been
+  // renamed or deleted would otherwise change, or go, under it.
+  function closePanel() {
+    const saved = panel?.saved;
+    setPanel(null);
+    if (saved === undefined) return;
+    if (saved !== username) {
+      router.replace(profileHref(saved, asOthers));
+      return;
+    }
+    fetchProfile(username, asOthers)
+      .then(setProfile)
+      .catch(() => setProfile("error"));
+  }
 
   useEffect(() => {
     fetchProfile(username, asOthers)
@@ -450,6 +485,7 @@ export default function PublicProfile({ username, asOthers }: { username: string
           </>
         ) : (
           <>
+            {canUseAdminTools(sessionUser) && <AdminBar onView={() => setPanel({ userID: profile.userID })} />}
             {sessionUserID === profile.userID && <OwnerBar username={profile.username} asOthers={asOthers} />}
             <Header
               profile={profile}
@@ -465,6 +501,13 @@ export default function PublicProfile({ username, asOthers }: { username: string
             />
             <Stats profile={profile} />
             <Activity profile={profile} />
+            {panel && (
+              <AdminUserPanel
+                userID={panel.userID}
+                onClose={closePanel}
+                onSaved={(saved) => setPanel((current) => current && { ...current, saved: saved.username })}
+              />
+            )}
           </>
         )}
       </div>

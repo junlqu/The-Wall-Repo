@@ -6,9 +6,10 @@ import AnnouncementDetails, { EyeIcon } from "@/components/AnnouncementDetails";
 import { LikeButton, useToggleLike } from "@/components/AnnouncementLike";
 import { ClimbBox, CommentTags, RecentSend } from "@/components/ClimbActivity";
 import { Person, Placeholder } from "@/components/ClimbCards";
+import CommentCard from "@/components/CommentCard";
 import ReadMore from "@/components/ReadMore";
 import SlidingTabs from "@/components/SlidingTabs";
-import { type Announcement, formatDateTime, formatShortDate } from "@/lib/announcements";
+import { type Announcement, formatShortDate } from "@/lib/announcements";
 import { type Climb, formatDate } from "@/lib/climbs";
 import {
   type Dashboard,
@@ -264,26 +265,6 @@ const COMMENT_FILTERS: { id: MyCommentFilter; label: string; empty: string }[] =
 ];
 
 // One of their own comments: when, what they said, and the climb it's on.
-function MyComment({ comment, climb }: DashboardComment) {
-  return (
-    <article className="flex flex-col gap-2 rounded-lg border border-neutral-200 p-4">
-      <div className="flex items-start justify-between gap-4">
-        <CommentTags comment={comment} sentOn />
-        {/* With the time, as several in a day would otherwise look the same. */}
-        <time dateTime={comment.commentedAt} className="ml-auto shrink-0 text-xs text-neutral-500">
-          {formatDateTime(comment.commentedAt)}
-        </time>
-      </div>
-      {comment.comment && (
-        <ReadMore fade="from-white">
-          <p className="whitespace-pre-line break-words text-sm text-neutral-700">{comment.comment}</p>
-        </ReadMore>
-      )}
-      {climb ? <ClimbBox climb={climb} /> : <p className="text-xs text-neutral-500">That climb is gone now</p>}
-    </article>
-  );
-}
-
 // One filter's comments so far. `status` is "loading" until its first page is in.
 // `total` is how many there are in all, loaded or not.
 type CommentFeed = {
@@ -369,7 +350,7 @@ function MyCommentsList() {
       ) : (
         <div role="tabpanel" className="flex flex-col gap-3">
           {feed.comments.map(({ comment, climb }) => (
-            <MyComment key={comment.commentID} comment={comment} climb={climb} />
+            <CommentCard key={comment.commentID} comment={comment} climb={climb} />
           ))}
           {feed.status === "error" && (
             <p className="text-center text-sm text-neutral-500">Couldn&apos;t load more comments right now.</p>

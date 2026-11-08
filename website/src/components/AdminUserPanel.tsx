@@ -1,6 +1,6 @@
 "use client";
 
-import { type FormEvent, type ReactNode, useEffect, useId, useState } from "react";
+import { type FormEvent, type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { DANGER_BUTTON_CLASS, Dialog, SidePanel } from "@/components/ClimbActions";
 import {
   CANCEL_BUTTON_CLASS,
@@ -10,15 +10,19 @@ import {
   PRIMARY_BUTTON_CLASS,
   useRequest,
 } from "@/components/ClimbForm";
+import CommentCard from "@/components/CommentCard";
 import DurationWheel, { type Duration, durationMinutes } from "@/components/DurationWheel";
 import ProfileLink from "@/components/ProfileLink";
+import SlidingTabs from "@/components/SlidingTabs";
 import { MAX_EMAIL_LENGTH, MAX_NAME_LENGTH, MAX_PHONE_DIGITS } from "@/lib/account";
 import { avatarUrl } from "@/lib/avatar";
+import type { DashboardComment } from "@/lib/dashboard";
 import { useSessionUser } from "@/lib/session";
 import {
   deleteUser,
   editLockedReason,
   fetchUser,
+  fetchUserComments,
   levelLabel,
   MAX_RESTRICTION_DAYS,
   MAX_RESTRICTION_REASON_LENGTH,
@@ -111,40 +115,155 @@ function CurrentRestriction({ kind, item }: { kind: RestrictionKind; item: UserR
   );
 }
 
-// Every ban and timeout they've had, newest first.
-function RestrictionHistory({ user }: { user: UserDetails }) {
-  const items = [
-    ...user.ban.map((item) => ({ kind: "ban" as const, item })),
-    ...user.timeout.map((item) => ({ kind: "timeout" as const, item })),
-  ].sort((a, b) => b.item.startAt.localeCompare(a.item.startAt));
-  if (items.length === 0) return null;
+// One tab's log: every ban, or every timeout, they've had, newest first,
+// with the one running now marked.
+function RestrictionLog({ kind, list }: { kind: RestrictionKind; list: UserRestriction[] }) {
+  if (list.length === 0) {
+    return (
+      <p className="py-6 text-center text-sm text-neutral-500">
+        {kind === "ban" ? "They've never been banned." : "They've never been timed out."}
+      </p>
+    );
+  }
+  const current = running(list);
   return (
-    <details className="rounded-lg bg-neutral-50 px-4 py-3 text-sm">
-      <summary className="cursor-pointer select-none font-semibold text-neutral-700">
-        Ban and timeout history ({items.length})
-      </summary>
-      <ol className="mt-3 flex flex-col divide-y divide-neutral-200">
-        {items.map(({ kind, item }) => (
-          <li key={`${kind}-${item.startAt}`} className="flex flex-col gap-0.5 py-2 first:pt-0 last:pb-0">
-            <p className="flex flex-wrap items-baseline justify-between gap-x-2 text-xs text-neutral-500">
-              <span>
-                <span className={`font-bold uppercase tracking-wide ${kind === "ban" ? "text-red-700" : "text-amber-700"}`}>
-                  {KIND_LABELS[kind]}
-                </span>{" "}
-                · {formatWhen(item.startAt)}
-              </span>
-              <span className="font-semibold text-neutral-600">{describeLength(item)}</span>
-            </p>
-            <p className="whitespace-pre-wrap break-words text-neutral-800">{item.reason}</p>
-            <p className="text-xs text-neutral-500">
-              By <GivenBy item={item} />
-            </p>
-          </li>
-        ))}
+    <div className="flex flex-col gap-3">
+      <p className="text-xs text-neutral-500">
+        {list.length} {kind === "ban" ? "ban" : "timeout"}
+        {list.length === 1 ? "" : "s"} in all
+      </p>
+      <ol className="flex flex-col gap-3">
+        {[...list].reverse().map((item) => {
+          const active = item === current;
+          return (
+            <li
+              key={item.startAt}
+              className={`flex flex-col gap-1 rounded-lg border p-4 text-sm ${
+                active
+                  ? kind === "ban"
+                    ? "border-red-300 bg-red-50"
+                    : "border-amber-300 bg-amber-50"
+                  : "border-neutral-200 bg-white"
+              }`}
+            >
+              <p className="flex flex-wrap items-baseline justify-between gap-x-2">
+                <span className="font-semibold text-neutral-800">{describeLength(item)}</span>
+                {active && (
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide ${
+                      kind === "ban" ? "bg-red-600 text-white" : "bg-amber-500 text-white"
+                    }`}
+                  >
+                    Active
+                  </span>
+                )}
+              </p>
+              <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-xs text-neutral-600">
+                <dt className="font-semibold text-neutral-500">From</dt>
+                <dd>{formatWhen(item.startAt)}</dd>
+                <dt className="font-semibold text-neutral-500">Until</dt>
+                <dd>{item.endAt ? formatWhen(item.endAt) : "Never ends"}</dd>
+                <dt className="font-semibold text-neutral-500">By</dt>
+                <dd>
+                  <GivenBy item={item} />
+                </dd>
+              </dl>
+              <p className="mt-1 whitespace-pre-wrap break-words text-neutral-800">{item.reason}</p>
+            </li>
+          );
+        })}
       </ol>
-    </details>
+    </div>
   );
 }
+
+// What the Comments tab has loaded so far. `total` is how many there are in
+// all, loaded or not.
+type CommentFeed = {
+  comments: DashboardComment[];
+  hasMore: boolean;
+  total: number;
+  status: "idle" | "more" | "error";
+};
+
+// Everything they've commented, newest first, ten at a time. Only fetched
+// once the tab is first opened, and kept while switching between tabs.
+function UserComments({ userID, active }: { userID: string; active: boolean }) {
+  // undefined until the first page is in.
+  const [feed, setFeed] = useState<CommentFeed>();
+  const started = useRef(false);
+
+  useEffect(() => {
+    if (!active || started.current) return;
+    started.current = true;
+    fetchUserComments(userID, 0)
+      .then((page) => setFeed({ ...page, status: "idle" }))
+      .catch(() => setFeed({ comments: [], hasMore: false, total: 0, status: "error" }));
+  }, [active, userID]);
+
+  const loadMore = () => {
+    if (!feed) return;
+    setFeed({ ...feed, status: "more" });
+    fetchUserComments(userID, feed.comments.length)
+      .then((page) =>
+        setFeed((current) => ({
+          // A comment posted since the last page pushes the rest down one, so
+          // the next page can repeat one already shown.
+          comments: [
+            ...(current?.comments ?? []),
+            ...page.comments.filter(
+              (item) => !current?.comments.some((shown) => shown.comment.commentID === item.comment.commentID),
+            ),
+          ],
+          hasMore: page.hasMore,
+          total: page.total,
+          status: "idle",
+        })),
+      )
+      .catch(() => setFeed((current) => current && { ...current, status: "error" }));
+  };
+
+  if (!feed) return <p className="text-sm text-neutral-500">Loading…</p>;
+  if (feed.comments.length === 0) {
+    return (
+      <p className="py-6 text-center text-sm text-neutral-500">
+        {feed.status === "error" ? "Couldn't load their comments right now." : "They haven't commented on anything."}
+      </p>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      <p className="text-xs text-neutral-500 tabular-nums" aria-live="polite">
+        {Math.min(feed.comments.length, feed.total)} of {feed.total}
+      </p>
+      {feed.comments.map(({ comment, climb }) => (
+        <CommentCard key={comment.commentID} comment={comment} climb={climb} />
+      ))}
+      {feed.status === "error" && (
+        <p className="text-center text-sm text-neutral-500">Couldn&apos;t load more comments right now.</p>
+      )}
+      {feed.hasMore && (
+        <button
+          type="button"
+          onClick={loadMore}
+          disabled={feed.status === "more"}
+          className="self-center rounded-full border border-primary px-5 py-2 text-sm font-semibold text-primary transition-colors hover:bg-primary hover:text-white disabled:cursor-wait disabled:opacity-60"
+        >
+          {feed.status === "more" ? "Loading…" : "Load more"}
+        </button>
+      )}
+    </div>
+  );
+}
+
+const PANEL_TABS = [
+  { id: "info", label: "Info" },
+  { id: "comments", label: "Comments" },
+  { id: "bans", label: "Bans" },
+  { id: "timeouts", label: "Timeouts" },
+] as const;
+type PanelTab = (typeof PANEL_TABS)[number]["id"];
 
 const NO_DURATION: Duration = { days: 0, hours: 0, minutes: 0 };
 
@@ -335,7 +454,8 @@ function EditFields({ edit, onChange }: { edit: UserEdit; onChange: (edit: UserE
 }
 
 // One person's account for the admin user center, in a side panel (the whole
-// screen on phones). Staff and admins can edit people below their own level.
+// screen on phones), with tabs for their details, their comments and their
+// bans and timeouts. Staff and admins can edit people below their own level.
 // `onSaved` gets them as saved, so the list can catch up.
 export default function AdminUserPanel({
   userID,
@@ -356,6 +476,7 @@ export default function AdminUserPanel({
   const [saveError, setSaveError] = useState<string>();
   const [moderation, setModeration] = useState<RestrictionKind | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [tab, setTab] = useState<PanelTab>("info");
   const formId = useId();
 
   useEffect(() => {
@@ -407,7 +528,8 @@ export default function AdminUserPanel({
     }
   };
 
-  const headerActions = user && !locked && (
+  // Editing is part of Info, so it's only offered there.
+  const headerActions = user && !locked && tab === "info" && (
     edit ? (
       <>
         <button type="button" disabled={saving} onClick={cancelEdit} className={SMALL_CANCEL_BUTTON_CLASS}>
@@ -480,35 +602,57 @@ export default function AdminUserPanel({
               </div>
             </div>
 
-            {edit ? (
-              <form id={formId} onSubmit={save} className="flex flex-col gap-4">
-                <fieldset disabled={saving} className="contents">
-                  <EditFields edit={edit} onChange={setEdit} />
-                </fieldset>
-                <ErrorMessage message={saveError} />
-              </form>
-            ) : (
-              <dl className="flex flex-col gap-4">
-                <Detail label="Username">{user.username}</Detail>
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  <Detail label="First name">{user.fname}</Detail>
-                  <Detail label="Last name">{user.lname}</Detail>
-                </div>
-                <Detail label="Email">{user.email || <span className="text-neutral-400">None</span>}</Detail>
-                <Detail label="Phone">{user.phone || <span className="text-neutral-400">None</span>}</Detail>
-              </dl>
+            {/* Out of the way while editing, so the form isn't left behind. */}
+            {!edit && (
+              <SlidingTabs label="User" tabs={[...PANEL_TABS]} active={tab} onChange={setTab} className="w-full" />
             )}
 
-            {locked && <p className="text-xs text-neutral-500">{locked}</p>}
+            <div role="tabpanel" aria-label="Comments" hidden={tab !== "comments"}>
+              <UserComments userID={user.userID} active={tab === "comments"} />
+            </div>
+            {tab === "bans" && (
+              <div role="tabpanel" aria-label="Bans">
+                <RestrictionLog kind="ban" list={user.ban} />
+              </div>
+            )}
+            {tab === "timeouts" && (
+              <div role="tabpanel" aria-label="Timeouts">
+                <RestrictionLog kind="timeout" list={user.timeout} />
+              </div>
+            )}
 
-            {!edit && ban && <CurrentRestriction kind="ban" item={ban} />}
-            {!edit && timeout && <CurrentRestriction kind="timeout" item={timeout} />}
-            {!edit && <RestrictionHistory user={user} />}
+            {tab === "info" && (
+              <div role="tabpanel" aria-label="Info" className="flex flex-col gap-6">
+                {edit ? (
+                  <form id={formId} onSubmit={save} className="flex flex-col gap-4">
+                    <fieldset disabled={saving} className="contents">
+                      <EditFields edit={edit} onChange={setEdit} />
+                    </fieldset>
+                    <ErrorMessage message={saveError} />
+                  </form>
+                ) : (
+                  <dl className="flex flex-col gap-4">
+                    <Detail label="Username">{user.username}</Detail>
+                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                      <Detail label="First name">{user.fname}</Detail>
+                      <Detail label="Last name">{user.lname}</Detail>
+                    </div>
+                    <Detail label="Email">{user.email || <span className="text-neutral-400">None</span>}</Detail>
+                    <Detail label="Phone">{user.phone || <span className="text-neutral-400">None</span>}</Detail>
+                  </dl>
+                )}
+
+                {locked && <p className="text-xs text-neutral-500">{locked}</p>}
+
+                {!edit && ban && <CurrentRestriction kind="ban" item={ban} />}
+                {!edit && timeout && <CurrentRestriction kind="timeout" item={timeout} />}
+              </div>
+            )}
           </>
         )}
       </div>
 
-      {user && !edit && (
+      {user && !edit && tab === "info" && (
         <div className="flex flex-col gap-3 border-t border-neutral-200 px-6 py-4">
           <div className="flex gap-2">
             {(["ban", "timeout"] as const).map((kind) => {

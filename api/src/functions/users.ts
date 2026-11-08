@@ -3,10 +3,11 @@ import { eraseAccount } from "../accountDeletion";
 import { MAX_USERNAME_LENGTH, readAccountDetails } from "../accountFields";
 import { corsHeaders, readCurrentUser, rejectUnlessAdmin } from "../authUtils";
 import { getStarterAvatar } from "../avatarUtils";
-import { isNotFound, PublicPerson, readPeople } from "../commentFields";
+import { readClimbs } from "../climbLinks";
+import { isNotFound, PublicPerson, readPeople, toPublicComment } from "../commentFields";
 import { getContainer } from "../cosmosClient";
 import { Avatar, AVATAR_CONTAINER } from "../models/Avatar";
-import { COMMENT_CONTAINER } from "../models/Comment";
+import { Comment, COMMENT_CONTAINER } from "../models/Comment";
 import { activeBan, activeTimeout, Ban, isUserLevel, Timeout, User, USER_CONTAINER, USER_LEVEL } from "../models/User";
 
 const FORBIDDEN = "Only staff and admins can look up users.";
@@ -17,6 +18,9 @@ const NOT_FOUND = "That account doesn't exist any more.";
 const MAX_RESTRICTION_MINUTES = (365 * 24 + 23) * 60 + 59;
 const MAX_RESTRICTION_REASON_LENGTH = 500;
 const LEADERBOARD_SIZE = 10;
+// Mirrors USER_COMMENTS_PAGE in website/src/lib/users.ts.
+const COMMENTS_PAGE = 10;
+const MAX_COMMENTS_OFFSET = 10000;
 // Mirrors USER_PAGE_SIZES in website/src/lib/users.ts.
 const PAGE_SIZES = [10, 25, 50, 100];
 const MAX_SEARCH_LENGTH = 100;
@@ -489,6 +493,66 @@ export async function updateUser(request: HttpRequest, context: InvocationContex
   }
 }
 
+// GET /users/{userID}/comments?offset= - a page of everything someone has
+// commented, newest first - those that are only a send, grade or rating too -
+// with how many there are in all and whether there are more. Each comes with
+// its climb, or null if that's gone. For the admin user panel, so anyone's,
+// whatever their privacy settings, and a deleted account's too.
+export async function listUserComments(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
+  const headers = corsHeaders(request);
+
+  try {
+    const rejection = await rejectUnlessAdmin(request, headers, FORBIDDEN);
+    if (rejection) return rejection;
+
+    const offset = Number(request.query.get("offset") ?? 0);
+    if (!Number.isInteger(offset) || offset < 0 || offset > MAX_COMMENTS_OFFSET) {
+      return { status: 400, headers, jsonBody: { error: "That isn't a valid page of comments." } };
+    }
+
+    const { userID } = request.params;
+    const parameters = [{ name: "@userID", value: userID }];
+    const container = getContainer(COMMENT_CONTAINER);
+    const [{ resources }, { resources: counts }] = await Promise.all([
+      // One more than a page, to tell whether there's another after it.
+      container.items
+        .query<Comment>({
+          query: "SELECT * FROM c WHERE c.userID = @userID ORDER BY c.commentedAt DESC OFFSET @offset LIMIT @limit",
+          parameters: [
+            ...parameters,
+            { name: "@offset", value: offset },
+            { name: "@limit", value: COMMENTS_PAGE + 1 },
+          ],
+        })
+        .fetchAll(),
+      container.items.query<number>({ query: "SELECT VALUE COUNT(1) FROM c WHERE c.userID = @userID", parameters }).fetchAll(),
+    ]);
+
+    const page = resources.slice(0, COMMENTS_PAGE);
+    const [people, routes] = await Promise.all([
+      readPeople([userID]),
+      readClimbs([...new Set(page.map((comment) => comment.routeID))]),
+    ]);
+    return {
+      status: 200,
+      headers,
+      jsonBody: {
+        comments: page.map((comment) => ({
+          comment: toPublicComment(comment, people),
+          climb: routes.get(comment.routeID) ?? null,
+        })),
+        hasMore: resources.length > COMMENTS_PAGE,
+        total: counts[0] ?? 0,
+      },
+    };
+  } catch (error) {
+    // The container may not exist until comments can be posted.
+    if (isNotFound(error)) return { status: 200, headers, jsonBody: { comments: [], hasMore: false, total: 0 } };
+    context.error("Failed to list a user's comments", error);
+    return { status: 500, headers, jsonBody: { error: "Failed to load their comments." } };
+  }
+}
+
 // DELETE /users/{userID} - deletes someone's account for them, as they could
 // from Settings - see eraseAccount. Their comments and sends stay, no longer
 // naming them, and any session they have ends. See refusal for who can be
@@ -641,12 +705,13 @@ app.http("userLevel", {
   },
 });
 
-// After users/permissions and users/stats in precedence - the host matches
-// literal segments before {userID}.
+// Only matches a GUID - every userID is one - so it can't swallow
+// users/stats and users/permissions: the host doesn't rank those literal
+// routes ahead of a {userID} one.
 app.http("userItem", {
   methods: ["GET", "PUT", "DELETE", "OPTIONS"],
   authLevel: "anonymous",
-  route: "users/{userID}",
+  route: "users/{userID:guid}",
   handler: async (request, context) => {
     if (request.method === "OPTIONS") {
       return { status: 204, headers: corsHeaders(request) };
@@ -669,6 +734,18 @@ for (const kind of Object.keys(RESTRICTIONS) as Restriction[]) {
     },
   });
 }
+
+app.http("userComments", {
+  methods: ["GET", "OPTIONS"],
+  authLevel: "anonymous",
+  route: "users/{userID}/comments",
+  handler: async (request, context) => {
+    if (request.method === "OPTIONS") {
+      return { status: 204, headers: corsHeaders(request) };
+    }
+    return listUserComments(request, context);
+  },
+});
 
 app.http("userStats", {
   methods: ["GET", "OPTIONS"],

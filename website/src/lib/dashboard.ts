@@ -50,7 +50,8 @@ export type Dashboard = {
 export type UpdateFilter = "all" | "announcements" | "following" | "climbs";
 
 // Mirrors openDashboard in api/src/functions/dashboard.ts.
-type ApiComment = { comment: ClimbComment; climb: ApiRoute | null };
+// A comment as the API sends it, with its climb not yet turned into a Climb.
+export type ApiComment = { comment: ClimbComment; climb: ApiRoute | null };
 type ApiUpdate = { at: string; isNew: boolean } & (
   | { kind: "announcement"; announcement: ApiAnnouncement }
   | ({ kind: "comment"; via: FollowedVia } & ApiComment)
@@ -67,7 +68,7 @@ type ApiDashboard = {
   since: string;
 };
 
-function toDashboardComment({ comment, climb }: ApiComment): DashboardComment {
+export function toDashboardComment({ comment, climb }: ApiComment): DashboardComment {
   return { comment, climb: climb && toClimb(climb) };
 }
 
