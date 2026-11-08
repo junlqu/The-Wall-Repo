@@ -1,7 +1,8 @@
 import { PatchOperation, SqlParameter } from "@azure/cosmos";
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from "@azure/functions";
 import { isDateTime, toPublicAnnouncement } from "../announcementFields";
-import { corsHeaders, readCurrentUser } from "../authUtils";
+import { corsHeaders, readCurrentUser, readSessionUser } from "../authUtils";
+import { readClimbs } from "../climbLinks";
 import { PublicPerson, readPeople, toPublicComment } from "../commentFields";
 import { getContainer } from "../cosmosClient";
 import { readFollowing } from "../follows";
@@ -17,6 +18,10 @@ const EARLIER_UPDATES = 5;
 // How many more each "Load more" adds.
 const OLDER_UPDATES = 10;
 const RECENT_SENDS = 5;
+// How many of their own comments each page of the Comments tab holds.
+const MY_COMMENTS_PAGE = 5;
+// Far past anyone's comments, but a bound on how deep a page can start.
+const MAX_MY_COMMENTS_OFFSET = 10000;
 
 // Where one kind of update is kept, and which of them count.
 type UpdateSource = { container: string; timeField: string; filter: string; parameters: SqlParameter[] };
@@ -316,6 +321,79 @@ export async function getOlderUpdates(request: HttpRequest, context: InvocationC
   }
 }
 
+// Which of their own comments to show: all of them, or only their sends.
+const MY_COMMENT_FILTERS = ["all", "sends"] as const;
+type MyCommentFilter = (typeof MY_COMMENT_FILTERS)[number];
+
+function readMyCommentFilter(value: string | null): MyCommentFilter | null {
+  if (value === null) return "all";
+  return MY_COMMENT_FILTERS.includes(value as MyCommentFilter) ? (value as MyCommentFilter) : null;
+}
+
+function readMyCommentsOffset(value: string | null) {
+  const offset = Number(value ?? 0);
+  return Number.isInteger(offset) && offset >= 0 && offset <= MAX_MY_COMMENTS_OFFSET ? offset : null;
+}
+
+// GET /dashboard/comments?offset=&only= - a page of everything the logged-in
+// visitor has commented, newest first, and whether there are more. `only=sends`
+// keeps to their sends.
+export async function getMyComments(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
+  const headers = corsHeaders(request);
+
+  try {
+    const offset = readMyCommentsOffset(request.query.get("offset"));
+    const filter = readMyCommentFilter(request.query.get("only"));
+    if (offset === null || !filter) {
+      return { status: 400, headers, jsonBody: { error: "That isn't a valid page of comments." } };
+    }
+
+    const session = readSessionUser(request);
+    if (!session) return { status: 401, headers, jsonBody: { error: "You need to be logged in." } };
+
+    const container = getContainer(COMMENT_CONTAINER);
+    const where = `c.userID = @userID${filter === "sends" ? " AND c.send = true" : ""}`;
+    const [{ resources }, { resources: counts }] = await Promise.all([
+      // One more than a page, to tell whether there's another after it.
+      container.items
+        .query<Comment>({
+          query: `SELECT * FROM c WHERE ${where} ORDER BY c.commentedAt DESC OFFSET @offset LIMIT @limit`,
+          parameters: [
+            { name: "@userID", value: session.userID },
+            { name: "@offset", value: offset },
+            { name: "@limit", value: MY_COMMENTS_PAGE + 1 },
+          ],
+        })
+        .fetchAll(),
+      // How many there are in all, for the "x of y" count.
+      container.items
+        .query<number>({
+          query: `SELECT VALUE COUNT(1) FROM c WHERE ${where}`,
+          parameters: [{ name: "@userID", value: session.userID }],
+        })
+        .fetchAll(),
+    ]);
+
+    const page = resources.slice(0, MY_COMMENTS_PAGE);
+    const [people, routes] = await Promise.all([
+      readPeople([session.userID]),
+      readClimbs([...new Set(page.map((comment) => comment.routeID))]),
+    ]);
+    return {
+      status: 200,
+      headers,
+      jsonBody: {
+        comments: page.map((comment) => withClimb(comment, people, routes)),
+        hasMore: resources.length > MY_COMMENTS_PAGE,
+        total: counts[0] ?? 0,
+      },
+    };
+  } catch (error) {
+    context.error("Failed to load own comments", error);
+    return { status: 500, headers, jsonBody: { error: "Failed to load your comments." } };
+  }
+}
+
 app.http("dashboard", {
   methods: ["POST", "OPTIONS"],
   authLevel: "anonymous",
@@ -337,5 +415,17 @@ app.http("dashboardUpdates", {
       return { status: 204, headers: corsHeaders(request) };
     }
     return getOlderUpdates(request, context);
+  },
+});
+
+app.http("dashboardComments", {
+  methods: ["GET", "OPTIONS"],
+  authLevel: "anonymous",
+  route: "dashboard/comments",
+  handler: async (request, context) => {
+    if (request.method === "OPTIONS") {
+      return { status: 204, headers: corsHeaders(request) };
+    }
+    return getMyComments(request, context);
   },
 });

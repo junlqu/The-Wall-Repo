@@ -114,6 +114,25 @@ export async function fetchUpdates({
   return { updates: body.updates.map(toUpdate), hasMoreUpdates: body.hasMoreUpdates };
 }
 
+// Which of their own comments to show. Mirrors MY_COMMENT_FILTERS in
+// api/src/functions/dashboard.ts.
+export type MyCommentFilter = "all" | "sends";
+
+// A page of everything they've commented, newest first, starting `offset` in.
+export async function fetchMyComments({
+  offset,
+  only,
+}: {
+  offset: number;
+  only: MyCommentFilter;
+}): Promise<{ comments: DashboardComment[]; hasMore: boolean; total: number }> {
+  const query = new URLSearchParams({ offset: String(offset), only });
+  const res = await fetch(apiUrl(`/dashboard/comments?${query}`), { credentials: "include" });
+  if (!res.ok) throw new Error(`Failed to load your comments (${res.status})`);
+  const body = (await res.json()) as { comments: ApiComment[]; hasMore: boolean; total: number };
+  return { comments: body.comments.map(toDashboardComment), hasMore: body.hasMore, total: body.total };
+}
+
 export function totalSends({ sends }: Pick<DashboardMetrics, "sends">) {
   return sends.route + sends.boulder + sends.combo;
 }

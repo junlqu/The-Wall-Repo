@@ -8,14 +8,17 @@ import { ClimbBox, CommentTags, RecentSend } from "@/components/ClimbActivity";
 import { Person, Placeholder } from "@/components/ClimbCards";
 import ReadMore from "@/components/ReadMore";
 import SlidingTabs from "@/components/SlidingTabs";
-import { type Announcement, formatShortDate } from "@/lib/announcements";
+import { type Announcement, formatDateTime, formatShortDate } from "@/lib/announcements";
 import { type Climb, formatDate } from "@/lib/climbs";
 import {
   type Dashboard,
+  type DashboardComment,
   type DashboardMetrics,
   type DashboardUpdate,
   favouriteLineLabel,
+  fetchMyComments,
   fetchUpdates,
+  type MyCommentFilter,
   openDashboard,
   totalSends,
   type UpdateFilter,
@@ -255,9 +258,142 @@ function UpdateFeed({
   );
 }
 
+const COMMENT_FILTERS: { id: MyCommentFilter; label: string; empty: string }[] = [
+  { id: "all", label: "All", empty: "You haven't commented on a climb yet." },
+  { id: "sends", label: "Sends", empty: "You haven't logged a send yet." },
+];
+
+// One of their own comments: when, what they said, and the climb it's on.
+function MyComment({ comment, climb }: DashboardComment) {
+  return (
+    <article className="flex flex-col gap-2 rounded-lg border border-neutral-200 p-4">
+      <div className="flex items-start justify-between gap-4">
+        <CommentTags comment={comment} sentOn />
+        {/* With the time, as several in a day would otherwise look the same. */}
+        <time dateTime={comment.commentedAt} className="ml-auto shrink-0 text-xs text-neutral-500">
+          {formatDateTime(comment.commentedAt)}
+        </time>
+      </div>
+      {comment.comment && (
+        <ReadMore fade="from-white">
+          <p className="whitespace-pre-line break-words text-sm text-neutral-700">{comment.comment}</p>
+        </ReadMore>
+      )}
+      {climb ? <ClimbBox climb={climb} /> : <p className="text-xs text-neutral-500">That climb is gone now</p>}
+    </article>
+  );
+}
+
+// One filter's comments so far. `status` is "loading" until its first page is in.
+// `total` is how many there are in all, loaded or not.
+type CommentFeed = {
+  comments: DashboardComment[];
+  hasMore: boolean;
+  total: number;
+  status: "loading" | "idle" | "more" | "error";
+};
+
+// Everything they've commented, newest first, a few at a time - with a slider
+// to keep to their sends. Each filter is fetched the first time it's shown.
+function MyCommentsList() {
+  const [filter, setFilter] = useState<MyCommentFilter>("all");
+  const [feeds, setFeeds] = useState<Partial<Record<MyCommentFilter, CommentFeed>>>({});
+  const feed = feeds[filter];
+
+  const setFeed = useCallback(
+    (id: MyCommentFilter, change: (feed: CommentFeed | undefined) => CommentFeed) =>
+      setFeeds((current) => ({ ...current, [id]: change(current[id]) })),
+    [],
+  );
+
+  const load = useCallback(
+    (id: MyCommentFilter) => {
+      setFeed(id, () => ({ comments: [], hasMore: false, total: 0, status: "loading" }));
+      fetchMyComments({ offset: 0, only: id })
+        .then((page) => setFeed(id, () => ({ ...page, status: "idle" })))
+        .catch(() => setFeed(id, () => ({ comments: [], hasMore: false, total: 0, status: "error" })));
+    },
+    [setFeed],
+  );
+
+  // "All" loads with the dashboard, so it's there when the tab is opened.
+  const started = useRef(false);
+  useEffect(() => {
+    if (started.current) return;
+    started.current = true;
+    load("all");
+  }, [load]);
+
+  function pick(id: MyCommentFilter) {
+    setFilter(id);
+    if (!feeds[id]) load(id);
+  }
+
+  function loadMore() {
+    if (!feed) return;
+    const id = filter;
+    setFeed(id, (current) => ({ ...current!, status: "more" }));
+    fetchMyComments({ offset: feed.comments.length, only: id })
+      .then((page) =>
+        setFeed(id, (current) => ({
+          comments: [...(current?.comments ?? []), ...page.comments],
+          hasMore: page.hasMore,
+          total: page.total,
+          status: "idle",
+        })),
+      )
+      .catch(() => setFeed(id, (current) => ({ ...current!, status: "error" })));
+  }
+
+  const { empty } = COMMENT_FILTERS.find((item) => item.id === filter)!;
+  // Kept to the total, in case one was deleted since the first page.
+  const loaded = feed ? Math.min(feed.comments.length, feed.total) : 0;
+  const allLoaded = !feed || loaded >= feed.total;
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center justify-between gap-4">
+        <SlidingTabs label="Show comments" tabs={COMMENT_FILTERS} active={filter} onChange={pick} className="w-full max-w-44" />
+        {feed && feed.status !== "loading" && feed.total > 0 && (
+          <p className="shrink-0 text-xs text-neutral-500 tabular-nums" aria-live="polite">
+            {loaded} of {feed.total}
+          </p>
+        )}
+      </div>
+      {!feed || feed.status === "loading" ? (
+        <Placeholder className="h-64" />
+      ) : feed.comments.length === 0 ? (
+        <p className="py-6 text-center text-sm text-neutral-500">
+          {feed.status === "error" ? "Couldn't load your comments right now." : empty}
+        </p>
+      ) : (
+        <div role="tabpanel" className="flex flex-col gap-3">
+          {feed.comments.map(({ comment, climb }) => (
+            <MyComment key={comment.commentID} comment={comment} climb={climb} />
+          ))}
+          {feed.status === "error" && (
+            <p className="text-center text-sm text-neutral-500">Couldn&apos;t load more comments right now.</p>
+          )}
+          {feed.hasMore && !allLoaded && (
+            <button
+              type="button"
+              onClick={loadMore}
+              disabled={feed.status === "more"}
+              className="self-center rounded-full border border-primary px-5 py-2 text-sm font-semibold text-primary transition-colors hover:bg-primary hover:text-white disabled:cursor-wait disabled:opacity-60"
+            >
+              {feed.status === "more" ? "Loading…" : "Load more"}
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const COLUMN_TABS = [
   { id: "updates", label: "Updates" },
   { id: "stats", label: "Stats" },
+  { id: "comments", label: "Comments" },
 ] as const;
 type ColumnTab = (typeof COLUMN_TABS)[number]["id"];
 
@@ -277,7 +413,7 @@ function ColumnTabs({ active, onChange }: { active: ColumnTab; onChange: (tab: C
             aria-selected={selected}
             aria-controls={`${tab.id}-panel`}
             onClick={() => onChange(tab.id)}
-            className={`relative -mb-px min-w-28 rounded-t-lg border px-5 text-sm font-semibold uppercase tracking-wide transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-secondary ${
+            className={`relative -mb-px rounded-t-lg border px-3 text-sm sm:min-w-28 sm:px-5 font-semibold uppercase tracking-wide transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-secondary ${
               selected
                 ? "z-10 border-neutral-200 border-b-white bg-white py-2.5 text-primary"
                 : "border-transparent border-b-neutral-200 bg-neutral-200/60 py-2 text-neutral-500 hover:bg-neutral-200 hover:text-neutral-800"
@@ -427,6 +563,15 @@ export default function DashboardPage() {
                   className={`${PANEL_CLASS} rounded-tl-none`}
                 >
                   {loaded ? <DashboardStats metrics={loaded.metrics} /> : <Placeholder className="h-64" />}
+                </section>
+                <section
+                  id="comments-panel"
+                  role="tabpanel"
+                  aria-labelledby="comments-tab"
+                  hidden={columnTab !== "comments"}
+                  className={`${PANEL_CLASS} rounded-tl-none`}
+                >
+                  <MyCommentsList />
                 </section>
               </div>
 
