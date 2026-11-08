@@ -6,7 +6,7 @@ import { getContainer } from "../cosmosClient";
 import { countFollowers, readFollowing } from "../follows";
 import { Comment, COMMENT_CONTAINER } from "../models/Comment";
 import { followingIDs, User, USER_CONTAINER, UserMetrics } from "../models/User";
-import { isVisibleToOthers, privacyOf, ProfileSection } from "../profilePrivacy";
+import { HARDEST_SEND_PARTS, isVisibleToOthers, privacyOf, ProfileSection, visibilityOf } from "../profilePrivacy";
 import { computeMetrics, readSends, savedMetricsOf } from "../userMetrics";
 
 // Anyone's profile: their picture, username, first name and the first letter
@@ -50,6 +50,17 @@ async function readViewer(userID: string): Promise<User | undefined> {
   return resource;
 }
 
+// Their hardest send of each type that's shown - null for a type they
+// haven't sent anything graded of, so it's told apart from one that's hidden,
+// which is left out.
+function shownHardestSends({ hardestSend }: UserMetrics, shows: (section: ProfileSection) => boolean) {
+  return Object.fromEntries(
+    (Object.keys(HARDEST_SEND_PARTS) as (keyof typeof HARDEST_SEND_PARTS)[])
+      .filter((type) => shows(HARDEST_SEND_PARTS[type]))
+      .map((type) => [type, hardestSend[type] ?? null]),
+  );
+}
+
 // The line they've sent the most on, the lower line on a tie - or null when
 // they haven't sent anything on one. Only the line, so it doesn't give away
 // how many sends they have.
@@ -85,7 +96,7 @@ export async function getProfile(request: HttpRequest, context: InvocationContex
     const isFriend = Boolean(relation?.follows && relation.followedBy);
 
     const privacy = privacyOf(user);
-    const shows = (section: ProfileSection) => isOwner || isVisibleToOthers(privacy[section], isFriend);
+    const shows = (section: ProfileSection) => isOwner || isVisibleToOthers(visibilityOf(privacy, section), isFriend);
     const showsStats = (["sends", "comments", "hardestSend", "favouriteLine"] as const).some(shows);
 
     // Only what's shown is read.
@@ -125,7 +136,8 @@ export async function getProfile(request: HttpRequest, context: InvocationContex
           ? {
               ...(shows("sends") ? { sends: metrics.sends } : {}),
               ...(shows("comments") ? { commentsPosted: metrics.commentsPosted } : {}),
-              ...(shows("hardestSend") ? { hardestSend: metrics.hardestSend } : {}),
+              // Only the types shown, and none without hardestSend.
+              ...(shows("hardestSend") ? { hardestSend: shownHardestSends(metrics, shows) } : {}),
               ...(shows("favouriteLine") ? { favouriteLine: favouriteLine(metrics) } : {}),
             }
           : {},

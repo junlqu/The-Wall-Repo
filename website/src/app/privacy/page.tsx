@@ -179,7 +179,7 @@ export default function PrivacyPage() {
         </div>
       </header>
 
-      <div className="mx-auto grid max-w-6xl gap-10 px-4 py-12 sm:px-6 lg:grid-cols-[15rem_minmax(0,1fr)] lg:px-8">
+      <div className="mx-auto grid max-w-6xl grid-cols-[minmax(0,1fr)] gap-10 px-4 py-12 sm:px-6 lg:grid-cols-[15rem_minmax(0,1fr)] lg:px-8">
         <nav aria-label="Contents" className="lg:sticky lg:top-24 lg:self-start print:hidden">
           <h2 className="text-xs font-semibold uppercase tracking-[0.2em] text-neutral-500">Contents</h2>
           <ol className="mt-4 flex flex-col gap-1 border-l border-neutral-200 text-sm">

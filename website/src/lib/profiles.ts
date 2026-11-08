@@ -2,14 +2,16 @@
 // to everyone else.
 
 import { apiUrl } from "@/lib/api";
-import { type ApiRoute, type ClimbComment, type ClimbPerson, toClimb } from "@/lib/climbs";
+import { type ApiRoute, type ClimbComment, type ClimbPerson, type ClimbType, toClimb } from "@/lib/climbs";
 import type { DashboardComment, DashboardMetrics } from "@/lib/dashboard";
 import type { FollowRelation } from "@/lib/follows";
 import type { ProfilePrivacy } from "@/lib/privacy";
 
 // Each one is missing when it's hidden. `favouriteLine` is the line's number,
-// or null when they haven't sent anything on one.
-export type ProfileStats = Partial<Pick<DashboardMetrics, "sends" | "commentsPosted" | "hardestSend">> & {
+// or null when they haven't sent anything on one. `hardestSend` has only the
+// types shown, each null when they haven't sent anything graded of it.
+export type ProfileStats = Partial<Pick<DashboardMetrics, "sends" | "commentsPosted">> & {
+  hardestSend?: Partial<Record<ClimbType, string | null>>;
   favouriteLine?: string | null;
 };
 

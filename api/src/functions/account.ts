@@ -157,7 +157,10 @@ export async function updatePrivacy(request: HttpRequest, context: InvocationCon
     const user = await readCurrentUser(request);
     if (!user) return { ...NOT_LOGGED_IN, headers };
 
-    const privacy = readPrivacy(((await request.json().catch(() => null)) as { privacy?: unknown } | null)?.privacy);
+    const privacy = readPrivacy(
+      ((await request.json().catch(() => null)) as { privacy?: unknown } | null)?.privacy,
+      privacyOf(user),
+    );
     if ("error" in privacy) return { status: 400, headers, jsonBody: { error: privacy.error } };
 
     await getContainer(USER_CONTAINER)

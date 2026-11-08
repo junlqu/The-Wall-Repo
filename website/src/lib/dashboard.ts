@@ -118,13 +118,6 @@ export function totalSends({ sends }: Pick<DashboardMetrics, "sends">) {
   return sends.route + sends.boulder + sends.combo;
 }
 
-// "5.11b · V4-5 · 5.10a combo" - routes and boulders are on different scales,
-// and a combo's grade would pass for a route's without saying so.
-export function hardestSendLabel({ hardestSend }: Pick<DashboardMetrics, "hardestSend">) {
-  const { route, boulder, combo } = hardestSend;
-  return [route, boulder, combo && `${combo} combo`].filter(Boolean).join(" · ") || "—";
-}
-
 // The line they've sent the most on, the lower line on a tie.
 export function favouriteLineLabel({ lineSends }: DashboardMetrics) {
   const lines = Object.entries(lineSends).sort(([a, sendsA], [b, sendsB]) => sendsB - sendsA || Number(a) - Number(b));
