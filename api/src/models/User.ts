@@ -106,6 +106,9 @@ export type User = {
   deletedAt?: string;
   // Every ban they've had, oldest first - see Ban. Missing until their first.
   ban?: Ban[];
+  // Every timeout they've had, oldest first - see Timeout. Missing until
+  // their first.
+  timeout?: Timeout[];
 };
 
 // A ban, from POST /users/{userID}/ban. While one is running they can't log
@@ -114,10 +117,25 @@ export type User = {
 // banned them.
 export type Ban = { startAt: string; endAt: string | null; reason: string; bannedBy: string };
 
-// The ban running at `now`, if any. Bans don't overlap - a new one can only
-// start once the last has ended - so there's at most one.
+// A timeout, from POST /users/{userID}/timeout. While one is running they
+// stay logged in but can't post or edit comments, like updates or add
+// combos - see rejectIfTimedOut in authUtils.ts. Always ends. `timedOutBy` is
+// the userID of whoever timed them out.
+export type Timeout = { startAt: string; endAt: string; reason: string; timedOutBy: string };
+
+// The one of `list` running at `now`, if any. Neither bans nor timeouts
+// overlap - a new one can only start once the last has ended - so there's at
+// most one.
+function running<T extends { startAt: string; endAt: string | null }>(list: T[] | undefined, now: string) {
+  return list?.find((item) => item.startAt <= now && (item.endAt === null || item.endAt > now));
+}
+
 export function activeBan(user: Pick<User, "ban">, now = new Date().toISOString()): Ban | undefined {
-  return user.ban?.find((ban) => ban.startAt <= now && (ban.endAt === null || ban.endAt > now));
+  return running(user.ban, now);
+}
+
+export function activeTimeout(user: Pick<User, "timeout">, now = new Date().toISOString()): Timeout | undefined {
+  return running(user.timeout, now);
 }
 
 // Someone they follow, and when they started - an ISO date and time.

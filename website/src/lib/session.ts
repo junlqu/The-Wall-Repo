@@ -13,14 +13,25 @@ export const USER_LEVEL = {
   admin: 4,
 } as const;
 
-// Mirrors SessionUser in api/src/authUtils.ts.
+// Mirrors SessionUser in api/src/authUtils.ts. `timedOutUntil` and
+// `timeoutReason` are their timeout, when they have one - see timeoutOf.
 export type SessionUser = {
   userID: string;
   username: string;
   fname: string;
   level: number;
   avatarUpdatedAt?: string;
+  timedOutUntil?: string;
+  timeoutReason?: string;
 };
+
+// Their timeout, if it's still running. While it is they can't post or edit
+// comments, like updates or add combos - the API refuses, so pages say so
+// up front instead.
+export function timeoutOf(user: SessionUser | null | undefined): { endAt: string; reason: string } | null {
+  if (!user?.timedOutUntil || user.timedOutUntil <= new Date().toISOString()) return null;
+  return { endAt: user.timedOutUntil, reason: user.timeoutReason ?? "" };
+}
 
 // The session cookie is httpOnly, so the browser can't read it - the API's
 // /auth/me tells us who is logged in. `undefined` means not checked yet.

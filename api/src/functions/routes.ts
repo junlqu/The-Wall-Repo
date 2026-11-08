@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from "@azure/functions";
-import { corsHeaders, readCurrentUser } from "../authUtils";
+import { corsHeaders, readCurrentUser, rejectIfTimedOut } from "../authUtils";
 import { comboExists, isLineInReach, toComboHand } from "../climbLinks";
 import { isSendDate } from "../commentFields";
 import { getContainer } from "../cosmosClient";
@@ -86,6 +86,12 @@ export async function createRoute(request: HttpRequest, context: InvocationConte
     const isCombo = body.type === "combo";
     if (!isCombo && !canUseAdminTools(user.level)) {
       return { status: 403, headers, jsonBody: { error: "Only staff and admins can change climbs." } };
+    }
+    // Staff can still change other climbs while timed out - only members' one
+    // way of adding to the wall is stopped.
+    if (isCombo) {
+      const timedOut = rejectIfTimedOut(user, headers);
+      if (timedOut) return timedOut;
     }
 
     const invalid: HttpResponseInit = {

@@ -6,14 +6,15 @@ import { isNotFound, PublicPerson, readPeople } from "../commentFields";
 import { getContainer } from "../cosmosClient";
 import { Avatar, AVATAR_CONTAINER } from "../models/Avatar";
 import { COMMENT_CONTAINER } from "../models/Comment";
-import { activeBan, Ban, isUserLevel, User, USER_CONTAINER, USER_LEVEL } from "../models/User";
+import { activeBan, activeTimeout, Ban, isUserLevel, Timeout, User, USER_CONTAINER, USER_LEVEL } from "../models/User";
 
 const FORBIDDEN = "Only staff and admins can look up users.";
 const NOT_FOUND = "That account doesn't exist any more.";
-// Mirrors MAX_BAN_DAYS and MAX_BAN_REASON_LENGTH in website/src/lib/users.ts -
-// the longest the page's wheels go is 365 days, 23 hours and 59 minutes.
-const MAX_BAN_MINUTES = (365 * 24 + 23) * 60 + 59;
-const MAX_BAN_REASON_LENGTH = 500;
+// For bans and timeouts alike. Mirrors MAX_RESTRICTION_DAYS and
+// MAX_RESTRICTION_REASON_LENGTH in website/src/lib/users.ts - the longest the
+// page's wheels go is 365 days, 23 hours and 59 minutes.
+const MAX_RESTRICTION_MINUTES = (365 * 24 + 23) * 60 + 59;
+const MAX_RESTRICTION_REASON_LENGTH = 500;
 const LEADERBOARD_SIZE = 10;
 // Mirrors USER_PAGE_SIZES in website/src/lib/users.ts.
 const PAGE_SIZES = [10, 25, 50, 100];
@@ -336,34 +337,42 @@ export async function setUserLevel(request: HttpRequest, context: InvocationCont
 
 // Everything the admin user panel shows of someone - their listing plus
 // their email and phone ("" when they haven't given one), when the account
-// was deleted, if it was, and every ban they've had, oldest first, with who
-// banned them (null if that account is gone). Never their password hash.
+// was deleted, if it was, and every ban and timeout they've had, oldest
+// first, each with who gave it (`by`, null if that account is gone). Never
+// their password hash.
 async function toUserDetails(user: User) {
   const bans = user.ban ?? [];
-  const people = await readPeople(bans.map((ban) => ban.bannedBy));
+  const timeouts = user.timeout ?? [];
+  const people = await readPeople([
+    ...bans.map((ban) => ban.bannedBy),
+    ...timeouts.map((timeout) => timeout.timedOutBy),
+  ]);
+  const shown = ({ startAt, endAt, reason }: Ban | Timeout, by: string) => ({
+    startAt,
+    endAt,
+    reason,
+    by: people.get(by) ?? null,
+  });
   return {
     ...toListedUser(user),
     email: user.email ?? "",
     phone: user.phone ?? "",
     deletedAt: user.deletedAt,
-    ban: bans.map(({ startAt, endAt, reason, bannedBy }) => ({
-      startAt,
-      endAt,
-      reason,
-      bannedBy: people.get(bannedBy) ?? null,
-    })),
+    ban: bans.map((ban) => shown(ban, ban.bannedBy)),
+    timeout: timeouts.map((timeout) => shown(timeout, timeout.timedOutBy)),
   };
 }
 
-// Why `actor` can't edit or ban `user`, or null when they can. As with
-// levels, only people below your own level - your own account is changed
-// from Settings. Mirrors editLockedReason in website/src/lib/users.ts.
-function refusal(actor: User, user: User, action: "edit" | "ban"): string | null {
+// Why `actor` can't edit, ban or time out `user`, or null when they can. As
+// with levels, only people below your own level - your own account is
+// changed from Settings. Mirrors editLockedReason in website/src/lib/users.ts.
+function refusal(actor: User, user: User, action: "edit" | "ban" | "timeout"): string | null {
+  const doing = action === "timeout" ? "time out" : action;
   if (user.userID === actor.userID) {
-    return action === "edit" ? "Change your own account from Settings." : "You can't ban yourself.";
+    return action === "edit" ? "Change your own account from Settings." : `You can't ${doing} yourself.`;
   }
   if ((user.level ?? USER_LEVEL.member) >= actor.level) {
-    return `You can only ${action} people below your own level.`;
+    return `You can only ${doing} people below your own level.`;
   }
   if (user.deletedAt) return "That account has been deleted.";
   return null;
@@ -476,12 +485,28 @@ export async function updateUser(request: HttpRequest, context: InvocationContex
   }
 }
 
-// POST /users/{userID}/ban { minutes, reason } - bans someone from now for
-// `minutes`, or for good when it's null. Added to their `ban` list, which
-// keeps every ban they've had. Someone already banned can't be banned again
-// until it ends. See refusal for who can be banned.
-export async function banUser(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
+// What a ban and a timeout each need: a ban can be permanent and stops them
+// logging in; a timeout always ends and only stops them posting.
+const RESTRICTIONS = {
+  ban: { noun: "ban", verb: "banned", verbing: "banning", permanent: true },
+  timeout: { noun: "timeout", verb: "timed out", verbing: "timing out", permanent: false },
+} as const;
+
+type Restriction = keyof typeof RESTRICTIONS;
+
+// POST /users/{userID}/ban { minutes, reason } bans someone from now for
+// `minutes`, or for good when it's null. POST /users/{userID}/timeout
+// { minutes, reason } times them out for `minutes` - never for good. Each is
+// added to their `ban` or `timeout` list, which keeps every one they've had.
+// Nobody can be given another of either until the one they have ends, or be
+// timed out while banned. See refusal for who can be banned or timed out.
+export async function restrictUser(
+  request: HttpRequest,
+  context: InvocationContext,
+  kind: Restriction,
+): Promise<HttpResponseInit> {
   const headers = corsHeaders(request);
+  const { noun, verb, verbing, permanent } = RESTRICTIONS[kind];
 
   try {
     const rejection = await rejectUnlessAdmin(request, headers, FORBIDDEN);
@@ -492,51 +517,58 @@ export async function banUser(request: HttpRequest, context: InvocationContext):
     const item = getContainer(USER_CONTAINER).item(userID, userID);
     const { resource: user } = await item.read<User>();
     if (!user) return { status: 404, headers, jsonBody: { error: NOT_FOUND } };
-    const refused = refusal(actor, user, "ban");
+    const refused = refusal(actor, user, kind);
     if (refused) return { status: 403, headers, jsonBody: { error: refused } };
 
     const body = ((await request.json().catch(() => null)) ?? {}) as { minutes?: unknown; reason?: unknown };
     // null for a permanent ban.
-    const minutes = body.minutes === null ? null : Number.isInteger(body.minutes) ? (body.minutes as number) : 0;
-    if (minutes !== null && (minutes < 1 || minutes > MAX_BAN_MINUTES)) {
-      return { status: 400, headers, jsonBody: { error: "Choose how long the ban lasts, or make it permanent." } };
+    const minutes =
+      permanent && body.minutes === null ? null : Number.isInteger(body.minutes) ? (body.minutes as number) : 0;
+    if (minutes !== null && (minutes < 1 || minutes > MAX_RESTRICTION_MINUTES)) {
+      const error = `Choose how long the ${noun} lasts${permanent ? ", or make it permanent" : ""}.`;
+      return { status: 400, headers, jsonBody: { error } };
     }
     const reason = typeof body.reason === "string" ? body.reason.trim() : "";
-    if (!reason) return { status: 400, headers, jsonBody: { error: "Give a reason for the ban." } };
-    if (reason.length > MAX_BAN_REASON_LENGTH) {
-      return { status: 400, headers, jsonBody: { error: `The reason must be ${MAX_BAN_REASON_LENGTH} characters or fewer.` } };
-    }
-
-    const now = new Date();
-    const current = activeBan(user, now.toISOString());
-    if (current) {
+    if (!reason) return { status: 400, headers, jsonBody: { error: `Give a reason for the ${noun}.` } };
+    if (reason.length > MAX_RESTRICTION_REASON_LENGTH) {
       return {
-        status: 409,
+        status: 400,
         headers,
-        jsonBody: { error: current.endAt ? "They're already banned." : "They're already banned permanently." },
+        jsonBody: { error: `The reason must be ${MAX_RESTRICTION_REASON_LENGTH} characters or fewer.` },
       };
     }
 
-    const ban: Ban = {
-      startAt: now.toISOString(),
-      endAt: minutes === null ? null : new Date(now.getTime() + minutes * 60_000).toISOString(),
-      reason,
-      bannedBy: actor.userID,
-    };
-    // Only if nothing else changed them since they were read, so two bans
-    // at once can't both go on. Accounts that have never been banned have
-    // no list to add to yet.
+    const now = new Date();
+    const ban = activeBan(user, now.toISOString());
+    if (ban) {
+      return { status: 409, headers, jsonBody: { error: ban.endAt ? "They're already banned." : "They're already banned permanently." } };
+    }
+    if (kind === "timeout" && activeTimeout(user, now.toISOString())) {
+      return { status: 409, headers, jsonBody: { error: "They're already timed out." } };
+    }
+
+    const startAt = now.toISOString();
+    const endAt = minutes === null ? null : new Date(now.getTime() + minutes * 60_000).toISOString();
+    const entry: Ban | Timeout =
+      kind === "ban"
+        ? { startAt, endAt, reason, bannedBy: actor.userID }
+        : { startAt, endAt: endAt!, reason, timedOutBy: actor.userID };
+    // Only if nothing else changed them since they were read, so two at once
+    // can't both go on. Accounts that have never had one have no list to add
+    // to yet.
+    const list = user[kind];
     const { resource: updated } = await item.patch<User>(
-      [user.ban ? { op: "add", path: "/ban/-", value: ban } : { op: "set", path: "/ban", value: [ban] }],
+      [list ? { op: "add", path: `/${kind}/-`, value: entry } : { op: "set", path: `/${kind}`, value: [entry] }],
       { accessCondition: { type: "IfMatch", condition: user._etag } },
     );
-    return { status: 200, headers, jsonBody: await toUserDetails(updated ?? { ...user, ban: [...(user.ban ?? []), ban] }) };
+    const fallback = { ...user, [kind]: [...(list ?? []), entry] } as User;
+    return { status: 200, headers, jsonBody: await toUserDetails(updated ?? fallback) };
   } catch (error) {
     if ((error as { code?: number }).code === 412) {
-      return { status: 409, headers, jsonBody: { error: "Their account changed while banning - refresh and try again." } };
+      return { status: 409, headers, jsonBody: { error: `Their account changed while ${verbing} them - refresh and try again.` } };
     }
-    context.error("Failed to ban a user", error);
-    return { status: 500, headers, jsonBody: { error: "Failed to ban them." } };
+    context.error(`Failed to put a ${noun} on a user`, error);
+    return { status: 500, headers, jsonBody: { error: `Failed to get them ${verb}.` } };
   }
 }
 
@@ -590,17 +622,19 @@ app.http("userItem", {
   },
 });
 
-app.http("userBan", {
-  methods: ["POST", "OPTIONS"],
-  authLevel: "anonymous",
-  route: "users/{userID}/ban",
-  handler: async (request, context) => {
-    if (request.method === "OPTIONS") {
-      return { status: 204, headers: corsHeaders(request) };
-    }
-    return banUser(request, context);
-  },
-});
+for (const kind of Object.keys(RESTRICTIONS) as Restriction[]) {
+  app.http(kind === "ban" ? "userBan" : "userTimeout", {
+    methods: ["POST", "OPTIONS"],
+    authLevel: "anonymous",
+    route: `users/{userID}/${kind}`,
+    handler: async (request, context) => {
+      if (request.method === "OPTIONS") {
+        return { status: 204, headers: corsHeaders(request) };
+      }
+      return restrictUser(request, context, kind);
+    },
+  });
+}
 
 app.http("userStats", {
   methods: ["GET", "OPTIONS"],

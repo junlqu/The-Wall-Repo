@@ -74,35 +74,49 @@ export async function fetchUsers(
   return (await adminRequest(`/users?${query}`, {})) as UserPage;
 }
 
-// A ban: ISO dates and times, with no `endAt` when it's permanent.
-// `bannedBy` is null when that account is gone. Mirrors Ban in
-// api/src/models/User.ts.
-export type UserBan = {
+// A ban or timeout: ISO dates and times. Only a ban can have no `endAt`,
+// which makes it permanent. `by` is who gave it, null when that account is
+// gone. Mirrors toUserDetails in api/src/functions/users.ts.
+export type UserRestriction = {
   startAt: string;
   endAt: string | null;
   reason: string;
-  bannedBy: { userID: string; username: string } | null;
+  by: { userID: string; username: string } | null;
 };
 
 // Someone's whole account, for the admin user panel. Email and phone are ""
-// when they haven't given one; `ban` is every ban they've had, oldest first.
-// Mirrors toUserDetails in api/src/functions/users.ts.
-export type UserDetails = ListedUser & { email: string; phone: string; deletedAt?: string; ban: UserBan[] };
+// when they haven't given one; `ban` and `timeout` are every one they've had,
+// oldest first. Mirrors toUserDetails in api/src/functions/users.ts.
+export type UserDetails = ListedUser & {
+  email: string;
+  phone: string;
+  deletedAt?: string;
+  ban: UserRestriction[];
+  timeout: UserRestriction[];
+};
 
-// Mirror MAX_BAN_MINUTES and MAX_BAN_REASON_LENGTH in
-// api/src/functions/users.ts.
-export const MAX_BAN_DAYS = 365;
-export const MAX_BAN_REASON_LENGTH = 500;
+export type RestrictionKind = "ban" | "timeout";
 
-// The ban running now, if any. Mirrors activeBan in api/src/models/User.ts.
-export function activeBan(user: Pick<UserDetails, "ban">, now = new Date().toISOString()): UserBan | undefined {
-  return user.ban.find((ban) => ban.startAt <= now && (ban.endAt === null || ban.endAt > now));
+// For bans and timeouts alike. Mirror MAX_RESTRICTION_MINUTES and
+// MAX_RESTRICTION_REASON_LENGTH in api/src/functions/users.ts.
+export const MAX_RESTRICTION_DAYS = 365;
+export const MAX_RESTRICTION_REASON_LENGTH = 500;
+
+// The one of `list` running now, if any. Mirrors running in
+// api/src/models/User.ts.
+export function running(list: UserRestriction[], now = new Date().toISOString()): UserRestriction | undefined {
+  return list.find((item) => item.startAt <= now && (item.endAt === null || item.endAt > now));
 }
 
-// Bans them from now for `minutes`, or for good when it's null. Returns them
-// as they are now.
-export async function banUser(userID: string, minutes: number | null, reason: string): Promise<UserDetails> {
-  return (await adminRequest(`/users/${encodeURIComponent(userID)}/ban`, {
+// Bans them from now for `minutes`, or for good when it's null, or times
+// them out for `minutes`. Returns them as they are now.
+export async function restrictUser(
+  userID: string,
+  kind: RestrictionKind,
+  minutes: number | null,
+  reason: string,
+): Promise<UserDetails> {
+  return (await adminRequest(`/users/${encodeURIComponent(userID)}/${kind}`, {
     method: "POST",
     body: JSON.stringify({ minutes, reason }),
   })) as UserDetails;

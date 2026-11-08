@@ -3,14 +3,19 @@ import { Cookie, HttpRequest, HttpResponseInit } from "@azure/functions";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { getContainer } from "./cosmosClient";
-import { activeBan, canUseAdminTools, User, USER_CONTAINER, UserLevel } from "./models/User";
+import { activeBan, activeTimeout, canUseAdminTools, User, USER_CONTAINER, UserLevel } from "./models/User";
 
+// `timedOutUntil` and `timeoutReason` are the timeout running when the token
+// was made, so pages can say what they can't do - the API checks the account
+// itself, and GET /auth/me reissues the token once it ends.
 export type SessionUser = {
   userID: string;
   username: string;
   fname: string;
   level: UserLevel;
   avatarUpdatedAt?: string;
+  timedOutUntil?: string;
+  timeoutReason?: string;
 };
 
 const SESSION_COOKIE_NAME = "wall_session";
@@ -68,8 +73,11 @@ export function readSessionUser(request: HttpRequest): SessionUser | null {
 
   const secret = getJwtSecret();
   try {
-    const { userID, username, fname, level, avatarUpdatedAt } = jwt.verify(token, secret) as SessionUser;
-    return { userID, username, fname, level, avatarUpdatedAt };
+    const { userID, username, fname, level, avatarUpdatedAt, timedOutUntil, timeoutReason } = jwt.verify(
+      token,
+      secret,
+    ) as SessionUser;
+    return { userID, username, fname, level, avatarUpdatedAt, timedOutUntil, timeoutReason };
   } catch {
     return null;
   }
@@ -107,12 +115,32 @@ export async function rejectUnlessAdmin(
 }
 
 export function toSessionUser(user: User): SessionUser {
+  const timeout = activeTimeout(user);
   return {
     userID: user.userID,
     username: user.username,
     fname: user.fname,
     level: user.level,
     avatarUpdatedAt: user.avatarUpdatedAt,
+    timedOutUntil: timeout?.endAt,
+    timeoutReason: timeout?.reason,
+  };
+}
+
+// The 403 to send back when `user` is timed out, or null when they aren't.
+// For anything a timeout stops: posting or editing a comment, liking an
+// update, adding a combo. `timeout` lets the page say when it ends in their
+// own timezone.
+export function rejectIfTimedOut(user: User, headers: Record<string, string>): HttpResponseInit | null {
+  const timeout = activeTimeout(user);
+  if (!timeout) return null;
+  return {
+    status: 403,
+    headers,
+    jsonBody: {
+      error: "You're timed out, so you can't do that until it ends.",
+      timeout: { endAt: timeout.endAt, reason: timeout.reason },
+    },
   };
 }
 

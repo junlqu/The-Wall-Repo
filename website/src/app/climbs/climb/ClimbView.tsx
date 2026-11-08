@@ -16,6 +16,7 @@ import {
   Stars,
 } from "@/components/ClimbCards";
 import CommentForm from "@/components/CommentForm";
+import TimedOutNotice from "@/components/TimedOutNotice";
 import { Kicker, SectionRule } from "@/components/Masthead";
 import {
   type Climb,
@@ -36,7 +37,7 @@ import {
   swatchFor,
 } from "@/lib/climbs";
 import { withReturnTo } from "@/lib/returnTo";
-import { useSessionUser } from "@/lib/session";
+import { timeoutOf, useSessionUser } from "@/lib/session";
 
 const LEADABLE_TEXT: Record<Climb["leadable"], string> = { Yes: "Yes", Sketch: "Sketchy", No: "No", "?": "Unknown" };
 
@@ -247,10 +248,12 @@ function CommentsClosed() {
 
 // The visitor's own comment: a prompt to log in, the form to write their one
 // comment, or - once they have - that comment in a dropdown they can edit or
-// delete it from. A climb that's come down takes no new ones.
+// delete it from. A climb that's come down takes no new ones. While they're
+// timed out they can't post or edit one, only delete it.
 function MyComment({ climb, onChanged }: { climb: Climb; onChanged: () => void }) {
   const user = useSessionUser();
   const userID = user?.userID;
+  const timedOut = timeoutOf(user) !== null;
   const [mine, setMine] = useState<ClimbComment | null | "loading" | "error">("loading");
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -301,8 +304,13 @@ function MyComment({ climb, onChanged }: { climb: Climb; onChanged: () => void }
   if (mine === "error") {
     return <p className="text-center text-sm text-neutral-500">Couldn&apos;t check for your comment right now.</p>;
   }
-  if (mine === null) return climb.status === "past" ? <CommentsClosed /> : <CommentForm climb={climb} onSaved={saved} />;
-  if (editing) return <CommentForm climb={climb} initial={mine} onSaved={saved} onCancel={() => setEditing(false)} />;
+  if (mine === null) {
+    if (climb.status === "past") return <CommentsClosed />;
+    return timedOut ? <TimedOutNotice /> : <CommentForm climb={climb} onSaved={saved} />;
+  }
+  if (editing && !timedOut) {
+    return <CommentForm climb={climb} initial={mine} onSaved={saved} onCancel={() => setEditing(false)} />;
+  }
 
   return (
     <div className="rounded-xl border border-neutral-200 bg-white shadow-sm">
@@ -356,7 +364,9 @@ function MyComment({ climb, onChanged }: { climb: Climb; onChanged: () => void }
             <button
               type="button"
               onClick={() => setEditing(true)}
-              className="rounded-full border border-primary px-4 py-1.5 text-sm font-semibold text-primary transition-colors hover:bg-primary hover:text-white"
+              disabled={timedOut}
+              title={timedOut ? "You can't edit comments while you're timed out" : undefined}
+              className="rounded-full border border-primary px-4 py-1.5 text-sm font-semibold text-primary transition-colors hover:bg-primary hover:text-white disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-primary"
             >
               Edit
             </button>

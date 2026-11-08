@@ -9,17 +9,18 @@ import { MAX_EMAIL_LENGTH, MAX_NAME_LENGTH, MAX_PHONE_DIGITS } from "@/lib/accou
 import { avatarUrl } from "@/lib/avatar";
 import { useSessionUser } from "@/lib/session";
 import {
-  activeBan,
-  banUser,
   editLockedReason,
   fetchUser,
   levelLabel,
-  MAX_BAN_DAYS,
-  MAX_BAN_REASON_LENGTH,
+  MAX_RESTRICTION_DAYS,
+  MAX_RESTRICTION_REASON_LENGTH,
   MAX_USERNAME_LENGTH,
+  type RestrictionKind,
+  restrictUser,
+  running,
   updateUser,
-  type UserBan,
   type UserDetails,
+  type UserRestriction,
   type UserEdit,
 } from "@/lib/users";
 
@@ -27,8 +28,6 @@ const OUTLINE_DANGER_BUTTON_CLASS =
   "inline-flex flex-1 items-center justify-center rounded-full border border-red-600 bg-white px-4 py-2 text-sm font-semibold text-red-700 transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 aria-expanded:bg-red-50";
 const SMALL_PRIMARY_BUTTON_CLASS = PRIMARY_BUTTON_CLASS.replace("px-5", "px-4");
 const SMALL_CANCEL_BUTTON_CLASS = CANCEL_BUTTON_CLASS.replace("px-5", "px-4");
-
-type Moderation = "ban" | "timeout";
 
 function toEdit(user: UserDetails): UserEdit {
   const { username, fname, lname, email, phone } = user;
@@ -61,51 +60,76 @@ function describeMinutes(total: number) {
     .join(" ");
 }
 
-// How long a ban is or was meant to last.
-function describeLength(ban: UserBan) {
-  if (ban.endAt === null) return "Permanent";
-  return describeMinutes(Math.round((Date.parse(ban.endAt) - Date.parse(ban.startAt)) / 60_000));
+// How long a ban or timeout is or was meant to last.
+function describeLength(item: UserRestriction) {
+  if (item.endAt === null) return "Permanent";
+  return describeMinutes(Math.round((Date.parse(item.endAt) - Date.parse(item.startAt)) / 60_000));
 }
 
-function BannedBy({ ban }: { ban: UserBan }) {
-  return ban.bannedBy ? (
-    <ProfileLink username={ban.bannedBy.username} className="font-semibold" />
+function GivenBy({ item }: { item: UserRestriction }) {
+  return item.by ? (
+    <ProfileLink username={item.by.username} className="font-semibold" />
   ) : (
     <span className="italic">a deleted account</span>
   );
 }
 
-// The ban running now, if they're banned.
-function CurrentBan({ ban }: { ban: UserBan }) {
+const KIND_LABELS: Record<RestrictionKind, string> = { ban: "Ban", timeout: "Timeout" };
+
+// The ban or timeout running now.
+function CurrentRestriction({ kind, item }: { kind: RestrictionKind; item: UserRestriction }) {
+  const heading =
+    kind === "ban"
+      ? item.endAt
+        ? `Banned until ${formatWhen(item.endAt)}`
+        : "Banned permanently"
+      : `Timed out until ${formatWhen(item.endAt!)}`;
   return (
-    <section aria-label="Current ban" className="flex flex-col gap-1 rounded-lg border-l-4 border-red-600 bg-red-50 px-4 py-3 text-sm text-red-900">
-      <p className="font-semibold">{ban.endAt ? `Banned until ${formatWhen(ban.endAt)}` : "Banned permanently"}</p>
-      <p className="whitespace-pre-wrap break-words">{ban.reason}</p>
-      <p className="text-xs text-red-800/80">
-        By <BannedBy ban={ban} /> on {formatWhen(ban.startAt)}
+    <section
+      aria-label={`Current ${kind}`}
+      className={`flex flex-col gap-1 rounded-lg border-l-4 px-4 py-3 text-sm ${
+        kind === "ban" ? "border-red-600 bg-red-50 text-red-900" : "border-amber-500 bg-amber-50 text-amber-950"
+      }`}
+    >
+      <p className="font-semibold">{heading}</p>
+      {kind === "timeout" && (
+        <p className="text-xs">They can log in, but can&apos;t post or edit comments, like updates or add combos.</p>
+      )}
+      <p className="whitespace-pre-wrap break-words">{item.reason}</p>
+      <p className="text-xs opacity-80">
+        By <GivenBy item={item} /> on {formatWhen(item.startAt)}
       </p>
     </section>
   );
 }
 
-// Every ban they've had, newest first.
-function BanHistory({ bans }: { bans: UserBan[] }) {
-  if (bans.length === 0) return null;
+// Every ban and timeout they've had, newest first.
+function RestrictionHistory({ user }: { user: UserDetails }) {
+  const items = [
+    ...user.ban.map((item) => ({ kind: "ban" as const, item })),
+    ...user.timeout.map((item) => ({ kind: "timeout" as const, item })),
+  ].sort((a, b) => b.item.startAt.localeCompare(a.item.startAt));
+  if (items.length === 0) return null;
   return (
-    <details className="group rounded-lg bg-neutral-50 px-4 py-3 text-sm">
+    <details className="rounded-lg bg-neutral-50 px-4 py-3 text-sm">
       <summary className="cursor-pointer select-none font-semibold text-neutral-700">
-        Ban history ({bans.length})
+        Ban and timeout history ({items.length})
       </summary>
       <ol className="mt-3 flex flex-col divide-y divide-neutral-200">
-        {[...bans].reverse().map((ban) => (
-          <li key={ban.startAt} className="flex flex-col gap-0.5 py-2 first:pt-0 last:pb-0">
-            <p className="flex flex-wrap justify-between gap-x-2 text-xs text-neutral-500">
-              <span>{formatWhen(ban.startAt)}</span>
-              <span className="font-semibold text-neutral-600">{describeLength(ban)}</span>
+        {items.map(({ kind, item }) => (
+          <li key={`${kind}-${item.startAt}`} className="flex flex-col gap-0.5 py-2 first:pt-0 last:pb-0">
+            <p className="flex flex-wrap items-baseline justify-between gap-x-2 text-xs text-neutral-500">
+              <span>
+                <span className={`font-bold uppercase tracking-wide ${kind === "ban" ? "text-red-700" : "text-amber-700"}`}>
+                  {KIND_LABELS[kind]}
+                </span>{" "}
+                · {formatWhen(item.startAt)}
+              </span>
+              <span className="font-semibold text-neutral-600">{describeLength(item)}</span>
             </p>
-            <p className="whitespace-pre-wrap break-words text-neutral-800">{ban.reason}</p>
+            <p className="whitespace-pre-wrap break-words text-neutral-800">{item.reason}</p>
             <p className="text-xs text-neutral-500">
-              By <BannedBy ban={ban} />
+              By <GivenBy item={item} />
             </p>
           </li>
         ))}
@@ -118,16 +142,14 @@ const NO_DURATION: Duration = { days: 0, hours: 0, minutes: 0 };
 
 // The dropdown under Ban or Timeout: how long, on days/hours/minutes wheels,
 // and why. A ban can also be permanent; a timeout always ends. `onDone`
-// gets them as they are after the ban.
-// TODO: the timeout API lands separately - until then, submitting a
-// timeout does nothing.
+// gets them as they are afterwards.
 function ModerationForm({
-  action,
+  kind,
   user,
   onCancel,
   onDone,
 }: {
-  action: Moderation;
+  kind: RestrictionKind;
   user: UserDetails;
   onCancel: () => void;
   onDone: (user: UserDetails) => void;
@@ -137,21 +159,20 @@ function ModerationForm({
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
-  const label = action === "ban" ? "Ban" : "Timeout";
+  const label = KIND_LABELS[kind];
   const minutes = durationMinutes(duration);
-  const forever = action === "ban" && permanent;
+  const forever = kind === "ban" && permanent;
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (!forever && minutes === 0) {
-      setError(`Choose how long the ${action} lasts${action === "ban" ? ", or make it permanent" : ""}.`);
+      setError(`Choose how long the ${kind} lasts${kind === "ban" ? ", or make it permanent" : ""}.`);
       return;
     }
-    if (action !== "ban") return;
     setBusy(true);
     setError(undefined);
     try {
-      onDone(await banUser(user.userID, forever ? null : minutes, reason));
+      onDone(await restrictUser(user.userID, kind, forever ? null : minutes, reason));
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Something went wrong. Try again.");
       setBusy(false);
@@ -166,9 +187,9 @@ function ModerationForm({
     >
       <fieldset disabled={busy} className="contents">
         <div className={LABEL_CLASS}>
-          <div className="flex items-center justify-between gap-2">
+          <div className="flex min-h-8 items-center justify-between gap-2">
             <span>Duration</span>
-            {action === "ban" && (
+            {kind === "ban" && (
               <label className="flex cursor-pointer items-center gap-2 rounded-md border border-neutral-300 bg-white px-3 py-1.5 text-sm font-semibold normal-case tracking-normal text-neutral-700 has-[:checked]:border-red-600 has-[:checked]:text-red-700">
                 <input
                   type="checkbox"
@@ -180,7 +201,12 @@ function ModerationForm({
               </label>
             )}
           </div>
-          <DurationWheel value={duration} maxDays={MAX_BAN_DAYS} disabled={forever || busy} onChange={setDuration} />
+          <DurationWheel
+            value={duration}
+            maxDays={MAX_RESTRICTION_DAYS}
+            disabled={forever || busy}
+            onChange={setDuration}
+          />
           <span className="text-xs font-normal normal-case tracking-normal text-neutral-600" aria-live="polite">
             {forever
               ? "Never ends"
@@ -195,13 +221,13 @@ function ModerationForm({
           <textarea
             value={reason}
             onChange={(event) => setReason(event.target.value)}
-            maxLength={MAX_BAN_REASON_LENGTH}
+            maxLength={MAX_RESTRICTION_REASON_LENGTH}
             required
             rows={3}
             className={`${FIELD_CLASS} resize-y`}
           />
           <span className="self-end text-[11px] font-normal normal-case tracking-normal text-neutral-500">
-            {reason.length}/{MAX_BAN_REASON_LENGTH}
+            {reason.length}/{MAX_RESTRICTION_REASON_LENGTH}
           </span>
         </label>
 
@@ -212,7 +238,7 @@ function ModerationForm({
             Cancel
           </button>
           <button type="submit" className={DANGER_BUTTON_CLASS.replace("px-5", "px-4")}>
-            {busy ? `${label === "Ban" ? "Banning" : "Timing out"}…` : label}
+            {busy ? `${kind === "ban" ? "Banning" : "Timing out"}…` : label}
           </button>
         </div>
       </fieldset>
@@ -298,7 +324,7 @@ export default function AdminUserPanel({
   const [edit, setEdit] = useState<UserEdit | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string>();
-  const [moderation, setModeration] = useState<Moderation | null>(null);
+  const [moderation, setModeration] = useState<RestrictionKind | null>(null);
   const [deleting, setDeleting] = useState(false);
   const formId = useId();
 
@@ -313,9 +339,10 @@ export default function AdminUserPanel({
   }, [userID]);
 
   const locked = user && me ? editLockedReason(me, user) : "Loading…";
-  const ban = user && activeBan(user);
+  const ban = user && running(user.ban);
+  const timeout = user && running(user.timeout);
 
-  const banned = (saved: UserDetails) => {
+  const restricted = (saved: UserDetails) => {
     setUser(saved);
     setModeration(null);
     onSaved(saved);
@@ -408,6 +435,7 @@ export default function AdminUserPanel({
                   {levelLabel(user.level)}
                   {user.deletedAt && " · Deleted account"}
                   {ban && <span className="font-semibold text-red-700"> · Banned</span>}
+                  {timeout && <span className="font-semibold text-amber-700"> · Timed out</span>}
                 </p>
                 {edit && (
                   <button
@@ -443,8 +471,9 @@ export default function AdminUserPanel({
 
             {locked && <p className="text-xs text-neutral-500">{locked}</p>}
 
-            {!edit && ban && <CurrentBan ban={ban} />}
-            {!edit && <BanHistory bans={user.ban} />}
+            {!edit && ban && <CurrentRestriction kind="ban" item={ban} />}
+            {!edit && timeout && <CurrentRestriction kind="timeout" item={timeout} />}
+            {!edit && <RestrictionHistory user={user} />}
           </>
         )}
       </div>
@@ -452,20 +481,28 @@ export default function AdminUserPanel({
       {user && !edit && (
         <div className="flex flex-col gap-3 border-t border-neutral-200 px-6 py-4">
           <div className="flex gap-2">
-            {(["ban", "timeout"] as const).map((action) => (
-              <button
-                key={action}
-                type="button"
-                // Nobody can be banned again while a ban is running.
-                disabled={!!locked || !!ban}
-                title={ban ? "They're already banned" : undefined}
-                aria-expanded={moderation === action}
-                onClick={() => setModeration(moderation === action ? null : action)}
-                className={OUTLINE_DANGER_BUTTON_CLASS}
-              >
-                {action === "ban" ? "Ban" : "Timeout"}
-              </button>
-            ))}
+            {(["ban", "timeout"] as const).map((kind) => {
+              // Nobody can be given another while one is running, or timed
+              // out while banned. A timed-out person can still be banned.
+              const blocked = ban
+                ? "They're already banned"
+                : kind === "timeout" && timeout
+                  ? "They're already timed out"
+                  : null;
+              return (
+                <button
+                  key={kind}
+                  type="button"
+                  disabled={!!locked || !!blocked}
+                  title={blocked ?? undefined}
+                  aria-expanded={moderation === kind}
+                  onClick={() => setModeration(moderation === kind ? null : kind)}
+                  className={OUTLINE_DANGER_BUTTON_CLASS}
+                >
+                  {KIND_LABELS[kind]}
+                </button>
+              );
+            })}
             <button
               type="button"
               disabled={!!locked}
@@ -481,10 +518,10 @@ export default function AdminUserPanel({
           {moderation && (
             <ModerationForm
               key={moderation}
-              action={moderation}
+              kind={moderation}
               user={user}
               onCancel={() => setModeration(null)}
-              onDone={banned}
+              onDone={restricted}
             />
           )}
         </div>

@@ -4,15 +4,17 @@ import { useMemo, useState } from "react";
 import { ClimbRows, ClimbsError, Placeholder, useActiveClimbs } from "@/components/ClimbCards";
 import { Masthead, SectionRule } from "@/components/Masthead";
 import NewComboPanel from "@/components/NewComboPanel";
+import TimedOutNotice from "@/components/TimedOutNotice";
 import { COMBO_LINE_REACH, LINES } from "@/lib/climbs";
-import { useSessionUser } from "@/lib/session";
+import { timeoutOf, useSessionUser } from "@/lib/session";
 
 export default function CombosPage() {
   const { climbs, error, addClimb } = useActiveClimbs();
   const now = useMemo(() => new Date(), []);
   const combos = useMemo(() => climbs?.filter((climb) => climb.type === "combo") ?? null, [climbs]);
-  // Anyone logged in can add a combo.
-  const canAdd = Boolean(useSessionUser());
+  // Anyone logged in can add a combo, unless they're timed out.
+  const user = useSessionUser();
+  const canAdd = Boolean(user) && timeoutOf(user) === null;
   // The line a new combo is being added to, while its panel is open.
   const [newComboLine, setNewComboLine] = useState<number | null>(null);
 
@@ -20,6 +22,7 @@ export default function CombosPage() {
     <div className="min-h-[calc(100vh-4rem)] bg-neutral-50">
       <div className="mx-auto flex max-w-6xl flex-col gap-10 px-4 py-10 sm:px-6 lg:px-8">
         <Masthead title="Combos" tagline="Every combo up on the wall right now, line by line." now={now} />
+        <TimedOutNotice />
 
         {error ? (
           <ClimbsError />

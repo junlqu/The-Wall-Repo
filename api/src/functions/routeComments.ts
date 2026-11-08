@@ -1,5 +1,5 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from "@azure/functions";
-import { corsHeaders, readCurrentUser, readSessionUser } from "../authUtils";
+import { corsHeaders, readCurrentUser, readSessionUser, rejectIfTimedOut } from "../authUtils";
 import { applyCommentChange } from "../climbStats";
 import { readCommentFields, readPeople, toPublicComment } from "../commentFields";
 import { getContainer } from "../cosmosClient";
@@ -125,6 +125,8 @@ export async function createMyComment(request: HttpRequest, context: InvocationC
   try {
     const session = await readCurrentUser(request);
     if (!session) return notLoggedIn(headers);
+    const timedOut = rejectIfTimedOut(session, headers);
+    if (timedOut) return timedOut;
 
     const fields = readCommentFields(await request.json().catch(() => null));
     if (!fields) return invalid(headers);
@@ -172,6 +174,9 @@ export async function updateMyComment(request: HttpRequest, context: InvocationC
   try {
     const session = await readCurrentUser(request);
     if (!session) return notLoggedIn(headers);
+    // Deleting it is still allowed - only adding or changing what it says isn't.
+    const timedOut = rejectIfTimedOut(session, headers);
+    if (timedOut) return timedOut;
 
     const fields = readCommentFields(await request.json().catch(() => null));
     if (!fields) return invalid(headers);

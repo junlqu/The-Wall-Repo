@@ -68,16 +68,16 @@ const COLLECTED: [string, string, string][] = [
     "To personalize your dashboard, apply your privacy choices and control access to administrative features.",
   ],
   [
-    "Bans",
-    "Any ban placed on your account: when it started and when it ends (or that it is permanent), the reason given, and the staff member who placed it.",
-    "To enforce the Site's rules, stop a banned account from logging in until the ban ends, and keep a record of past bans.",
+    "Bans and timeouts",
+    "Any ban or timeout placed on your account: when it started and when it ends (or, for a ban, that it is permanent), the reason given, and the staff member who placed it.",
+    "To enforce the Site's rules: to stop a banned account from logging in, or a timed-out account from posting, until it ends, and to keep a record of past bans and timeouts.",
   ],
 ];
 
 const COOKIES: [string, string, string, string][] = [
   [
     "wall_session",
-    "Keeps you logged in. Contains a signed token holding your user ID, username, first name, account level and the time your profile picture was last updated.",
+    "Keeps you logged in. Contains a signed token holding your user ID, username, first name, account level and the time your profile picture was last updated, and, while you are timed out, when your timeout ends and the reason given.",
     "Strictly necessary",
     "30 days, or until you log out",
   ],
@@ -95,9 +95,9 @@ const RETENTION: [string, string][] = [
   ],
   [
     "De-identified account record",
-    "After deletion, a record containing your internal identifier, settings, activity totals and any ban history is retained so that existing contributions remain consistent. It contains no name, username, email, phone or usable password.",
+    "After deletion, a record containing your internal identifier, settings, activity totals and any ban and timeout history is retained so that existing contributions remain consistent. It contains no name, username, email, phone or usable password.",
   ],
-  ["Bans", "Kept with your account record, including after a ban ends and after account deletion."],
+  ["Bans and timeouts", "Kept with your account record, including after they end and after account deletion."],
   ["Session cookie", "30 days from your last login, or until you log out."],
   ["Technical logs", "In line with our hosting provider's standard retention periods."],
   ["Data exports", "Generated when you request them and not stored by us."],
@@ -262,7 +262,7 @@ export default function PrivacyPage() {
                 from members you follow;
               </li>
               <li>apply the visibility and cookie preferences you choose;</li>
-              <li>allow authorized staff to administer accounts and access levels, and to ban accounts that break the Site&apos;s rules;</li>
+              <li>allow authorized staff to administer accounts and access levels, and to ban or time out accounts that break the Site&apos;s rules;</li>
               <li>keep the Site secure and diagnose technical problems; and</li>
               <li>comply with applicable legal obligations.</li>
             </List>
@@ -300,11 +300,13 @@ export default function PrivacyPage() {
             <Subheading>4.2 Authorized staff</Subheading>
             <p>
               Members with staff or administrator access can view account details, including names, usernames, email
-              addresses, phone numbers, account creation dates, activity totals and ban history, for the purpose of
-              administering accounts. They can correct those details, reset your profile picture to its default, and ban
-              your account for a set time or permanently, giving a reason. While a ban is in effect you are logged out
-              and cannot log in; the login page shows when it ends and the reason given. No one, including staff, can
-              view your password.
+              addresses, phone numbers, account creation dates, activity totals and ban and timeout history, for the
+              purpose of administering accounts. They can correct those details, reset your profile picture to its
+              default, ban your account for a set time or permanently, and time it out for a set time, giving a reason
+              each time. While a ban is in effect you are logged out and cannot log in; the login page shows when it
+              ends and the reason given. While a timeout is in effect you stay logged in but cannot post or edit
+              comments, like updates or add combos; the Site shows when it ends and the reason given. No one, including
+              staff, can view your password.
             </p>
             <Subheading>4.3 Service providers</Subheading>
             <p>
