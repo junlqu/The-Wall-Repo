@@ -15,6 +15,7 @@ import {
   SaveClimbButton,
   Stars,
 } from "@/components/ClimbCards";
+import { EditDialog } from "@/components/ClimbActions";
 import CommentForm from "@/components/CommentForm";
 import TimedOutNotice from "@/components/TimedOutNotice";
 import { Kicker, SectionRule } from "@/components/Masthead";
@@ -37,7 +38,7 @@ import {
   swatchFor,
 } from "@/lib/climbs";
 import { withReturnTo } from "@/lib/returnTo";
-import { timeoutOf, useSessionUser } from "@/lib/session";
+import { canUseAdminTools, timeoutOf, useSessionUser } from "@/lib/session";
 
 const LEADABLE_TEXT: Record<Climb["leadable"], string> = { Yes: "Yes", Sketch: "Sketchy", No: "No", "?": "Unknown" };
 
@@ -70,6 +71,34 @@ function BackLink({ type }: { type?: ClimbType }) {
     <Link href={href} className="w-fit text-sm font-semibold text-primary hover:text-secondary">
       ← {label}
     </Link>
+  );
+}
+
+// For staff and admins: opens the same edit side panel as the admin climbs
+// table. Styled like the staff tools bar on a profile.
+function StaffBar({ climb, onSaved }: { climb: Climb; onSaved: (climb: Climb) => void }) {
+  const [editing, setEditing] = useState(false);
+  return (
+    <div className="flex flex-col items-center gap-3 rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 text-sm text-primary sm:flex-row sm:justify-between">
+      <p className="text-center font-semibold sm:text-left">Staff tools</p>
+      <button
+        type="button"
+        onClick={() => setEditing(true)}
+        className="shrink-0 rounded-full border border-primary bg-white px-4 py-1.5 text-sm font-semibold text-primary transition-colors hover:bg-primary hover:text-white"
+      >
+        Edit climb
+      </button>
+      {editing && (
+        <EditDialog
+          climb={climb}
+          onClose={() => setEditing(false)}
+          onSaved={(saved) => {
+            setEditing(false);
+            onSaved(saved);
+          }}
+        />
+      )}
+    </div>
   );
 }
 
@@ -439,6 +468,7 @@ function AllComments({ climb }: { climb: Climb }) {
 }
 
 function ClimbDetails({ id }: { id: string }) {
+  const isStaff = canUseAdminTools(useSessionUser());
   const [climb, setClimb] = useState<Climb | null | "loading" | "error">("loading");
   const [lastSend, setLastSend] = useState<LastSend>("loading");
   // Bumped when the visitor's comment changes, to load the list afresh.
@@ -485,6 +515,7 @@ function ClimbDetails({ id }: { id: string }) {
   return (
     <>
       <BackLink type={climb.type} />
+      {isStaff && <StaffBar climb={climb} onSaved={setClimb} />}
       <PostCard climb={climb} lastSend={lastSend} />
 
       <section className="flex flex-col gap-6">

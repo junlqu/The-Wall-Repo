@@ -246,7 +246,17 @@ export function SidePanel({ title, busy = false, onClose, actions, children }: M
   );
 }
 
-function EditDialog({ climb, onClose, onSaved }: { climb: Climb; onClose: () => void; onSaved: (climb: Climb) => void }) {
+// The side panel for editing a climb. Also opened from a climb's own page by
+// staff.
+export function EditDialog({
+  climb,
+  onClose,
+  onSaved,
+}: {
+  climb: Climb;
+  onClose: () => void;
+  onSaved: (climb: Climb) => void;
+}) {
   // A climb's type is fixed once it's set, so it's shown but not editable.
   const { type, hands } = climb;
   // Combos and buddy climbs have two colours.
