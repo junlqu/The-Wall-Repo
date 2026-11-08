@@ -143,6 +143,13 @@ export async function updateUser(userID: string, edit: UserEdit): Promise<UserDe
   })) as UserDetails;
 }
 
+// Deletes their account as they could from Settings - wiped, not removed, so
+// their comments and sends stay without their name. Returns them as they are
+// now. See deleteUser in api/src/functions/users.ts.
+export async function deleteUser(userID: string): Promise<UserDetails> {
+  return (await adminRequest(`/users/${encodeURIComponent(userID)}`, { method: "DELETE" })) as UserDetails;
+}
+
 // Why `me` can't edit `user`'s account, or null when they can. Mirrors
 // editRefusal in api/src/functions/users.ts, which makes the same checks.
 export function editLockedReason(me: SessionUser, user: UserDetails): string | null {

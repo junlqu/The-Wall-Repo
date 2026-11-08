@@ -1,4 +1,5 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from "@azure/functions";
+import { eraseAccount } from "../accountDeletion";
 import { MAX_USERNAME_LENGTH, readAccountDetails } from "../accountFields";
 import { corsHeaders, readCurrentUser, rejectUnlessAdmin } from "../authUtils";
 import { getStarterAvatar } from "../avatarUtils";
@@ -363,13 +364,16 @@ async function toUserDetails(user: User) {
   };
 }
 
-// Why `actor` can't edit, ban or time out `user`, or null when they can. As
-// with levels, only people below your own level - your own account is
-// changed from Settings. Mirrors editLockedReason in website/src/lib/users.ts.
-function refusal(actor: User, user: User, action: "edit" | "ban" | "timeout"): string | null {
+// Why `actor` can't edit, ban, time out or delete `user`, or null when they
+// can. As with levels, only people below your own level - your own account
+// is changed, or deleted, from Settings. Mirrors editLockedReason in
+// website/src/lib/users.ts.
+function refusal(actor: User, user: User, action: "edit" | "ban" | "timeout" | "delete"): string | null {
   const doing = action === "timeout" ? "time out" : action;
   if (user.userID === actor.userID) {
-    return action === "edit" ? "Change your own account from Settings." : `You can't ${doing} yourself.`;
+    if (action === "edit") return "Change your own account from Settings.";
+    if (action === "delete") return "Delete your own account from Settings.";
+    return `You can't ${doing} yourself.`;
   }
   if ((user.level ?? USER_LEVEL.member) >= actor.level) {
     return `You can only ${doing} people below your own level.`;
@@ -482,6 +486,35 @@ export async function updateUser(request: HttpRequest, context: InvocationContex
     }
     context.error("Failed to update a user", error);
     return { status: 500, headers, jsonBody: { error: "Failed to save their account." } };
+  }
+}
+
+// DELETE /users/{userID} - deletes someone's account for them, as they could
+// from Settings - see eraseAccount. Their comments and sends stay, no longer
+// naming them, and any session they have ends. See refusal for who can be
+// deleted. Returns them as they are now.
+export async function deleteUser(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
+  const headers = corsHeaders(request);
+
+  try {
+    const rejection = await rejectUnlessAdmin(request, headers, FORBIDDEN);
+    if (rejection) return rejection;
+    const actor = (await readCurrentUser(request))!;
+
+    const { userID } = request.params;
+    const { resource: user } = await getContainer(USER_CONTAINER).item(userID, userID).read<User>();
+    if (!user) return { status: 404, headers, jsonBody: { error: NOT_FOUND } };
+    const refused = refusal(actor, user, "delete");
+    if (refused) return { status: 403, headers, jsonBody: { error: refused } };
+
+    const deleted = await eraseAccount(user, actor.userID);
+    return { status: 200, headers, jsonBody: await toUserDetails(deleted) };
+  } catch (error) {
+    if ((error as { code?: number }).code === 412) {
+      return { status: 409, headers, jsonBody: { error: "Their account changed while deleting - refresh and try again." } };
+    }
+    context.error("Failed to delete a user", error);
+    return { status: 500, headers, jsonBody: { error: "Failed to delete their account." } };
   }
 }
 
@@ -611,13 +644,14 @@ app.http("userLevel", {
 // After users/permissions and users/stats in precedence - the host matches
 // literal segments before {userID}.
 app.http("userItem", {
-  methods: ["GET", "PUT", "OPTIONS"],
+  methods: ["GET", "PUT", "DELETE", "OPTIONS"],
   authLevel: "anonymous",
   route: "users/{userID}",
   handler: async (request, context) => {
     if (request.method === "OPTIONS") {
       return { status: 204, headers: corsHeaders(request) };
     }
+    if (request.method === "DELETE") return deleteUser(request, context);
     return request.method === "PUT" ? updateUser(request, context) : getUser(request, context);
   },
 });

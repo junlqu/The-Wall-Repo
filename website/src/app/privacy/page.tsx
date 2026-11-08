@@ -84,7 +84,7 @@ const COOKIES: [string, string, string, string][] = [
 ];
 
 const RETENTION: [string, string][] = [
-  ["Account information and profile picture", "Until you delete your account."],
+  ["Account information and profile picture", "Until your account is deleted, by you or by staff."],
   [
     "Follows",
     "The list of members you follow is deleted when you delete your account, so you no longer count as anyone's follower. Climbs you saved stay linked to your de-identified record.",
@@ -95,7 +95,7 @@ const RETENTION: [string, string][] = [
   ],
   [
     "De-identified account record",
-    "After deletion, a record containing your internal identifier, settings, activity totals and any ban and timeout history is retained so that existing contributions remain consistent. It contains no name, username, email, phone or usable password.",
+    "After deletion, a record containing your internal identifier, settings, activity totals, any ban and timeout history and, if staff deleted the account, which staff member did is retained so that existing contributions remain consistent. It contains no name, username, email, phone or usable password.",
   ],
   ["Bans and timeouts", "Kept with your account record, including after they end and after account deletion."],
   ["Session cookie", "30 days from your last login, or until you log out."],
@@ -305,8 +305,10 @@ export default function PrivacyPage() {
               default, ban your account for a set time or permanently, and time it out for a set time, giving a reason
               each time. While a ban is in effect you are logged out and cannot log in; the login page shows when it
               ends and the reason given. While a timeout is in effect you stay logged in but cannot post or edit
-              comments, like updates or add combos; the Site shows when it ends and the reason given. No one, including
-              staff, can view your password.
+              comments, like updates or add combos; the Site shows when it ends and the reason given. Staff can also
+              delete your account, with the same effect as deleting it yourself (see Section {numberOf("retention")});
+              the record of who deleted it is kept with the de-identified account. No one, including staff, can view
+              your password.
             </p>
             <Subheading>4.3 Service providers</Subheading>
             <p>

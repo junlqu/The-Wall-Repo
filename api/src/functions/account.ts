@@ -1,5 +1,5 @@
-import { randomBytes } from "node:crypto";
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from "@azure/functions";
+import { eraseAccount } from "../accountDeletion";
 import { isValidPassword, PASSWORD_RULES_MESSAGE, readAccountDetails } from "../accountFields";
 import {
   buildClearedSessionCookie,
@@ -12,9 +12,7 @@ import {
   toSessionUser,
   verifyPassword,
 } from "../authUtils";
-import { getStarterAvatar } from "../avatarUtils";
 import { getContainer } from "../cosmosClient";
-import { Avatar, AVATAR_CONTAINER } from "../models/Avatar";
 import { Comment, COMMENT_CONTAINER } from "../models/Comment";
 import { cookiesOf, settingsPatch, User, USER_CONTAINER } from "../models/User";
 import { privacyOf, readPrivacy } from "../profilePrivacy";
@@ -242,12 +240,7 @@ export async function exportComments(request: HttpRequest, context: InvocationCo
 }
 
 // DELETE /account - needs their password. The account isn't removed but
-// emptied: everything that says who they were is wiped, so their comments and
-// sends stay put without naming them. Their username and name become pieces
-// of their userID, email and phone go, their password is swapped for one
-// nobody knows and their picture goes back to their starter. Their settings
-// stay, for recovering the account by hand. deletedAt then stops anyone
-// logging in as them or opening their profile.
+// emptied - see eraseAccount in accountDeletion.ts.
 export async function deleteAccount(request: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> {
   const headers = corsHeaders(request);
 
@@ -263,31 +256,9 @@ export async function deleteAccount(request: HttpRequest, context: InvocationCon
       return { status: 403, headers, jsonBody: { error: "Your password is incorrect." } };
     }
 
-    // Their picture goes first: if the rest then fails they can try again,
-    // whereas a deleted account can't log back in to finish the job.
-    const now = new Date().toISOString();
-    const avatar: Avatar = { id: user.userID, userID: user.userID, avatar: getStarterAvatar(user.userID), updatedAt: now };
-    await getContainer(AVATAR_CONTAINER).items.upsert(avatar);
-
-    // 32 hex digits once the dashes are out.
-    const digits = user.userID.replace(/-/g, "");
-    const deleted: User = {
-      ...user,
-      username: digits.slice(0, 16),
-      fname: digits.slice(16, 20),
-      lname: digits.slice(20, 24),
-      // Left off the document, as a blank email or phone always is.
-      email: undefined,
-      phone: undefined,
-      // So they stop counting as anyone's follower.
-      following: undefined,
-      passwordHash: await hashPassword(randomBytes(32).toString("hex")),
-      avatarUpdatedAt: now,
-      deletedAt: now,
-    };
     // Only if nothing else changed the account since it was read, as in
     // updateAccount.
-    await item.replace<User>(deleted, { accessCondition: { type: "IfMatch", condition: user._etag } });
+    await eraseAccount(user);
 
     return { status: 204, headers, cookies: [buildClearedSessionCookie()] };
   } catch (error) {

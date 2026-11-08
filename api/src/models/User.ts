@@ -104,6 +104,8 @@ export type User = {
   // still have someone to point at, but nobody can log in as them or open
   // their profile.
   deletedAt?: string;
+  // The userID of the admin who deleted the account, when it wasn't them.
+  deletedBy?: string;
   // Every ban they've had, oldest first - see Ban. Missing until their first.
   ban?: Ban[];
   // Every timeout they've had, oldest first - see Timeout. Missing until

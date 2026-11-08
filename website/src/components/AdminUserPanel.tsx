@@ -2,13 +2,21 @@
 
 import { type FormEvent, type ReactNode, useEffect, useId, useState } from "react";
 import { DANGER_BUTTON_CLASS, Dialog, SidePanel } from "@/components/ClimbActions";
-import { CANCEL_BUTTON_CLASS, ErrorMessage, FIELD_CLASS, LABEL_CLASS, PRIMARY_BUTTON_CLASS } from "@/components/ClimbForm";
+import {
+  CANCEL_BUTTON_CLASS,
+  ErrorMessage,
+  FIELD_CLASS,
+  LABEL_CLASS,
+  PRIMARY_BUTTON_CLASS,
+  useRequest,
+} from "@/components/ClimbForm";
 import DurationWheel, { type Duration, durationMinutes } from "@/components/DurationWheel";
 import ProfileLink from "@/components/ProfileLink";
 import { MAX_EMAIL_LENGTH, MAX_NAME_LENGTH, MAX_PHONE_DIGITS } from "@/lib/account";
 import { avatarUrl } from "@/lib/avatar";
 import { useSessionUser } from "@/lib/session";
 import {
+  deleteUser,
   editLockedReason,
   fetchUser,
   levelLabel,
@@ -246,20 +254,42 @@ function ModerationForm({
   );
 }
 
-// TODO: deleting lands with the moderation API - until then, confirming
-// does nothing.
-function DeleteUserDialog({ username, onClose }: { username: string; onClose: () => void }) {
+// Asks first, saying what deleting does - the same as deleting from Settings.
+// `onDeleted` gets them as they are afterwards.
+function DeleteUserDialog({
+  user,
+  onClose,
+  onDeleted,
+}: {
+  user: UserDetails;
+  onClose: () => void;
+  onDeleted: (user: UserDetails) => void;
+}) {
+  const { busy, error, run } = useRequest();
+
   return (
-    <Dialog title={`Delete @${username}?`} onClose={onClose}>
-      <p className="text-sm text-neutral-600">
-        Their account will be deleted and they won&apos;t be able to log in. This can&apos;t be undone.
-      </p>
+    <Dialog title={`Delete @${user.username}?`} busy={busy} onClose={onClose}>
+      <div className="flex flex-col gap-3 text-sm text-neutral-600">
+        <p className="font-semibold text-neutral-800">This can&apos;t be undone. Deleting their account:</p>
+        <ul className="flex list-disc flex-col gap-1 pl-5">
+          <li>Removes their name, username, email, phone and picture.</li>
+          <li>Takes down their profile, so nobody can view it.</li>
+          <li>Logs them out - they won&apos;t be able to log back in.</li>
+          <li>Leaves their comments and sends on the climbs, without their name on them.</li>
+        </ul>
+      </div>
+      <ErrorMessage message={error} />
       <div className="flex flex-wrap justify-end gap-2">
-        <button type="button" onClick={onClose} className={CANCEL_BUTTON_CLASS}>
+        <button type="button" disabled={busy} onClick={onClose} className={CANCEL_BUTTON_CLASS}>
           Cancel
         </button>
-        <button type="button" onClick={() => {}} className={DANGER_BUTTON_CLASS}>
-          Delete
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => run(async () => onDeleted(await deleteUser(user.userID)))}
+          className={DANGER_BUTTON_CLASS}
+        >
+          {busy ? "Deleting…" : "Delete account"}
         </button>
       </div>
     </Dialog>
@@ -527,7 +557,17 @@ export default function AdminUserPanel({
         </div>
       )}
 
-      {deleting && user && <DeleteUserDialog username={user.username} onClose={() => setDeleting(false)} />}
+      {deleting && user && (
+        <DeleteUserDialog
+          user={user}
+          onClose={() => setDeleting(false)}
+          onDeleted={(deleted) => {
+            setDeleting(false);
+            setUser(deleted);
+            onSaved(deleted);
+          }}
+        />
+      )}
     </SidePanel>
   );
 }
