@@ -4,7 +4,9 @@ import { readClimbs } from "../climbLinks";
 import { applyCommentChange } from "../climbStats";
 import { isNotFound, readPeople, toPublicComment } from "../commentFields";
 import { getContainer } from "../cosmosClient";
+import { groupByComment, inList, readOpenFlags, resolveFlags, toCommentFlag } from "../flagFields";
 import { Comment, COMMENT_CONTAINER } from "../models/Comment";
+import { Flag } from "../models/Flag";
 import { ROUTE_CONTAINER, ROUTE_LINES } from "../models/Route";
 import { User, USER_CONTAINER, USER_LEVEL } from "../models/User";
 
@@ -17,10 +19,22 @@ const MAX_COMMENT_LENGTH = 1000;
 
 type StoredComment = Comment & { _etag: string };
 
-// A list of IDs as a Cosmos IN list. They come from the database, not the
-// request, and go in as JSON strings, which are Cosmos string literals.
-function inList(ids: string[]) {
-  return `(${ids.map((id) => JSON.stringify(id)).join(", ")})`;
+// The comments as the moderation pages show them: who wrote each and its
+// climb (null if that's gone), with its open flags from `flags`, newest
+// first. `userID` is there so the author's account can be opened even when
+// it's been deleted.
+async function toModerationItems(comments: Comment[], flags: Flag[]) {
+  const grouped = groupByComment(flags);
+  const [people, climbs] = await Promise.all([
+    readPeople([...comments.map((comment) => comment.userID), ...flags.map((flag) => flag.flaggerID)]),
+    readClimbs([...new Set(comments.map((comment) => comment.routeID))]),
+  ]);
+  return comments.map((comment) => ({
+    userID: comment.userID,
+    comment: toPublicComment(comment, people),
+    climb: climbs.get(comment.routeID) ?? null,
+    flags: (grouped.get(comment.commentID) ?? []).map((flag) => toCommentFlag(flag, people)),
+  }));
 }
 
 // The userIDs whose username contains `search`, ignoring case.
@@ -59,11 +73,12 @@ function readText(request: HttpRequest, name: string) {
   return (request.query.get(name) ?? "").trim().slice(0, MAX_SEARCH_LENGTH);
 }
 
-// GET /moderation/comments?user=&line=&colour=&grade=&page=&pageSize= - one
-// page of every comment with text, newest first, each with who wrote it and
-// its climb (null if that's gone), and how many there are in all. `user`
-// keeps those by people whose username contains it; `line`, `colour` and
-// `grade` keep those on climbs that match. Any left out don't filter.
+// GET /moderation/comments?user=&line=&colour=&grade=&flagged=&page=&pageSize=
+// - one page of every comment with text, newest first, each with who wrote
+// it, its climb (null if that's gone) and its open flags, and how many there
+// are in all. `user` keeps those by people whose username contains it;
+// `line`, `colour` and `grade` keep those on climbs that match; `flagged=1`
+// keeps those with open flags. Any left out don't filter.
 export async function listModerationComments(
   request: HttpRequest,
   context: InvocationContext,
@@ -98,6 +113,14 @@ export async function listModerationComments(
       if (routeIDs.length === 0) return empty;
       conditions.push(`c.routeID IN ${inList(routeIDs)}`);
     }
+    // Read up front when filtering by them, as they say which comments to list.
+    const flagged = request.query.get("flagged") === "1";
+    let openFlags: Flag[] | null = null;
+    if (flagged) {
+      openFlags = await readOpenFlags(null);
+      if (openFlags.length === 0) return empty;
+      conditions.push(`c.commentID IN ${inList([...new Set(openFlags.map((flag) => flag.commentID))])}`);
+    }
     const where = `WHERE ${conditions.join(" AND ")}`;
 
     const container = getContainer(COMMENT_CONTAINER);
@@ -124,24 +147,11 @@ export async function listModerationComments(
       throw error;
     }
 
-    const [people, climbs] = await Promise.all([
-      readPeople(comments.map((comment) => comment.userID)),
-      readClimbs([...new Set(comments.map((comment) => comment.routeID))]),
-    ]);
+    const flags = openFlags ?? (await readOpenFlags(comments.map((comment) => comment.commentID)));
     return {
       status: 200,
       headers,
-      jsonBody: {
-        total,
-        page,
-        pageSize,
-        comments: comments.map((comment) => ({
-          // So the author's account can be opened even when it's been deleted.
-          userID: comment.userID,
-          comment: toPublicComment(comment, people),
-          climb: climbs.get(comment.routeID) ?? null,
-        })),
-      },
+      jsonBody: { total, page, pageSize, comments: await toModerationItems(comments, flags) },
     };
   } catch (error) {
     context.error("Failed to list comments for moderation", error);
@@ -213,6 +223,7 @@ export async function updateModerationComment(
     // Only the text changed, so this only moves the climb's comment count
     // when it's been cleared.
     await applyCommentChange(existing.routeID, existing.userID, existing, updated, context);
+    await resolveFlags(existing.commentID, "edited", actor.userID, context);
     const people = await readPeople([existing.userID]);
     return { status: 200, headers, jsonBody: { comment: toPublicComment(updated, people) } };
   } catch (error) {
@@ -257,12 +268,92 @@ export async function deleteModerationComment(
     }
 
     await applyCommentChange(existing.routeID, existing.userID, existing, null, context);
+    await resolveFlags(existing.commentID, "deleted", actor.userID, context);
     return { status: 204, headers };
   } catch (error) {
     context.error("Failed to delete a comment for moderation", error);
     return { status: 500, headers, jsonBody: { error: "Failed to delete the comment." } };
   }
 }
+
+// POST /moderation/comments/{commentID}/dismiss - closes the comment's open
+// flags without changing it, for reports that don't need anything done.
+// Returns how many it closed.
+export async function dismissCommentFlags(
+  request: HttpRequest,
+  context: InvocationContext,
+): Promise<HttpResponseInit> {
+  const headers = corsHeaders(request);
+
+  try {
+    const rejection = await rejectUnlessAdmin(request, headers, FORBIDDEN);
+    if (rejection) return rejection;
+    const actor = (await readCurrentUser(request))!;
+
+    const found = await readModeratable(request.params.commentID, actor);
+    if ("error" in found) return { status: found.status, headers, jsonBody: { error: found.error } };
+
+    const dismissed = await resolveFlags(found.comment.commentID, "dismissed", actor.userID, context);
+    return { status: 200, headers, jsonBody: { dismissed } };
+  } catch (error) {
+    context.error("Failed to dismiss a comment's flags", error);
+    return { status: 500, headers, jsonBody: { error: "Failed to dismiss the flags." } };
+  }
+}
+
+// GET /moderation/flags - every comment with open flags, the most recently
+// flagged first, each with its flags as on GET /moderation/comments. Flags on
+// a comment that's gone are left out.
+export async function listFlaggedComments(
+  request: HttpRequest,
+  context: InvocationContext,
+): Promise<HttpResponseInit> {
+  const headers = corsHeaders(request);
+
+  try {
+    const rejection = await rejectUnlessAdmin(request, headers, FORBIDDEN);
+    if (rejection) return rejection;
+
+    const flags = await readOpenFlags(null);
+    // Newest flag first, so the order the groups come in is the order to show.
+    const commentIDs = [...groupByComment(flags).keys()];
+    if (commentIDs.length === 0) return { status: 200, headers, jsonBody: { comments: [] } };
+
+    const { resources } = await getContainer(COMMENT_CONTAINER)
+      .items.query<Comment>(`SELECT * FROM c WHERE c.commentID IN ${inList(commentIDs)}`)
+      .fetchAll();
+    const byID = new Map(resources.map((comment) => [comment.commentID, comment]));
+    const comments = commentIDs.flatMap((commentID) => byID.get(commentID) ?? []);
+    return { status: 200, headers, jsonBody: { comments: await toModerationItems(comments, flags) } };
+  } catch (error) {
+    context.error("Failed to list flagged comments", error);
+    return { status: 500, headers, jsonBody: { error: "Failed to load the flagged comments." } };
+  }
+}
+
+app.http("moderationFlags", {
+  methods: ["GET", "OPTIONS"],
+  authLevel: "anonymous",
+  route: "moderation/flags",
+  handler: async (request, context) => {
+    if (request.method === "OPTIONS") {
+      return { status: 204, headers: corsHeaders(request) };
+    }
+    return listFlaggedComments(request, context);
+  },
+});
+
+app.http("moderationCommentDismiss", {
+  methods: ["POST", "OPTIONS"],
+  authLevel: "anonymous",
+  route: "moderation/comments/{commentID}/dismiss",
+  handler: async (request, context) => {
+    if (request.method === "OPTIONS") {
+      return { status: 204, headers: corsHeaders(request) };
+    }
+    return dismissCommentFlags(request, context);
+  },
+});
 
 app.http("moderationComments", {
   methods: ["GET", "OPTIONS"],

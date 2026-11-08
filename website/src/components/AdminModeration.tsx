@@ -2,10 +2,13 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { ModerationCommentCard } from "@/components/AdminComments";
+import AdminUserPanel from "@/components/AdminUserPanel";
 import { type ActivityScale, bucketsFor, dayOf, describeScale } from "@/components/AdminUsers";
 import { byGrade, ChevronIcon, GradeTag, Placeholder } from "@/components/ClimbCards";
 import ClimbColour from "@/components/ClimbColour";
 import { FIELD_CLASS } from "@/components/ClimbForm";
+import { FlagIcon } from "@/components/FlagComment";
 import GroupedCountChart from "@/components/GroupedCountChart";
 import { SectionRule } from "@/components/Masthead";
 import SlidingTabs from "@/components/SlidingTabs";
@@ -15,10 +18,12 @@ import {
   type CommentActivity,
   compareDisagreement,
   fetchCommentActivity,
+  fetchFlaggedComments,
   fetchGradeReport,
   gradingReportHref,
   type GradeVotes,
   MIN_GRADE_VOTES,
+  type ModerationComment,
   needsGradeReview,
   tallyGradeVotes,
 } from "@/lib/moderation";
@@ -101,14 +106,6 @@ export function GradeVoteSquares({ votes }: { votes: GradeVotes }) {
         </span>
       ))}
     </span>
-  );
-}
-
-export function FlagIcon({ className = "h-3.5 w-3.5" }: { className?: string }) {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 20 20" fill="currentColor" className={`shrink-0 ${className}`}>
-      <path d="M3.5 2.75a.75.75 0 0 0-1.5 0v14.5a.75.75 0 0 0 1.5 0v-4.39l1.66-.35a6.45 6.45 0 0 1 4.27.57 7.95 7.95 0 0 0 5.97.53l2.07-.64a.75.75 0 0 0 .53-.72v-8.5a.75.75 0 0 0-.9-.73l-2.38.5a7.25 7.25 0 0 1-4.19-.36l-.5-.2a8.75 8.75 0 0 0-5.05-.44l-1.48.31V2.75z" />
-    </svg>
   );
 }
 
@@ -446,24 +443,86 @@ function ActivityChart() {
   );
 }
 
-// Comments people have flagged as inappropriate. Only the frame for now -
-// the list is filled from the flags container in a later change.
-function FlaggedComments() {
+// How many flagged comments the dashboard shows before pointing to the rest.
+const FLAGGED_SHOWN = 5;
+
+// Comments people have flagged, the most recently flagged first, each with
+// its flags and the same menu as on the comments page. Editing, deleting or
+// dismissing one closes its flags, so it leaves the list.
+function FlaggedComments({ href }: { href: string }) {
+  // undefined while loading, or the error.
+  const [flagged, setFlagged] = useState<ModerationComment[] | { error: string }>();
+  // Whose account is open in the side panel.
+  const [viewing, setViewing] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchFlaggedComments()
+      .then(setFlagged)
+      .catch((error: Error) => setFlagged({ error: error.message }));
+  }, []);
+
+  const list = Array.isArray(flagged) ? flagged : null;
+  const shown = list?.slice(0, FLAGGED_SHOWN) ?? [];
+  const settle = (commentID: string) =>
+    setFlagged((current) =>
+      Array.isArray(current) ? current.filter((item) => item.comment.commentID !== commentID) : current,
+    );
+
   return (
     <section aria-labelledby="flagged-comments-heading" className={WIDGET_CLASS}>
-      <div>
-        <h3 id="flagged-comments-heading" className={WIDGET_TITLE_CLASS}>
-          Flagged comments
-        </h3>
-        <p className="text-xs text-neutral-500">Comments people have flagged as inappropriate, newest first</p>
+      <div className="flex items-baseline justify-between gap-2">
+        <div>
+          <h3 id="flagged-comments-heading" className={WIDGET_TITLE_CLASS}>
+            Flagged comments
+          </h3>
+          <p className="text-xs text-neutral-500">Comments people have flagged, most recently flagged first</p>
+        </div>
+        {list && <span className="shrink-0 text-xs text-neutral-500">{list.length} to review</span>}
       </div>
-      <div className="mt-3 flex min-h-32 flex-col items-center justify-center rounded-lg border border-dashed border-neutral-300 bg-white p-6 text-center">
-        <span className="text-neutral-300">
-          <FlagIcon className="h-6 w-6" />
-        </span>
-        <p className="mt-2 text-sm font-semibold text-neutral-700">No flagged comments</p>
-        <p className="mt-1 text-xs text-neutral-500">Comments flagged by the community will show here to review.</p>
+
+      <div className="mt-3">
+        {flagged === undefined ? (
+          <p className="py-6 text-center text-sm text-neutral-500">Loading…</p>
+        ) : !list ? (
+          <p className="py-6 text-center text-sm text-neutral-500">Couldn&apos;t load the flagged comments</p>
+        ) : list.length === 0 ? (
+          <div className="flex min-h-32 flex-col items-center justify-center rounded-lg border border-dashed border-neutral-300 bg-white p-6 text-center">
+            <span className="text-neutral-300">
+              <FlagIcon className="h-6 w-6" />
+            </span>
+            <p className="mt-2 text-sm font-semibold text-neutral-700">No flagged comments</p>
+            <p className="mt-1 text-xs text-neutral-500">Comments flagged by the community will show here to review.</p>
+          </div>
+        ) : (
+          <ul className="flex flex-col gap-3">
+            {shown.map((item) => (
+              <ModerationCommentCard
+                key={item.comment.commentID}
+                item={item}
+                onOpenUser={() => setViewing(item.userID)}
+                onSaved={() => settle(item.comment.commentID)}
+                onDeleted={() => settle(item.comment.commentID)}
+                onDismissed={() => settle(item.comment.commentID)}
+              />
+            ))}
+          </ul>
+        )}
       </div>
+
+      {list && list.length > 0 && (
+        <Link
+          href={href}
+          className="group mt-3 inline-flex items-center gap-1 self-end text-xs font-semibold text-primary hover:text-secondary"
+        >
+          {list.length > shown.length ? `See all ${list.length} flagged comments` : "See flagged comments"}
+          <span aria-hidden="true" className="transition-transform group-hover:translate-x-0.5">
+            →
+          </span>
+        </Link>
+      )}
+
+      {/* An account edit only changes the name on their cards, which the next load picks up. */}
+      {viewing && <AdminUserPanel userID={viewing} onClose={() => setViewing(null)} onSaved={() => {}} />}
     </section>
   );
 }
@@ -506,7 +565,7 @@ export default function AdminModeration({ section }: { section: AdminSection }) 
         </h2>
         <GradingUpdates reports={reports} href={subpageHref(section, "grading-reports")} />
         <ActivityChart />
-        <FlaggedComments />
+        <FlaggedComments href={`${subpageHref(section, "comments")}?flagged=1`} />
       </section>
     </>
   );

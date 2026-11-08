@@ -7,6 +7,7 @@ import { LikeButton, useToggleLike } from "@/components/AnnouncementLike";
 import { ClimbBox, CommentTags, RecentSend } from "@/components/ClimbActivity";
 import { Person, Placeholder } from "@/components/ClimbCards";
 import CommentCard from "@/components/CommentCard";
+import FlagCommentButton from "@/components/FlagComment";
 import ReadMore from "@/components/ReadMore";
 import SlidingTabs from "@/components/SlidingTabs";
 import { type Announcement, formatShortDate } from "@/lib/announcements";
@@ -112,7 +113,10 @@ function UpdateItem({
     <UpdateCard update={update}>
       <div className="flex items-center justify-between gap-4 text-xs">
         <Person person={update.comment.author} />
-        <PostedAt at={update.at} />
+        <span className="flex shrink-0 items-center gap-2">
+          <PostedAt at={update.at} />
+          <FlagCommentButton comment={update.comment} climb={update.climb} />
+        </span>
       </div>
       {update.comment.comment && (
         <ReadMore fade="from-white">

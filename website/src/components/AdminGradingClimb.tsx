@@ -3,10 +3,11 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { type ReactNode, useEffect, useState } from "react";
-import { FlagIcon, ReviewBadge } from "@/components/AdminModeration";
+import { ReviewBadge } from "@/components/AdminModeration";
 import { EditDialog } from "@/components/ClimbActions";
 import { CommentItem, GradeArrow, Placeholder } from "@/components/ClimbCards";
 import { SplitDot, Swatch } from "@/components/ClimbColour";
+import { FlagIcon } from "@/components/FlagComment";
 import { adminSectionHref, adminSubpageHref, getAdminSection } from "@/lib/adminSections";
 import {
   type Climb,
@@ -335,7 +336,7 @@ function GradedComments({
         ) : (
           <ul className="flex flex-col gap-3 text-xs text-neutral-600">
             {comments.map((comment) => (
-              <CommentItem key={comment.commentID} comment={comment} climb={climb} />
+              <CommentItem key={comment.commentID} comment={comment} climb={climb} flaggable={false} />
             ))}
           </ul>
         )}

@@ -10,6 +10,7 @@ import "./functions/authRegister";
 import "./functions/avatars";
 import "./functions/dashboard";
 import "./functions/details";
+import "./functions/flags";
 import "./functions/follows";
 import "./functions/health";
 import "./functions/moderation";

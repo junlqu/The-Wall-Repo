@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { type ReactNode, useEffect, useId, useState } from "react";
 import ClimbColour, { Swatch } from "@/components/ClimbColour";
+import FlagCommentButton from "@/components/FlagComment";
 import { Kicker } from "@/components/Masthead";
 import { formatShortDate } from "@/lib/announcements";
 import { avatarUrl } from "@/lib/avatar";
@@ -417,7 +418,17 @@ function ProposedGrade({ grade, climb }: { grade: string; climb: Climb }) {
   );
 }
 
-export function CommentItem({ comment, climb }: { comment: ClimbComment; climb: Climb }) {
+// `flaggable` puts a flag beside the date for reporting it - left off where
+// staff are already looking at it.
+export function CommentItem({
+  comment,
+  climb,
+  flaggable = true,
+}: {
+  comment: ClimbComment;
+  climb: Climb;
+  flaggable?: boolean;
+}) {
   const userID = useSessionUser()?.userID;
   const mine = Boolean(userID && comment.author?.userID === userID);
   const sentAt = commentSentAt(comment);
@@ -432,14 +443,17 @@ export function CommentItem({ comment, climb }: { comment: ClimbComment; climb: 
           <Person person={comment.author} />
           {mine && <span className="rounded bg-sky-100 px-1.5 py-0.5 font-semibold text-sky-700">You</span>}
         </span>
-        <time
-          dateTime={comment.commentedAt}
-          title={comment.editedAt ? `Edited ${formatShortDate(new Date(comment.editedAt))}` : undefined}
-          className="text-neutral-500"
-        >
-          {formatShortDate(new Date(comment.commentedAt))}
-          {comment.editedAt && " (edited)"}
-        </time>
+        <span className="flex items-center gap-2">
+          <time
+            dateTime={comment.commentedAt}
+            title={comment.editedAt ? `Edited ${formatShortDate(new Date(comment.editedAt))}` : undefined}
+            className="text-neutral-500"
+          >
+            {formatShortDate(new Date(comment.commentedAt))}
+            {comment.editedAt && " (edited)"}
+          </time>
+          {flaggable && <FlagCommentButton comment={comment} climb={climb} />}
+        </span>
       </div>
       {comment.comment && <p className="whitespace-pre-line break-words text-sm text-neutral-700">{comment.comment}</p>}
       {(sentAt || comment.grade || comment.rating !== undefined) && (

@@ -1,7 +1,8 @@
 import { adminRequest } from "@/lib/api";
-import { type ApiRoute, type Climb, type ClimbComment, type ClimbType, toClimb } from "@/lib/climbs";
+import { type ApiRoute, type Climb, type ClimbComment, type ClimbPerson, type ClimbType, toClimb } from "@/lib/climbs";
 import { compareGrades, difficultyScale, gradeIndex } from "@/lib/grades";
 import { type ApiComment, type DashboardComment, toDashboardComment } from "@/lib/dashboard";
+import type { FlagReason } from "@/lib/flags";
 
 // How many comments proposed `grade` for climb `routeID`. Mirrors GradeTally
 // in api/src/functions/moderation.ts.
@@ -119,13 +120,39 @@ export const MODERATION_PAGE_SIZES = [10, 25, 50] as const;
 export type ModerationPageSize = (typeof MODERATION_PAGE_SIZES)[number];
 
 // What the comments can be narrowed to: people whose username contains
-// `user`, and climbs on `line`, in `colour` and at `grade`. Blank (or null)
-// ones don't narrow anything.
-export type CommentFilters = { user: string; line: number | null; colour: string; grade: string };
+// `user`, climbs on `line`, in `colour` and at `grade`, and - when `flagged`
+// - only those with open flags. Blank (or null, or false) ones don't narrow
+// anything.
+export type CommentFilters = {
+  user: string;
+  line: number | null;
+  colour: string;
+  grade: string;
+  flagged: boolean;
+};
 
-// A comment with text, its climb, and its author's userID - there even once
-// their account is deleted, so it can still be opened.
-export type ModerationComment = DashboardComment & { userID: string };
+// Someone reporting a comment, not yet dealt with. Mirrors toCommentFlag in
+// api/src/flagFields.ts.
+export type CommentFlag = {
+  flagID: string;
+  reason: FlagReason;
+  // "" when they didn't write any.
+  details: string;
+  flaggedAt: string;
+  // Null once their account is gone.
+  flagger: ClimbPerson | null;
+};
+
+// A comment with text, its climb, its open flags (newest first), and its
+// author's userID - there even once their account is deleted, so it can
+// still be opened.
+export type ModerationComment = DashboardComment & { userID: string; flags: CommentFlag[] };
+
+type ApiModerationComment = ApiComment & { userID: string; flags: CommentFlag[] };
+
+function toModerationComment(item: ApiModerationComment): ModerationComment {
+  return { ...toDashboardComment(item), userID: item.userID, flags: item.flags };
+}
 
 // One page of every comment with text that matches `filters`, newest first,
 // and how many match in all.
@@ -139,12 +166,13 @@ export async function fetchModerationComments(
   if (filters.line !== null) query.set("line", String(filters.line));
   if (filters.colour) query.set("colour", filters.colour);
   if (filters.grade) query.set("grade", filters.grade);
+  if (filters.flagged) query.set("flagged", "1");
   const body = (await adminRequest(`/moderation/comments?${query}`, {})) as {
-    comments: (ApiComment & { userID: string })[];
+    comments: ApiModerationComment[];
     total: number;
   };
   return {
-    comments: body.comments.map((item) => ({ ...toDashboardComment(item), userID: item.userID })),
+    comments: body.comments.map(toModerationComment),
     total: body.total,
   };
 }
@@ -165,4 +193,15 @@ export async function editModerationComment(commentID: string, text: string): Pr
 // Deletes a comment, with the send, grade and rating that came with it.
 export async function deleteModerationComment(commentID: string): Promise<void> {
   await adminRequest(moderationCommentPath(commentID), { method: "DELETE" });
+}
+
+// Closes a comment's open flags without changing it.
+export async function dismissCommentFlags(commentID: string): Promise<void> {
+  await adminRequest(`${moderationCommentPath(commentID)}/dismiss`, { method: "POST" });
+}
+
+// Every comment with open flags, the most recently flagged first.
+export async function fetchFlaggedComments(): Promise<ModerationComment[]> {
+  const body = (await adminRequest("/moderation/flags", {})) as { comments: ApiModerationComment[] };
+  return body.comments.map(toModerationComment);
 }
