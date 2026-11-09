@@ -2,22 +2,25 @@
 
 import type { StaticImageData } from "next/image";
 import Carousel from "@/components/Carousel";
+import landing1 from "@/static/landingPhotos/landing1.jpg";
+import landing2 from "@/static/landingPhotos/landing2.jpg";
+import landing3 from "@/static/landingPhotos/landing3.jpg";
+import landing4 from "@/static/landingPhotos/landing4.jpg";
 
 type CommunityPhoto = {
   id: string;
   // Describes the photo for screen readers - it isn't shown on the slide.
   alt: string;
   // Until a photo is added, the slide shows a placeholder.
-  // Drop photos in src/static/community/ and import them here.
+  // Drop photos in src/static/landingPhotos/ and import them here.
   image?: StaticImageData;
 };
 
-// Placeholder slides - swap in real photos of the community once they're in.
 const COMMUNITY_PHOTOS: CommunityPhoto[] = [
-  { id: "1", alt: "Climbers at a weeknight drop-in" },
-  { id: "2", alt: "A Learn-to-Climb lesson" },
-  { id: "3", alt: "Fresh routes on the wall" },
-  { id: "4", alt: "Climbers cheering on a send" },
+  { id: "1", alt: "Climbers in Halloween costumes posing together on the wall", image: landing1 },
+  { id: "2", alt: "A climber on top rope partway up the tall wall", image: landing2 },
+  { id: "3", alt: "Three climbers striking poses on the wall, one holding up a trophy", image: landing3 },
+  { id: "4", alt: "Two climbers on neighbouring routes stretching out to touch fingertips", image: landing4 },
 ];
 
 const ROTATE_MS = 6000;

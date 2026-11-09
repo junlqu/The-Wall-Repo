@@ -3,11 +3,14 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { DETAIL_COPY, operationsHref, unannouncedEntries } from "@/components/AdminOperations";
+import { byGrade, GradeTag } from "@/components/ClimbCards";
 import ClimbCharts from "@/components/ClimbCharts";
 import TabBar from "@/components/TabBar";
 import { type Announcement, fetchAnnouncements, formatShortDate, localDate, upcomingFriday } from "@/lib/announcements";
 import { type Climb, fetchClimbs, LINES, parseDate, swatchFor } from "@/lib/climbs";
 import { type Details, entryStatus, formatEntryDates, shiftDate, todayKey, useDetails } from "@/lib/details";
+import { NEW_GRADE } from "@/lib/grades";
+import { gradingReportHref } from "@/lib/moderation";
 
 type Line = (typeof LINES)[number];
 
@@ -64,10 +67,17 @@ function detailMessages(details: Details | null | undefined): DashboardMessage[]
   });
 }
 
-// How long a climb can stay up before the dashboard reminds admins to reset it.
-const STALE_AFTER_DAYS: Partial<Record<Climb["type"], number>> = { route: 180, boulder: 120 };
+// How long a climb can stay up before the dashboard reminds admins to reset
+// it: a heads up from the first number of days, urgent from the second.
+const STALE_AFTER_DAYS: Partial<Record<Climb["type"], { warn: number; urgent: number }>> = {
+  route: { warn: 180, urgent: 210 },
+  boulder: { warn: 120, urgent: 150 },
+};
+// How long a climb can stay graded "New": a heads up once it's been up more
+// than the first number of days, urgent past the second.
+const UNGRADED_AFTER_DAYS = { warn: 7, urgent: 14 };
 const SUGGESTED_ROUTE_COUNT = 5;
-const SUGGESTED_BOULDER_COUNT = 3;
+const SUGGESTED_BOULDER_COUNT = 5;
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
 // Widgets sit inside the one Admin Dashboard card, so they're set apart by a
@@ -95,23 +105,58 @@ function longestStanding(climbs: Climb[], count: number) {
     .slice(0, count);
 }
 
-function climbLabel(climb: Climb) {
-  const tape = climb.tape ? ` / ${climb.tape} tape` : "";
-  return `${climb.colour}${tape} ${climb.grade}`;
+// Easiest first, then by line. Boulders have no line, so they go by grade alone.
+function byGradeThenLine(a: Climb, b: Climb) {
+  if (a.grade !== b.grade) return byGrade(a, b);
+  return (a.line ?? LINES.length + 1) - (b.line ?? LINES.length + 1) || byGrade(a, b);
 }
 
-// One reminder per route or boulder that's been up past its limit, oldest first.
+function climbColours(climb: Climb) {
+  const tape = climb.tape ? ` / ${climb.tape} tape` : "";
+  return `${climb.colour}${tape}`;
+}
+
+function climbLabel(climb: Climb) {
+  return `${climbColours(climb)} ${climb.grade}`;
+}
+
+function climbWhere(climb: Climb) {
+  return climb.line === undefined ? "" : ` on line ${climb.line}`;
+}
+
+// One reminder per route or boulder that's been up long enough to reset,
+// oldest first.
 function staleMessages(climbs: Climb[], now: Date): DashboardMessage[] {
   return longestStanding(climbs, climbs.length).flatMap((climb) => {
-    const limit = STALE_AFTER_DAYS[climb.type];
+    const limits = STALE_AFTER_DAYS[climb.type];
     const days = daysUp(climb.setAt, now);
-    if (limit === undefined || days === null || days <= limit) return [];
-    const where = climb.line === undefined ? "" : ` on line ${climb.line}`;
+    if (limits === undefined || days === null || days < limits.warn) return [];
+    const urgent = days >= limits.urgent;
+    const limit = urgent ? limits.urgent : limits.warn;
     return [
       {
         id: climb.id,
-        message: `${climbLabel(climb)}${where} has been up for ${days} days - past the ${limit}-day ${climb.type} limit.`,
-        severity: "medium",
+        message: `${climbLabel(climb)}${climbWhere(climb)} has been up for ${days} days - past the ${limit}-day ${climb.type} ${
+          urgent ? "limit" : "mark"
+        }.`,
+        severity: urgent ? "high" : "medium",
+      },
+    ];
+  });
+}
+
+// One reminder per route or boulder still graded "New" a week after it was
+// set, oldest first.
+function ungradedMessages(climbs: Climb[], now: Date): DashboardMessage[] {
+  return longestStanding(climbs, climbs.length).flatMap((climb) => {
+    const days = daysUp(climb.setAt, now);
+    if (climb.grade !== NEW_GRADE || days === null || days <= UNGRADED_AFTER_DAYS.warn) return [];
+    return [
+      {
+        id: `ungraded-${climb.id}`,
+        message: `${climbLabel(climb)}${climbWhere(climb)} is still graded New after ${days} days.`,
+        severity: days > UNGRADED_AFTER_DAYS.urgent ? "high" : "medium",
+        action: { label: "Grade it", href: gradingReportHref(climb.id) },
       },
     ];
   });
@@ -146,13 +191,16 @@ function ClimbList({
         return (
           <li key={climb.id} className="flex items-center gap-2.5 py-1.5">
             {ranked && <span className="w-3 text-xs font-semibold text-neutral-400">{i + 1}</span>}
+            <span className="w-11 shrink-0">
+              <GradeTag grade={climb.grade} />
+            </span>
             <span
               aria-hidden="true"
               className="h-2.5 w-2.5 shrink-0 rounded-full ring-1 ring-black/10"
               style={{ background: swatchFor(climb.colour) }}
             />
             <span className="min-w-0 flex-1 truncate text-neutral-700">
-              {climbLabel(climb)}
+              {climbColours(climb)}
               {showLine && climb.line !== undefined && <span className="text-neutral-500"> · Line {climb.line}</span>}
             </span>
             <span className="shrink-0 text-xs font-semibold text-primary">{days === null ? "—" : `${days}d`}</span>
@@ -182,7 +230,7 @@ export default function AdminOverview() {
   }, []);
 
   // Combos aren't counted here - the dashboard covers routes and boulders.
-  const active = climbs?.filter((climb) => climb.status === "active") ?? [];
+  const active = climbs?.filter((climb) => climb.status === "active").sort(byGradeThenLine) ?? [];
   const activeRoutes = active.filter((climb) => climb.type === "route");
   const activeBoulders = active.filter((climb) => climb.type === "boulder");
   const lineRoutes = activeRoutes.filter((route) => route.line === line);
@@ -191,6 +239,7 @@ export default function AdminOverview() {
     ...cotwMessages(announcements, now),
     ...detailMessages(details),
     ...staleMessages([...activeRoutes, ...activeBoulders], now),
+    ...ungradedMessages([...activeRoutes, ...activeBoulders], now),
   ].sort((a, b) => Number(b.severity === "high") - Number(a.severity === "high"));
   const loadingText =
     climbs === undefined ? "Loading climbs…" : climbs === null ? "Couldn't load climbs" : null;
