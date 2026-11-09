@@ -933,7 +933,7 @@ export default function ComboRoulettePage() {
                         type="button"
                         onClick={toggleSideLines}
                         aria-pressed={sideLines}
-                        className={`rounded-md px-4 py-2 text-left text-sm font-medium transition-colors ${
+                        className={`flex-1 rounded-md px-4 py-2 text-left text-sm font-medium transition-colors ${
                           sideLines ? "bg-primary text-white" : "bg-neutral-100 text-neutral-700 hover:bg-neutral-200"
                         }`}
                       >
@@ -948,7 +948,7 @@ export default function ComboRoulettePage() {
                           onClick={toggleExistingOnly}
                           disabled={simpleLayout !== "leftRight"}
                           aria-pressed={existingOnly}
-                          className={`rounded-md px-4 py-2 text-left text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                          className={`flex-1 rounded-md px-4 py-2 text-left text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
                             existingOnly ? "bg-primary text-white" : "bg-neutral-100 text-neutral-700 enabled:hover:bg-neutral-200"
                           }`}
                         >
