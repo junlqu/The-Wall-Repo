@@ -1,13 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import ColourGrid from "@/components/ColourGrid";
 import InfoTip from "@/components/InfoTip";
 import { Kicker, Masthead, SectionRule } from "@/components/Masthead";
 import TabBar from "@/components/TabBar";
 import { type Climb, fetchClimbs, LINES, swatchFor } from "@/lib/climbs";
-import { NEW_GRADE, ROUTE_GRADES } from "@/lib/grades";
-
-type Line = (typeof LINES)[number];
+import { colourTextShade, type Line, lineColourNames, MULTI_COLOUR, MULTI_COLOUR_STRIPES } from "@/lib/lineColours";
 
 const LIMBS = [
   { key: "leftHand", label: "Left Hand" },
@@ -29,35 +28,15 @@ const LIMB_SHORT_LABEL: Record<LimbKey, string> = {
 // page, so the palest colours get a darker shade there.
 type WheelColour = { key: string; line: Line; name: string; fill: string; text: string };
 
-const TEXT_SHADES: Record<string, string> = { White: "#AFAFAF", Clear: "#9CA3AF" };
-// A wheel slice is a solid band of the conic gradient, so Multi-Colour is
-// drawn as a few thin stripes instead of its usual gradient swatch.
-const MULTI_COLOUR = "Multi-Colour";
-const MULTI_COLOUR_STRIPES = ["#ef4444", "#eab308", "#22c55e", "#3b82f6", "#a855f7"];
 
-// New first, then up the scale, then grades that aren't on it.
-function routeOrder(a: Climb, b: Climb) {
-  const rank = (grade: string) => {
-    if (grade === NEW_GRADE) return -1;
-    const index = ROUTE_GRADES.indexOf(grade);
-    return index === -1 ? ROUTE_GRADES.length : index;
-  };
-  return rank(a.grade) - rank(b.grade);
-}
-
-// The colours of the routes up on a line, easiest first, each colour once.
-// Combos are two colours, so they don't get a slice.
+// The colours of the routes up on a line, as wheel colours.
 function lineColours(climbs: Climb[], line: Line): WheelColour[] {
-  const routes = climbs
-    .filter((climb) => climb.status === "active" && climb.type === "route" && climb.line === line)
-    .sort(routeOrder);
-  const names = [...new Set(routes.map((route) => route.colour))];
-  return names.map((name) => ({
+  return lineColourNames(climbs, line).map((name) => ({
     key: `${line}:${name}`,
     line,
     name,
     fill: name === MULTI_COLOUR ? MULTI_COLOUR_STRIPES[0] : swatchFor(name),
-    text: TEXT_SHADES[name] ?? (name === MULTI_COLOUR ? "#6B7280" : swatchFor(name)),
+    text: colourTextShade(name, swatchFor(name)),
   }));
 }
 
@@ -130,56 +109,6 @@ const EXTRA_SPINS = 5;
 // Past this many slices the limb labels run into each other, so they're left
 // off. The panel above the wheel still says which limb each roll landed on.
 const MAX_LABELLED_SLICES = 24;
-
-// Every line's colours as dots, one row a line, to add to or take off the wheel.
-function ColourGrid({
-  rows,
-  picked,
-  onToggle,
-}: {
-  rows: { line: Line; colours: WheelColour[] }[];
-  picked: string[];
-  onToggle: (key: string) => void;
-}) {
-  return (
-    <div className="flex flex-col gap-2">
-      {rows.map(({ line, colours }) => (
-        <div key={line} role="group" aria-label={`Line ${line}`} className="flex min-h-8 items-start gap-3">
-          <span aria-hidden="true" className="w-3 shrink-0 pt-1.5 text-xs font-bold text-neutral-400 tabular-nums">
-            {line}
-          </span>
-          {colours.length === 0 ? (
-            <span aria-hidden="true" className="pt-1 text-neutral-300">
-              —
-            </span>
-          ) : (
-            <div className="flex flex-wrap gap-2">
-              {colours.map((colour) => {
-                const on = picked.includes(colour.key);
-                return (
-                  <button
-                    key={colour.key}
-                    type="button"
-                    onClick={() => onToggle(colour.key)}
-                    aria-pressed={on}
-                    aria-label={`${colour.name} on line ${line}`}
-                    title={colour.name}
-                    className={`h-8 w-8 rounded-full transition-shadow focus-visible:outline-none ${
-                      on
-                        ? "ring-2 ring-primary ring-offset-2"
-                        : "ring-1 ring-black/10 hover:ring-2 hover:ring-neutral-400 focus-visible:ring-2 focus-visible:ring-neutral-400"
-                    }`}
-                    style={{ background: swatchFor(colour.name) }}
-                  />
-                );
-              })}
-            </div>
-          )}
-        </div>
-      ))}
-    </div>
-  );
-}
 
 export default function TwisterPage() {
   const [selectedLine, setSelectedLine] = useState<Line>(1);
