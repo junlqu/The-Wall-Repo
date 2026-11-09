@@ -4,6 +4,7 @@ import Link from "next/link";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import ClimbCharts from "@/components/ClimbCharts";
 import ClimbActions from "@/components/ClimbActions";
+import { GradeTag } from "@/components/ClimbCards";
 import ClimbColour, { Swatch } from "@/components/ClimbColour";
 import TabBar from "@/components/TabBar";
 import { type AdminSection, adminSubpageHref } from "@/lib/adminSections";
@@ -85,7 +86,7 @@ const COLUMNS: Column[] = [
     value: (climb) => climb.line ?? null,
     cell: (climb) => climb.line ?? <span className="text-neutral-400">—</span>,
   },
-  { key: "grade", label: "Grade", value: gradeRank, cell: (climb) => climb.grade, cellClassName: "font-semibold text-primary" },
+  { key: "grade", label: "Grade", value: gradeRank, cell: (climb) => <GradeTag grade={climb.grade} /> },
   { key: "colour", label: "Colour", value: climbColour, cell: (climb) => <ClimbColour climb={climb} /> },
   {
     key: "type",
@@ -214,7 +215,9 @@ function CompactClimbs({ climbs, now, showBoulders }: { climbs: Climb[]; now: Da
                 <ul className="divide-y divide-neutral-100 text-sm text-neutral-700">
                   {onLine.map((climb) => (
                     <li key={climb.id} className="flex items-center gap-3 px-4 py-2">
-                      <span className="w-12 shrink-0 font-semibold text-primary">{climb.grade || "—"}</span>
+                      <span className="w-12 shrink-0">
+                        <GradeTag grade={climb.grade} />
+                      </span>
                       <span className="min-w-0 flex-1">
                         <ClimbColour climb={climb} />
                       </span>
@@ -248,7 +251,9 @@ function CompactClimbs({ climbs, now, showBoulders }: { climbs: Climb[]; now: Da
                   key={boulder.id}
                   className="flex min-w-0 flex-col gap-1 rounded-md border border-neutral-100 bg-neutral-50 px-3 py-2 text-sm text-neutral-700"
                 >
-                  <span className="truncate font-semibold text-primary">{boulder.grade || "—"}</span>
+                  <span className="truncate">
+                    <GradeTag grade={boulder.grade} />
+                  </span>
                   <span className="flex min-w-0 items-center gap-2" title={boulder.colour}>
                     <Swatch colour={boulder.colour} />
                     <span className="truncate">{boulder.colour}</span>
