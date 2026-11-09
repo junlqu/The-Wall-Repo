@@ -43,8 +43,8 @@ type Rect = { x: number; y: number; width: number; height: number };
 // corner to corner for a cross. `hit` is where to click, which for the edges
 // stops short of the centre - the centre belongs to the crosses. An edge's
 // `knob` is the circle in the middle of its gap, there joined or not, that
-// shows it can be clicked and whether it's joined. A cross's `hint` marks it
-// as something to click while it's unjoined.
+// shows it can be clicked and whether it's joined. An unjoined cross is marked
+// by a line along its diagonal (see CROSS_HINT).
 const CONNECTIONS = [
   {
     key: "hands",
@@ -82,15 +82,15 @@ const CONNECTIONS = [
     hit: { x: BOARD - 74, y: MID - 12, width: 74, height: 24 },
     knob: { cx: FAR + SQUARE / 2, cy: MID },
   },
-  { key: "crossDown", a: "leftHand", b: "rightLeg", cross: true, angle: 45, hint: { x1: 92, y1: 92, x2: 108, y2: 108 } },
-  { key: "crossUp", a: "rightHand", b: "leftLeg", cross: true, angle: -45, hint: { x1: 108, y1: 92, x2: 92, y2: 108 } },
+  { key: "crossDown", a: "leftHand", b: "rightLeg", cross: true, angle: 45 },
+  { key: "crossUp", a: "rightHand", b: "leftLeg", cross: true, angle: -45 },
 ] as const satisfies readonly ({
   key: string;
   a: LimbKey;
   b: LimbKey;
 } & (
   | { cross: false; bridge: Rect; hit: Rect; knob: { cx: number; cy: number } }
-  | { cross: true; angle: number; hint: { x1: number; y1: number; x2: number; y2: number } }
+  | { cross: true; angle: number }
 ))[];
 
 const KNOB_RADIUS = 6;
@@ -100,8 +100,16 @@ type ConnectionKey = Connection["key"];
 // A cross's band, before it's turned to its diagonal about the board's centre.
 // Long enough for its ends to sit well inside the two squares.
 const CROSS_BAND = { length: 64, thickness: 26 };
-// A cross's click area, along its diagonal from the centre.
-const CROSS_HIT = { reach: 24, thickness: 22 };
+// A cross's click area, along its diagonal from the centre - roomy enough for a
+// fingertip, while staying clear of the edges' knobs.
+const CROSS_HIT = { reach: 28, thickness: 24 };
+// An unjoined cross's line, along its diagonal from the centre, with a knob at
+// each end like the edges'. It reaches just to the two squares' rounded
+// corners, so the knobs sit on their corners.
+const CROSS_HINT = {
+  reach: (MID - (SQUARE - RADIUS) - RADIUS / Math.SQRT2) * Math.SQRT2,
+  width: 2.5,
+};
 
 // When all four limbs are joined by the edges, the hole left between the four
 // bars is filled with this.
@@ -266,11 +274,21 @@ function GroupShapes({ group, connected }: { group: LimbKey[]; connected: Connec
   );
 }
 
-// A cross's click area, as a line along its diagonal.
-function crossHit(connection: Extract<Connection, { cross: true }>) {
-  const d = CROSS_HIT.reach / Math.SQRT2;
+// A line along a cross's diagonal, `reach` either way from the centre.
+function crossLine(connection: Extract<Connection, { cross: true }>, reach: number) {
+  const d = reach / Math.SQRT2;
   const turn = Math.sign(connection.angle);
   return { x1: MID - d, y1: MID - d * turn, x2: MID + d, y2: MID + d * turn };
+}
+
+function CrossHint({ x1, y1, x2, y2 }: { x1: number; y1: number; x2: number; y2: number }) {
+  return (
+    <g className="fill-white stroke-neutral-300 transition-colors group-hover:stroke-neutral-500">
+      <line x1={x1} y1={y1} x2={x2} y2={y2} strokeWidth={CROSS_HINT.width} />
+      <circle cx={x1} cy={y1} r={KNOB_RADIUS} strokeWidth={2} />
+      <circle cx={x2} cy={y2} r={KNOB_RADIUS} strokeWidth={2} />
+    </g>
+  );
 }
 
 // The four limbs as squares with a gap between them. Joined limbs are bridged
@@ -365,7 +383,7 @@ function LimbGrid({
               >
                 {connection.cross ? (
                   <line
-                    {...crossHit(connection)}
+                    {...crossLine(connection, CROSS_HIT.reach)}
                     strokeWidth={CROSS_HIT.thickness}
                     strokeLinecap="round"
                     className="stroke-transparent transition-colors group-hover:stroke-black/5 group-focus-visible:stroke-secondary/30"
@@ -379,13 +397,7 @@ function LimbGrid({
                 )}
                 {connection.cross ? (
                   !on && (
-                    <line
-                      {...connection.hint}
-                      strokeWidth={3}
-                      strokeLinecap="round"
-                      strokeDasharray="1 7"
-                      className="stroke-neutral-300 transition-colors group-hover:stroke-neutral-500"
-                    />
+                    <CrossHint {...crossLine(connection, CROSS_HINT.reach)} />
                   )
                 ) : (
                   <circle
@@ -865,7 +877,7 @@ export default function ComboRoulettePage() {
                         </button>
                       ))}
                     </div>
-                    <p className="text-xs text-neutral-500">Click between limbs to join them. Joined limbs climb the same colour.</p>
+                    <p className="text-xs text-neutral-500">Tap between limbs, or diagonally across the middle, to join them. Joined limbs climb the same colour.</p>
                     <LimbGrid
                       connected={connected}
                       onToggle={toggleConnection}
