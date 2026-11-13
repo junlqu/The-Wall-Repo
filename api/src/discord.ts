@@ -70,11 +70,18 @@ function toEmbed(announcement: Announcement) {
   };
 }
 
-// Posts a new announcement to Discord: sets to the SETS_URL webhook, the rest
-// to ANNOUNCEMENT_URL. A missing webhook or a failure is only logged - the
+// The app setting holding the webhook for each type that has its own channel.
+// Every other type goes to ANNOUNCEMENT_URL.
+const WEBHOOK_SETTINGS: Partial<Record<AnnouncementType, string>> = {
+  sets: "SETS_URL",
+  cotw: "COTW_URL",
+};
+
+// Posts a new announcement to its Discord channel's webhook (see
+// WEBHOOK_SETTINGS). A missing webhook or a failure is only logged - the
 // announcement is already saved either way.
 export async function notifyDiscord(announcement: Announcement, context: InvocationContext) {
-  const setting = announcement.type === "sets" ? "SETS_URL" : "ANNOUNCEMENT_URL";
+  const setting = WEBHOOK_SETTINGS[announcement.type] ?? "ANNOUNCEMENT_URL";
   const url = process.env[setting];
   if (!url) {
     context.warn(`Missing ${setting} app setting, so the announcement wasn't posted to Discord.`);
