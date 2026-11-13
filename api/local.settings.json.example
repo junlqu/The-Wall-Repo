@@ -8,7 +8,8 @@
     "COSMOS_DB_KEY": "<your-cosmos-primary-key>",
     "COSMOS_DB_DATABASE_NAME": "WallArchive",
     "ANNOUNCEMENT_URL": "<discord-webhook-url-for-announcements>",
-    "SETS_URL": "<discord-webhook-url-for-sets>"
+    "SETS_URL": "<discord-webhook-url-for-sets>",
+    "COTW_URL": "<discord-webhook-url-for-cotw>"
   },
   "Host": {
     "CORS": "*"
